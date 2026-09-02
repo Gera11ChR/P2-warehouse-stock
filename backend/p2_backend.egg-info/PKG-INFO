@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: p2-backend
+Version: 0.1.0
+Summary: Project P2 - Enterprise Fiber Optic Logistics & Fleet Inventory System (backend)
+Requires-Python: >=3.12
+Requires-Dist: sqlalchemy[asyncio]>=2.0.41
+Requires-Dist: alembic>=1.16
+Requires-Dist: psycopg[binary]>=3.2
+Requires-Dist: fastapi>=0.115
+Requires-Dist: pyotp>=2.9
+Requires-Dist: cryptography>=44
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-asyncio>=1.0; extra == "dev"
+Requires-Dist: httpx>=0.27; extra == "dev"
+Requires-Dist: mypy>=1.11; extra == "dev"

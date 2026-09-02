@@ -1,0 +1,6 @@
+interface:
+  display_name: "gstack-skillify"
+  short_description: "Codify successful workflows and engineering patterns into permanent project skills."
+  default_prompt: "Use gstack-skillify for this task."
+policy:
+  allow_implicit_invocation: true

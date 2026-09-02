@@ -1,0 +1,9 @@
+# Functional Specification — Spec 001 (Core Logistics & Ingestion)
+
+## Functional Requirements (RF)
+
+* **RF-1 [Ubiquitous]:** The system shall record all inventory transactions—including inbound receiving, outbound deployment, and fleet allocations—in an append-only, immutable PostgreSQL audit log table containing the actor ID, exact timestamp, and serialized JSON payload.
+* **RF-2 [Event-Driven]:** **WHEN** an authenticated user lacking explicit "Administrator" role clearance requests access to any administrative API endpoint, the system shall immediately deny the request, log the access attempt, and return an HTTP 403 Forbidden response.
+* **RF-3 [State-Driven]:** **WHILE** a bulk inventory adjustment transaction is active, the system shall enforce an exclusive row-level database lock (`SELECT ... FOR UPDATE`) on the target SKU records to guarantee atomic concurrency control and prevent race conditions.
+* **RF-4 [Error-Handling]:** **IF** an inbound bulk data-grid payload (e.g., from an Excel clipboard) contains a schema violation, negative quantity, or an unrecognized SKU in any individual row, **THEN** the system shall abort the entire batch transaction, prevent any partial database commits, and return an HTTP 422 Unprocessable Entity detailing the exact row indices of the failures.
+* **RF-5 [Optional / Complex]:** **WHERE** a minimum stock threshold (`min_stock`) is configured for a specific fiber optic item, **IF** the `current_stock` evaluates to less than or equal to this threshold, **THEN** the system shall inject a "STOCK ALERT" status flag into all relevant data-grid API responses.
