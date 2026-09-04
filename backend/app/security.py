@@ -39,3 +39,11 @@ def assert_scope(actor_ctx: ActorContext, required: set[str]) -> None:
             actor=actor_ctx.actor_id,
             required_scope=sorted(missing),
         )
+
+
+def assert_authenticated(actor_ctx: ActorContext) -> None:
+    if not actor_ctx.scoped_warehouse_ids:
+        raise AuthorizationError(
+            "Actor sin alcance de almacén asignado",
+            actor=actor_ctx.actor_id,
+        )

@@ -1,7 +1,9 @@
 from app.models.audit import AuditLog
+from app.models.fiber import FiberVariant
 from app.models.mfa import MfaAttempt, MfaElevation, UserMfaSeed
 from app.models.quarantine import LegacyStockQuarantine
 from app.models.sku import Sku
+from app.models.team import TeamInventory
 from app.models.transfer import (
     MOVEMENT_TYPES,
     TRANSFER_STATUSES,
@@ -15,6 +17,8 @@ from app.models.warehouse_scope import UserWarehouseScope
 
 __all__ = [
     "Sku",
+    "FiberVariant",
+    "TeamInventory",
     "AuditLog",
     "LegacyStockQuarantine",
     "MfaAttempt",

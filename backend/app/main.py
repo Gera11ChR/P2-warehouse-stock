@@ -1,7 +1,15 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import stock_transfers
+from app.api.v1 import (
+    audit,
+    fiber_optics,
+    inventory,
+    kpis,
+    materials,
+    stock_transfers,
+    team_inventory,
+)
 from app.errors import (
     AuthorizationError,
     BusinessRuleError,
@@ -15,6 +23,12 @@ from app.telemetry import current_trace_id, emit_log, new_trace_id, trace_id_var
 app = FastAPI(title="P2 Inventory API", version="0.1.0")
 
 app.include_router(stock_transfers.router, prefix="/api/v1")
+app.include_router(materials.router, prefix="/api/v1")
+app.include_router(inventory.router, prefix="/api/v1")
+app.include_router(team_inventory.router, prefix="/api/v1")
+app.include_router(fiber_optics.router, prefix="/api/v1")
+app.include_router(kpis.router, prefix="/api/v1")
+app.include_router(audit.router, prefix="/api/v1")
 
 
 @app.middleware("http")

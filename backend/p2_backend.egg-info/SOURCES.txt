@@ -37,6 +37,7 @@ tests/test_append_only.py
 tests/test_audit_trace.py
 tests/test_contract_migration.py
 tests/test_counter_adjustment.py
+tests/test_domain_invariants.py
 tests/test_expand_migration.py
 tests/test_idempotency.py
 tests/test_inventory_service.py
