@@ -43,6 +43,7 @@ async def list_fiber_variants(
                 select(FiberVariant, Sku.description, Warehouse.name)
                 .outerjoin(Sku, Sku.sku == FiberVariant.sku)
                 .outerjoin(Warehouse, Warehouse.warehouse_id == FiberVariant.warehouse_id)
+                .where(Sku.is_active == True)
                 .order_by(FiberVariant.sku.asc())
             )
         )
@@ -64,7 +65,7 @@ async def create_fiber_variant(
         assert_scope(actor_ctx, {payload.almacen_id})
     async with session.begin():
         sku = await session.get(Sku, payload.codigo)
-        if sku is None:
+        if sku is None or not sku.is_active:
             raise BusinessRuleError(
                 "SKU no encontrado", coordinates=[{"codigo": payload.codigo}]
             )

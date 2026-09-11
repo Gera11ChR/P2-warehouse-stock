@@ -1,8 +1,11 @@
-"""Idempotent seed for the WMS inventory dashboard.
+"""Idempotent seed for the official 53-item material catalog.
 
-Loads warehouses, 53 general materials, and 5 fiber-optic materials with their
-initial warehouse balances recorded as RECEIPT stock movements (append-only
-ledger invariant, spec 001 REQ-STOCK-003). Re-runs skip existing SKUs.
+Loads warehouses, the official catalog (5 fiber-optic CF-* SKUs + 48 general
+SKUs per the DMS master template), and zero-balance CENTRAL custody rows.
+Legacy non-official SKUs with transaction history are soft-deactivated
+(`is_active = false`) and never physically deleted, preserving foreign keys
+and the append-only ledger (Constitution 2.4, spec 001 REQ-STOCK-003).
+Re-runs are idempotent: upserts only, no duplicates, no errors.
 
 Run:  python -m app.seed
 """
@@ -12,10 +15,12 @@ import asyncio
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import Sku, StockMovement, UserWarehouseScope, Warehouse, WarehouseInventory
+from app.models import Sku, UserWarehouseScope, Warehouse, WarehouseInventory
 
 SEED_ACTOR = "seed"
 DEMO_ACTOR = "demo-operador"
+
+PRIMARY_WAREHOUSE = "CENTRAL"
 
 WAREHOUSES = [
     ("CENTRAL", "Almacén Central"),
@@ -23,77 +28,71 @@ WAREHOUSES = [
     ("SUR", "Almacén Sur"),
 ]
 
-GENERAL_MATERIALS = [
-    # Cables
-    {"sku": "CBL-FO-001", "descripcion": "Cable fibra óptica monomodo 12 hilos", "categoria": "Cables", "um": "CARRETE (1 KM)", "min_stock": 5, "stock": 40},
-    {"sku": "CBL-FO-002", "descripcion": "Cable fibra óptica monomodo 24 hilos", "categoria": "Cables", "um": "CARRETE (1 KM)", "min_stock": 5, "stock": 32},
-    {"sku": "CBL-FO-003", "descripcion": "Cable fibra óptica monomodo 48 hilos", "categoria": "Cables", "um": "CARRETE (5 KM)", "min_stock": 3, "stock": 18},
-    {"sku": "CBL-FO-004", "descripcion": "Cable fibra óptica multimodo OM3 24 hilos", "categoria": "Cables", "um": "CARRETE (1 KM)", "min_stock": 4, "stock": 22},
-    {"sku": "CBL-FO-005", "descripcion": "Cable fibra óptica multimodo OM4 12 hilos", "categoria": "Cables", "um": "CARRETE (1 KM)", "min_stock": 4, "stock": 25},
-    {"sku": "CBL-DROP-001", "descripcion": "Cable drop plano FTTH 1 fibra", "categoria": "Cables", "um": "ROLLO", "min_stock": 10, "stock": 60},
-    {"sku": "CBL-DROP-002", "descripcion": "Cable drop figura 8 FTTH 2 fibras", "categoria": "Cables", "um": "ROLLO", "min_stock": 10, "stock": 55},
-    {"sku": "CBL-CORD-001", "descripcion": "Cordón óptico dúplex LC-LC 3m", "categoria": "Cables", "um": "PZ", "min_stock": 20, "stock": 120},
-    # Conectores
-    {"sku": "CON-LC-001", "descripcion": "Conector LC monomodo UPC", "categoria": "Conectores", "um": "BOLSA (500 PZ)", "min_stock": 5, "stock": 30},
-    {"sku": "CON-LC-002", "descripcion": "Conector LC monomodo APC", "categoria": "Conectores", "um": "BOLSA (500 PZ)", "min_stock": 5, "stock": 28},
-    {"sku": "CON-SC-001", "descripcion": "Conector SC monomodo UPC", "categoria": "Conectores", "um": "BOLSA (500 PZ)", "min_stock": 5, "stock": 35},
-    {"sku": "CON-SC-002", "descripcion": "Conector SC monomodo APC", "categoria": "Conectores", "um": "PAQUETE (100 PZ)", "min_stock": 8, "stock": 40},
-    {"sku": "CON-ST-001", "descripcion": "Conector ST multimodo", "categoria": "Conectores", "um": "PAQUETE (100 PZ)", "min_stock": 6, "stock": 30},
-    {"sku": "CON-FC-001", "descripcion": "Conector FC monomodo APC", "categoria": "Conectores", "um": "PAQUETE (100 PZ)", "min_stock": 5, "stock": 25},
-    {"sku": "CON-ADAPT-001", "descripcion": "Adaptador LC-LC dúplex", "categoria": "Conectores", "um": "PZ", "min_stock": 30, "stock": 200},
-    {"sku": "CON-ADAPT-002", "descripcion": "Adaptador SC-SC simplex", "categoria": "Conectores", "um": "PZ", "min_stock": 30, "stock": 180},
-    {"sku": "CON-PIGTAIL-001", "descripcion": "Pigtail monomodo LC 1.5m", "categoria": "Conectores", "um": "PZ", "min_stock": 50, "stock": 300},
-    {"sku": "CON-PIGTAIL-002", "descripcion": "Pigtail multimodo LC 1.5m", "categoria": "Conectores", "um": "PZ", "min_stock": 40, "stock": 250},
-    # Empalmes y cierres
-    {"sku": "EMP-CIERRE-001", "descripcion": "Cierre de empalme tipo domo 24 fibras", "categoria": "Empalmes", "um": "PZ", "min_stock": 8, "stock": 45},
-    {"sku": "EMP-CIERRE-002", "descripcion": "Cierre de empalme tipo bandeja 48 fibras", "categoria": "Empalmes", "um": "PZ", "min_stock": 6, "stock": 30},
-    {"sku": "EMP-BANDEJA-001", "descripcion": "Bandeja de empalme 12 fibras", "categoria": "Empalmes", "um": "PZ", "min_stock": 20, "stock": 120},
-    {"sku": "EMP-MANGUITO-001", "descripcion": "Manguito de protección de empalme 60mm", "categoria": "Empalmes", "um": "PAQUETE (100 PZ)", "min_stock": 10, "stock": 80},
-    {"sku": "EMP-FUSION-001", "descripcion": "Empalmadora de fusión de núcleo alineado", "categoria": "Empalmes", "um": "EQUIPO", "min_stock": 1, "stock": 6},
-    {"sku": "EMP-ROSA-001", "descripcion": "Roseta óptica FTTH 1 puerto", "categoria": "Empalmes", "um": "PZ", "min_stock": 40, "stock": 220},
-    {"sku": "EMP-ROSA-002", "descripcion": "Roseta óptica FTTH 2 puertos", "categoria": "Empalmes", "um": "PZ", "min_stock": 30, "stock": 180},
-    {"sku": "EMP-CAJA-001", "descripcion": "Caja de distribución óptica 16 puertos", "categoria": "Empalmes", "um": "PZ", "min_stock": 10, "stock": 50},
-    # Herramientas
-    {"sku": "HER-CORTADORA-001", "descripcion": "Cortadora de precisión de fibra", "categoria": "Herramientas", "um": "EQUIPO", "min_stock": 2, "stock": 12},
-    {"sku": "HER-PELADORA-001", "descripcion": "Peladora de fibra óptica de 3 agujeros", "categoria": "Herramientas", "um": "UNIDAD", "min_stock": 5, "stock": 30},
-    {"sku": "HER-VFL-001", "descripcion": "Localizador visual de fallas VFL", "categoria": "Herramientas", "um": "UNIDAD", "min_stock": 5, "stock": 25},
-    {"sku": "HER-MEDIDOR-001", "descripcion": "Medidor de potencia óptica", "categoria": "Herramientas", "um": "EQUIPO", "min_stock": 3, "stock": 15},
-    {"sku": "HER-ALCOHOL-001", "descripcion": "Alcohol isopropílico 99% para limpieza", "categoria": "Herramientas", "um": "LT", "min_stock": 10, "stock": 60},
-    {"sku": "HER-KIT-001", "descripcion": "Kit de limpieza para conectores", "categoria": "Herramientas", "um": "PZ", "min_stock": 15, "stock": 90},
-    # Equipos
-    {"sku": "EQU-OTDR-001", "descripcion": "OTDR reflectómetro óptico", "categoria": "Equipos", "um": "EQUIPO", "min_stock": 1, "stock": 4},
-    {"sku": "EQU-ONU-001", "descripcion": "ONU GPON 1 puerto", "categoria": "Equipos", "um": "EQUIPO", "min_stock": 20, "stock": 150},
-    {"sku": "EQU-OLT-001", "descripcion": "OLT GPON 8 puertos", "categoria": "Equipos", "um": "EQUIPO", "min_stock": 2, "stock": 8},
-    {"sku": "EQU-SFP-001", "descripcion": "Transceptor SFP monomodo 10km", "categoria": "Equipos", "um": "PZ", "min_stock": 25, "stock": 160},
-    {"sku": "EQU-SFP-002", "descripcion": "Transceptor SFP+ monomodo 40km", "categoria": "Equipos", "um": "PZ", "min_stock": 15, "stock": 80},
-    # Protección y accesorios
-    {"sku": "PRO-TUBO-001", "descripcion": "Tubo termocontráctil para empalme", "categoria": "Protección", "um": "PAQUETE (100 PZ)", "min_stock": 12, "stock": 100},
-    {"sku": "PRO-CINTA-001", "descripcion": "Cinta aislante autosoldable", "categoria": "Protección", "um": "ROLLO", "min_stock": 20, "stock": 140},
-    {"sku": "PRO-VELCRO-001", "descripcion": "Cinta velcro para organizar cableado", "categoria": "Protección", "um": "ROLLO", "min_stock": 20, "stock": 130},
-    {"sku": "PRO-BANDEJA-001", "descripcion": "Bandeja porta-fusión modular", "categoria": "Protección", "um": "PZ", "min_stock": 15, "stock": 80},
-    {"sku": "PRO-ETIQUETA-001", "descripcion": "Etiquetas autolaminables para fibra", "categoria": "Protección", "um": "PAQUETE (100 PZ)", "min_stock": 10, "stock": 90},
-    {"sku": "PRO-SUJETADOR-001", "descripcion": "Sujetador de cable con tornillo", "categoria": "Protección", "um": "BOLSA (500 PZ)", "min_stock": 8, "stock": 60},
-    # Consumibles
-    {"sku": "CONS-TOALLA-001", "descripcion": "Toallitas limpiadoras sin pelusa", "categoria": "Consumibles", "um": "PAQUETE (100 PZ)", "min_stock": 15, "stock": 120},
-    {"sku": "CONS-GEL-001", "descripcion": "Gel de limpieza óptica", "categoria": "Consumibles", "um": "LT", "min_stock": 10, "stock": 50},
-    {"sku": "CONS-AIRE-001", "descripcion": "Aire comprimido enlatado", "categoria": "Consumibles", "um": "UNIDAD", "min_stock": 20, "stock": 100},
-    {"sku": "CONS-GUANTES-001", "descripcion": "Guantes antiestáticos desechables", "categoria": "Consumibles", "um": "BOLSA (500 PZ)", "min_stock": 5, "stock": 40},
-    {"sku": "CONS-BOLSA-001", "descripcion": "Bolsas antiestáticas para componentes", "categoria": "Consumibles", "um": "PAQUETE (100 PZ)", "min_stock": 12, "stock": 70},
-    # Varios
-    {"sku": "VAR-PATCH-001", "descripcion": "Patch panel fibra óptica 24 puertos", "categoria": "Varios", "um": "PZ", "min_stock": 5, "stock": 25},
-    {"sku": "VAR-CASETE-001", "descripcion": "Casete óptico modular 12 fibras", "categoria": "Varios", "um": "PZ", "min_stock": 10, "stock": 60},
-    {"sku": "VAR-ATENUADOR-001", "descripcion": "Atenuador óptico fijo 5dB LC", "categoria": "Varios", "um": "PZ", "min_stock": 30, "stock": 200},
-    {"sku": "VAR-DIVISOR-001", "descripcion": "Divisor óptico PLC 1x8", "categoria": "Varios", "um": "PZ", "min_stock": 15, "stock": 90},
-    {"sku": "VAR-ACOPLE-001", "descripcion": "Acoplador híbrido de adaptación", "categoria": "Varios", "um": "PZ", "min_stock": 20, "stock": 110},
+# Catálogo oficial de 53 ítems (plantilla DMS):
+# 5 módulo Fibra Óptica (tipo FIBRA) + 48 generales (tipo GENERAL).
+# STOCK ACTUAL 0 / STOCK MÍNIMO 0 según la plantilla oficial ("SIN STOCK").
+OFFICIAL_CATALOG = [
+    # Módulo Fibra Óptica
+    {"sku": "CF-DROP", "descripcion": "CARRETE FIBRA DROP", "categoria": "Fibra Óptica", "um": "CARRETE (1 KM)", "tipo": "FIBRA"},
+    {"sku": "CF-6H-BRND", "descripcion": "CARRETES GRANDES FO 6H *BRAND", "categoria": "Fibra Óptica", "um": "CARRETE (5 KM)", "tipo": "FIBRA"},
+    {"sku": "CF-12H-BRND", "descripcion": "CARRETES GRANDES FO 12H *BRAND", "categoria": "Fibra Óptica", "um": "CARRETE (5 KM)", "tipo": "FIBRA"},
+    {"sku": "CF-24H-BRND", "descripcion": "CARRETES GRANDES FO 24H *BRAND", "categoria": "Fibra Óptica", "um": "CARRETE (5 KM)", "tipo": "FIBRA"},
+    {"sku": "CF-48H-BRND", "descripcion": "CARRETES GRANDES FO 48H *BRAND", "categoria": "Fibra Óptica", "um": "CARRETE (5 KM)", "tipo": "FIBRA"},
+    # Herrajes, Soporte y Planta Externa
+    {"sku": "AC-001", "descripcion": "ACOPLADORES", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "ALC-1LT", "descripcion": "ALCOHOL ISOPROPÍLICO 1LT", "categoria": "Herrajes, Soporte y Planta Externa", "um": "LT", "tipo": "GENERAL"},
+    {"sku": "BS-1M", "descripcion": "BRAZOS DE SOPORTE 1M", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "BS-45", "descripcion": "BRAZOS DE SOPORTE 45CM", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "BS-60", "descripcion": "BRAZOS DE SOPORTE 60CM", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "CJ-NAP-1X16", "descripcion": "CAJAS NAP SANDWICH 1*16", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "CJ-NAP-1X8", "descripcion": "CAJAS NAP SANDWICH 1*8", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "CE-48H", "descripcion": "CIERRES DE EMPALME DE 48H", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "CE-96H", "descripcion": "CIERRES DE EMPALME DE 96H", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "CN-VAR", "descripcion": "CINCHOS (VARIAS MEDIDAS: 5 HASTA 30)", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PAQUETE (100 PZ)", "tipo": "GENERAL"},
+    {"sku": "CT-AIS-AM", "descripcion": "CINTA AISLANTE AMARILLA", "categoria": "Herrajes, Soporte y Planta Externa", "um": "ROLLO", "tipo": "GENERAL"},
+    {"sku": "CN-MEC", "descripcion": "CONECTORES MECÁNICOS", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "FL-34", "descripcion": 'FLEJE DE ACERO INOXIDABLE "3/4"', "categoria": "Herrajes, Soporte y Planta Externa", "um": "ROLLO", "tipo": "GENERAL"},
+    {"sku": "FS-FO", "descripcion": "FUSIONADORES DE FIBRA ÓPTICA", "categoria": "Herrajes, Soporte y Planta Externa", "um": "EQUIPO", "tipo": "GENERAL"},
+    {"sku": "GP-3MM", "descripcion": "GRAPAS 3MM", "categoria": "Herrajes, Soporte y Planta Externa", "um": "BOLSA (500 PZ)", "tipo": "GENERAL"},
+    {"sku": "HB-58", "descripcion": 'HEBILLAS PARA FLEJE "5/8"', "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "HR-DC-CCH", "descripcion": "HERRAJES TIPO D CHICO CON CHAVETA", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "HR-DC-SCH", "descripcion": "HERRAJES TIPO D CHICO SIN CHAVETA", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "HR-TJ", "descripcion": "HERRAJES TIPO J", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "HR-MLC", "descripcion": "MALICOS (HERRAJE / TENSOR DE REMATADO)", "categoria": "Herrajes, Soporte y Planta Externa", "um": "PZ", "tipo": "GENERAL"},
+    # Conectividad y Consumibles
+    {"sku": "JM-SCAPC-SMP", "descripcion": "JUMPERS SC/APC - SC/APC AMARILLO SIMPLEX", "categoria": "Conectividad y Consumibles", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "JM-ACP", "descripcion": "JUMPERS ACP", "categoria": "Conectividad y Consumibles", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "JM-UCP", "descripcion": "JUMPERS UCP", "categoria": "Conectividad y Consumibles", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "MG-6010", "descripcion": "MANGAS DE FUSIÓN (60MM / 10MM)", "categoria": "Conectividad y Consumibles", "um": "PAQUETE (100 PZ)", "tipo": "GENERAL"},
+    {"sku": "MG-6012", "descripcion": "MANGAS DE FUSIÓN (60MM / 12MM)", "categoria": "Conectividad y Consumibles", "um": "PAQUETE (100 PZ)", "tipo": "GENERAL"},
+    {"sku": "MG-6015", "descripcion": "MANGAS DE FUSIÓN (60MM / 15MM)", "categoria": "Conectividad y Consumibles", "um": "PAQUETE (100 PZ)", "tipo": "GENERAL"},
+    {"sku": "MD-001", "descripcion": "MODEMS", "categoria": "Conectividad y Consumibles", "um": "UNIDAD", "tipo": "GENERAL"},
+    {"sku": "RT-1011-NG", "descripcion": "RETENCIÓN PREFORMADO 10.11MM (NEGRO) (100PZ)", "categoria": "Conectividad y Consumibles", "um": "PAQUETE (100 PZ)", "tipo": "GENERAL"},
+    {"sku": "RT-1112-RJ", "descripcion": "RETENCIÓN PREFORMADO 11.12MM (ROJO)", "categoria": "Conectividad y Consumibles", "um": "PAQUETE (100 PZ)", "tipo": "GENERAL"},
+    {"sku": "RT-67-AM", "descripcion": "RETENCIÓN PREFORMADO 6.7MM (AMARILLO)", "categoria": "Conectividad y Consumibles", "um": "PAQUETE (100 PZ)", "tipo": "GENERAL"},
+    {"sku": "TN-DROP", "descripcion": "TENSORES PARA FIBRA DROP", "categoria": "Conectividad y Consumibles", "um": "PZ", "tipo": "GENERAL"},
+    # Splitters Desbalanceados
+    {"sku": "SP-DES-298", "descripcion": "SPLITTERS DESBALANCEADOS 2/98", "categoria": "Splitters Desbalanceados", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-DES-595", "descripcion": "SPLITTERS DESBALANCEADOS 5/95", "categoria": "Splitters Desbalanceados", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-DES-1090", "descripcion": "SPLITTERS DESBALANCEADOS 10/90", "categoria": "Splitters Desbalanceados", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-DES-1585", "descripcion": "SPLITTERS DESBALANCEADOS 15/85", "categoria": "Splitters Desbalanceados", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-DES-2080", "descripcion": "SPLITTERS DESBALANCEADOS 20/80", "categoria": "Splitters Desbalanceados", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-DES-2575", "descripcion": "SPLITTERS DESBALANCEADOS 25/75", "categoria": "Splitters Desbalanceados", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-DES-3070", "descripcion": "SPLITTERS DESBALANCEADOS 30/70", "categoria": "Splitters Desbalanceados", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-DES-3575", "descripcion": "SPLITTERS DESBALANCEADOS 35/75", "categoria": "Splitters Desbalanceados", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-DES-4060", "descripcion": "SPLITTERS DESBALANCEADOS 40/60", "categoria": "Splitters Desbalanceados", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-DES-4555", "descripcion": "SPLITTERS DESBALANCEADOS 45/55", "categoria": "Splitters Desbalanceados", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-DES-5050", "descripcion": "SPLITTERS DESBALANCEADOS 50/50", "categoria": "Splitters Desbalanceados", "um": "PZ", "tipo": "GENERAL"},
+    # Splitters PLC
+    {"sku": "SP-PLC-1X2", "descripcion": "SPLITTERS PLC 1*2 SIN CONECTORES", "categoria": "Splitters PLC", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-PLC-1X4", "descripcion": "SPLITTERS PLC 1*4 SIN CONECTORES", "categoria": "Splitters PLC", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-PLC-1X8", "descripcion": "SPLITTERS PLC 1*8 SIN CONECTORES", "categoria": "Splitters PLC", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-PLC-1X8-SCAPC", "descripcion": "SPLITTERS PLC 1*8 CONECTORES SC/APC", "categoria": "Splitters PLC", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-PLC-1X16", "descripcion": "SPLITTERS PLC 1*16 SIN CONECTORES", "categoria": "Splitters PLC", "um": "PZ", "tipo": "GENERAL"},
+    {"sku": "SP-PLC-1X16-SCAPC", "descripcion": "SPLITTERS PLC 1*16 CONECTORES SC/APC", "categoria": "Splitters PLC", "um": "PZ", "tipo": "GENERAL"},
 ]
 
-FIBER_MATERIALS = [
-    {"sku": "FO-MONO-001", "descripcion": "Fibra óptica monomodo G.652.D", "categoria": "Fibra Óptica", "um": "CARRETE (5 KM)", "min_stock": 3, "stock": 20},
-    {"sku": "FO-MONO-002", "descripcion": "Fibra óptica monomodo G.657.A2", "categoria": "Fibra Óptica", "um": "CARRETE (5 KM)", "min_stock": 3, "stock": 16},
-    {"sku": "FO-MULTI-001", "descripcion": "Fibra óptica multimodo OM4", "categoria": "Fibra Óptica", "um": "CARRETE (1 KM)", "min_stock": 4, "stock": 24},
-    {"sku": "FO-MULTI-002", "descripcion": "Fibra óptica multimodo OM3", "categoria": "Fibra Óptica", "um": "CARRETE (1 KM)", "min_stock": 4, "stock": 20},
-    {"sku": "FO-PATCH-001", "descripcion": "Pigtail fibra óptica LC APC", "categoria": "Fibra Óptica", "um": "PZ", "min_stock": 40, "stock": 260},
-]
+OFFICIAL_SKUS = [m["sku"] for m in OFFICIAL_CATALOG]
 
 
 async def seed() -> None:
@@ -106,9 +105,7 @@ async def seed() -> None:
                 elif existing.name != name:
                     existing.name = name
 
-            warehouse_ids = [wid for wid, _ in WAREHOUSES]
-
-            for warehouse_id in warehouse_ids:
+            for warehouse_id, _ in WAREHOUSES:
                 existing_scope = await session.get(
                     UserWarehouseScope, (DEMO_ACTOR, warehouse_id)
                 )
@@ -121,52 +118,68 @@ async def seed() -> None:
                         )
                     )
 
-            materials = [
-                {**m, "tipo": "GENERAL"} for m in GENERAL_MATERIALS
-            ] + [
-                {**m, "tipo": "FIBRA"} for m in FIBER_MATERIALS
-            ]
-
             created = 0
-            for index, m in enumerate(materials):
+            for m in OFFICIAL_CATALOG:
                 existing = await session.get(Sku, m["sku"])
-                if existing is not None:
-                    continue
-                session.add(
-                    Sku(
-                        sku=m["sku"],
-                        description=m["descripcion"],
-                        unit_of_measure=m["um"],
-                        min_stock=m["min_stock"],
-                        categoria=m["categoria"],
-                        tipo=m["tipo"],
+                if existing is None:
+                    session.add(
+                        Sku(
+                            sku=m["sku"],
+                            description=m["descripcion"],
+                            unit_of_measure=m["um"],
+                            min_stock=0,
+                            categoria=m["categoria"],
+                            tipo=m["tipo"],
+                            is_active=True,
+                        )
+                    )
+                    created += 1
+                else:
+                    existing.description = m["descripcion"]
+                    existing.unit_of_measure = m["um"]
+                    existing.categoria = m["categoria"]
+                    existing.tipo = m["tipo"]
+                    if existing.min_stock is None:
+                        existing.min_stock = 0
+                    existing.is_active = True
+
+                custody = await session.get(
+                    WarehouseInventory, (PRIMARY_WAREHOUSE, m["sku"])
+                )
+                if custody is None:
+                    session.add(
+                        WarehouseInventory(
+                            warehouse_id=PRIMARY_WAREHOUSE,
+                            sku=m["sku"],
+                            on_hand_quantity=0,
+                        )
+                    )
+
+            # Depuración no destructiva: los SKUs ajenos al catálogo oficial
+            # se desactivan (nunca se eliminan) para preservar sus FKs e historial.
+            legacy = (
+                (
+                    await session.execute(
+                        select(Sku).where(Sku.sku.not_in(OFFICIAL_SKUS))
                     )
                 )
-                warehouse_id = warehouse_ids[index % len(warehouse_ids)]
-                session.add(
-                    WarehouseInventory(
-                        warehouse_id=warehouse_id,
-                        sku=m["sku"],
-                        on_hand_quantity=m["stock"],
-                    )
-                )
-                session.add(
-                    StockMovement(
-                        warehouse_id=warehouse_id,
-                        sku=m["sku"],
-                        quantity_change=m["stock"],
-                        movement_type="RECEIPT",
-                        actor_id=SEED_ACTOR,
-                    )
-                )
-                created += 1
+                .scalars()
+                .all()
+            )
+            deactivated = 0
+            for sku in legacy:
+                if sku.is_active:
+                    sku.is_active = False
+                    deactivated += 1
 
             total_skus = (
                 await session.execute(select(Sku).order_by(Sku.sku))
             ).scalars().all()
+            active = sum(1 for s in total_skus if s.is_active)
             print(
-                f"Seed complete: {created} nuevos materiales "
-                f"({len(total_skus)} totales en catálogo)"
+                f"Seed complete: {created} nuevos materiales oficiales, "
+                f"{deactivated} legacy desactivados "
+                f"({active} activos / {len(total_skus)} totales en catálogo)"
             )
 
 

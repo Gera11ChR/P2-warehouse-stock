@@ -147,11 +147,21 @@ async def test_material_create_rejects_unscoped_actor(client: httpx.AsyncClient)
 
 
 @pytest.mark.asyncio
-async def test_material_delete_blocked_with_stock(client: httpx.AsyncClient) -> None:
+async def test_material_delete_soft_deactivates_with_stock(
+    client: httpx.AsyncClient,
+) -> None:
     sku = _sku()
     await _seed_material(sku, on_hand=10)
     response = await client.delete(f"/api/v1/materials/{sku}", headers=_headers())
-    assert response.status_code == 422
+    assert response.status_code == 204
+    assert (await client.get(f"/api/v1/materials/{sku}", headers=_headers())).status_code == 422
+    async with engine.begin() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT is_active FROM skus WHERE sku = :sku"), {"sku": sku}
+            )
+        ).scalar_one()
+    assert row is False
 
 
 @pytest.mark.asyncio

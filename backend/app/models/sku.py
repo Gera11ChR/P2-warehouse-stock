@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Integer, String, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -19,4 +19,7 @@ class Sku(Base):
     categoria: Mapped[str | None] = mapped_column(String(100))
     tipo: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'GENERAL'")
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
     )

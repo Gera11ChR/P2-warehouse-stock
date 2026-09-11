@@ -3,10 +3,10 @@ import os
 import psycopg
 
 ADMIN_DB_URL = os.environ.get(
-    "P2_ADMIN_DATABASE_URL", "postgresql://p2admin@127.0.0.1:5433/p2"
+    "P2_ADMIN_DATABASE_URL", "postgresql://p2admin@127.0.0.1:5432/p2"
 )
 TEST_DB_URL = os.environ.get(
-    "P2_TEST_DATABASE_URL", "postgresql+psycopg://p2admin@127.0.0.1:5433/p2_test"
+    "P2_TEST_DATABASE_URL", "postgresql+psycopg://p2admin@127.0.0.1:5432/p2_test"
 )
 
 

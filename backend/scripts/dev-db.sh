@@ -3,7 +3,7 @@ set -euo pipefail
 
 PGBIN="${PGBIN:-/usr/lib/postgresql/18/bin}"
 DATA_DIR="${P2_PGDATA:-/tmp/opencode/p2-pg}"
-PORT="${P2_PGPORT:-5433}"
+PORT="${P2_PGPORT:-5432}"
 SOCKET_DIR="/tmp/opencode"
 
 if [ ! -d "$DATA_DIR" ]; then

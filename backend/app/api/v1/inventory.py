@@ -30,6 +30,7 @@ async def list_inventory(
         select(Sku, WarehouseInventory, Warehouse)
         .join(WarehouseInventory, WarehouseInventory.sku == Sku.sku)
         .join(Warehouse, Warehouse.warehouse_id == WarehouseInventory.warehouse_id)
+        .where(Sku.is_active == True)
     )
     if buscar:
         stmt = stmt.where(

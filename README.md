@@ -6,7 +6,7 @@ A full-stack enterprise inventory and logistics platform engineered for telecomm
 
 * **Frontend:** React, TypeScript, Tailwind CSS, and Vite, structured around a responsive three-column layout (dark navigation sidebar, light workspace, and white detail drawer) with a real-time toast notification system.
 * **Backend:** Python, FastAPI, and Pydantic DTOs, providing strict schema validation, extra-field rejection (`extra="forbid"`), and modular API routers.
-* **Database Layer:** PostgreSQL powered by SQLAlchemy ORM, Alembic schema migrations, strict foreign key constraints, and an idempotent seeding script (`seed.py`) pre-configured with 53 general materials and 5 specialized fiber materials.
+* **Database Layer:** PostgreSQL powered by SQLAlchemy ORM, Alembic schema migrations, strict foreign key constraints, and an idempotent seeding script (`seed.py`) pre-configured with the official 53-item material catalog (5 fiber-optic `CF-*` SKUs + 48 general SKUs), with legacy demo SKUs soft-deactivated (`is_active = false`) to preserve transaction history.
 
 ## Core Business Constraints & Specifications
 

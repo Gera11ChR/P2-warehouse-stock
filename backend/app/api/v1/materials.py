@@ -1,22 +1,12 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
-from sqlalchemy import func, or_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.errors import BusinessRuleError
-from app.models import (
-    FiberVariant,
-    FleetAllocation,
-    LegacyStockQuarantine,
-    Sku,
-    StockMovement,
-    TeamInventory,
-    TransferLineItem,
-    WarehouseInventory,
-)
+from app.models import Sku
 from app.schemas.material import (
     MaterialCreate,
     MaterialListOut,
@@ -30,16 +20,6 @@ router = APIRouter(prefix="/materials", tags=["materials"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ActorDep = Annotated[ActorContext, Depends(get_current_actor)]
-
-_REFERENCING_MODELS = (
-    WarehouseInventory,
-    TeamInventory,
-    FiberVariant,
-    TransferLineItem,
-    StockMovement,
-    FleetAllocation,
-    LegacyStockQuarantine,
-)
 
 
 def _to_out(sku: Sku) -> MaterialOut:
@@ -55,20 +35,6 @@ def _to_out(sku: Sku) -> MaterialOut:
     )
 
 
-async def _assert_deletable(session: AsyncSession, sku: str) -> None:
-    for model in _REFERENCING_MODELS:
-        count = (
-            await session.execute(
-                select(func.count()).select_from(model).where(model.sku == sku)
-            )
-        ).scalar_one()
-        if count:
-            raise BusinessRuleError(
-                "No se puede eliminar un material en uso",
-                coordinates=[{"codigo": sku}],
-            )
-
-
 @router.get("", response_model=MaterialListOut)
 async def list_materials(
     session: SessionDep,
@@ -76,7 +42,7 @@ async def list_materials(
     buscar: str | None = None,
     tipo: str | None = None,
 ) -> MaterialListOut:
-    stmt = select(Sku).order_by(Sku.sku.asc())
+    stmt = select(Sku).where(Sku.is_active == True).order_by(Sku.sku.asc())
     if buscar:
         stmt = stmt.where(
             or_(
@@ -129,7 +95,7 @@ async def create_material(
 @router.get("/{codigo}", response_model=MaterialOut)
 async def get_material(codigo: str, session: SessionDep, _actor: ActorDep) -> MaterialOut:
     sku = await session.get(Sku, codigo)
-    if sku is None:
+    if sku is None or not sku.is_active:
         raise BusinessRuleError("Material no encontrado", coordinates=[{"codigo": codigo}])
     return _to_out(sku)
 
@@ -144,7 +110,7 @@ async def update_material(
     assert_authenticated(actor_ctx)
     async with session.begin():
         sku = await session.get(Sku, codigo)
-        if sku is None:
+        if sku is None or not sku.is_active:
             raise BusinessRuleError(
                 "Material no encontrado", coordinates=[{"codigo": codigo}]
             )
@@ -178,12 +144,11 @@ async def delete_material(
     assert_authenticated(actor_ctx)
     async with session.begin():
         sku = await session.get(Sku, codigo)
-        if sku is None:
+        if sku is None or not sku.is_active:
             raise BusinessRuleError(
                 "Material no encontrado", coordinates=[{"codigo": codigo}]
             )
-        await _assert_deletable(session, codigo)
-        await session.delete(sku)
+        sku.is_active = False
         session.add(
             make_audit(
                 action="MATERIAL_DELETE",
@@ -191,12 +156,6 @@ async def delete_material(
                 details={"codigo": codigo},
             )
         )
-        try:
-            await session.flush()
-        except IntegrityError:
-            raise BusinessRuleError(
-                "No se puede eliminar un material en uso",
-                coordinates=[{"codigo": codigo}],
-            ) from None
+        await session.flush()
     response.status_code = 204
     return response

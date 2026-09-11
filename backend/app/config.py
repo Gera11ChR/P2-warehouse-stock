@@ -1,10 +1,13 @@
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from cryptography.fernet import Fernet
 
 DATABASE_URL = os.environ.get(
     "P2_DATABASE_URL",
-    "postgresql+psycopg://p2admin@127.0.0.1:5433/p2",
+    "postgresql+psycopg://p2admin@127.0.0.1:5432/p2",
 )
 
 TRANSFER_APPROVAL_THRESHOLD = int(
