@@ -8,6 +8,8 @@ export interface MaterialPayload {
   stock_minimo?: number | null
   categoria?: string | null
   tipo?: string
+  on_hand_quantity?: number
+  warehouse_id?: string
 }
 
 export async function listMaterials(params?: {

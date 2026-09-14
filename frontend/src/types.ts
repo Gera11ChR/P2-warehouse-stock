@@ -117,6 +117,7 @@ export const ACCIONES_AUDITORIA: Record<string, string> = {
   AUTHZ_DENIED: 'Acceso denegado',
   STOCK_ADJUST: 'Ajuste de stock',
   STOCK_ADJUST_BULK: 'Ajuste de stock masivo',
+  STOCK_ADJUST_MANUAL: 'Ajuste manual',
   FLEET_ALLOCATION: 'Asignación de flota',
 }
 

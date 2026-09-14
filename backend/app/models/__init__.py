@@ -1,37 +1,24 @@
-from app.models.audit import AuditLog
-from app.models.fiber import FiberVariant
-from app.models.mfa import MfaAttempt, MfaElevation, UserMfaSeed
-from app.models.quarantine import LegacyStockQuarantine
-from app.models.sku import Sku
-from app.models.team import TeamInventory
-from app.models.transfer import (
-    MOVEMENT_TYPES,
-    TRANSFER_STATUSES,
-    StockMovement,
-    StockTransfer,
-    TransferLineItem,
-)
-from app.models.vehicle import FleetAllocation, Vehicle
-from app.models.warehouse import Warehouse, WarehouseInventory
-from app.models.warehouse_scope import UserWarehouseScope
+from app.models.auditoria import AuditoriaEvento
+from app.models.equipo import Equipo, EquipoIntegrante
+from app.models.importacion import HistorialImportacion
+from app.models.inventario import InventarioAlmacen, InventarioEquipo, Seccion
+from app.models.material import CatalogoMaterial, Categoria
+from app.models.movimiento import MovimientoCabecera, MovimientoDetalle
+from app.models.scope import ActorAlmacenScope
+from app.models.vistas import vw_inventario_equipo_completo
 
 __all__ = [
-    "Sku",
-    "FiberVariant",
-    "TeamInventory",
-    "AuditLog",
-    "LegacyStockQuarantine",
-    "MfaAttempt",
-    "MfaElevation",
-    "UserMfaSeed",
-    "Warehouse",
-    "WarehouseInventory",
-    "UserWarehouseScope",
-    "StockTransfer",
-    "TransferLineItem",
-    "StockMovement",
-    "Vehicle",
-    "FleetAllocation",
-    "TRANSFER_STATUSES",
-    "MOVEMENT_TYPES",
+    "ActorAlmacenScope",
+    "AuditoriaEvento",
+    "CatalogoMaterial",
+    "Categoria",
+    "Equipo",
+    "EquipoIntegrante",
+    "HistorialImportacion",
+    "InventarioAlmacen",
+    "InventarioEquipo",
+    "MovimientoCabecera",
+    "MovimientoDetalle",
+    "Seccion",
+    "vw_inventario_equipo_completo",
 ]

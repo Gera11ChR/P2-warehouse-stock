@@ -5,11 +5,13 @@ class BusinessRuleError(Exception):
         *,
         code: str = "BUSINESS_RULE_VIOLATION",
         coordinates: list[dict] | None = None,
+        status_code: int = 422,
     ) -> None:
         super().__init__(message)
         self.message = message
         self.code = code
         self.coordinates = coordinates or []
+        self.status_code = status_code
 
     def to_http_detail(self) -> dict:
         return {
@@ -47,52 +49,38 @@ class AuthorizationError(Exception):
         }
 
 
-class TransferIdempotencyConflictError(Exception):
-    def __init__(self, idempotency_key: str) -> None:
-        super().__init__(f"Idempotency key {idempotency_key!r} is in use by another actor")
-        self.idempotency_key = idempotency_key
+class MovimientoNotFoundError(Exception):
+    def __init__(self, movimiento_id: int) -> None:
+        super().__init__(f"Movimiento {movimiento_id} no encontrado")
+        self.movimiento_id = movimiento_id
 
     def to_http_detail(self) -> dict:
         return {
             "error": {
-                "code": "IDEMPOTENCY_KEY_CONFLICT",
-                "message": "Idempotency key is in use by another actor",
+                "code": "MOVIMIENTO_NOT_FOUND",
+                "message": f"Movimiento {self.movimiento_id} no encontrado",
             }
         }
 
 
-class TransferNotFoundError(Exception):
-    def __init__(self, transfer_id) -> None:
-        super().__init__(f"Transfer {transfer_id} not found")
-        self.transfer_id = transfer_id
-
-    def to_http_detail(self) -> dict:
-        return {
-            "error": {
-                "code": "TRANSFER_NOT_FOUND",
-                "message": f"Transfer {self.transfer_id} not found",
-            }
-        }
-
-
-class TransferStateConflictError(Exception):
-    def __init__(self, transfer_id, *, current_status: str, attempted: str) -> None:
+class MovimientoStateError(Exception):
+    def __init__(self, movimiento_id: int, *, estado: str, operacion: str) -> None:
         super().__init__(
-            f"Transfer {transfer_id} in state {current_status} cannot transition via {attempted}"
+            f"Movimiento {movimiento_id} en estado {estado} no permite {operacion}"
         )
-        self.transfer_id = transfer_id
-        self.current_status = current_status
-        self.attempted = attempted
+        self.movimiento_id = movimiento_id
+        self.estado = estado
+        self.operacion = operacion
 
     def to_http_detail(self) -> dict:
         return {
             "error": {
-                "code": "TRANSFER_STATE_CONFLICT",
+                "code": "MOVIMIENTO_STATE_CONFLICT",
                 "message": (
-                    f"Transfer {self.transfer_id} in state {self.current_status} "
-                    f"cannot transition via {self.attempted}"
+                    f"Movimiento {self.movimiento_id} en estado {self.estado} "
+                    f"no permite {self.operacion}"
                 ),
-                "current_status": self.current_status,
-                "attempted_transition": self.attempted,
+                "estado": self.estado,
+                "operacion": self.operacion,
             }
         }

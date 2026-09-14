@@ -18,6 +18,7 @@ import {
 } from '../services/materials'
 import type { MaterialPayload } from '../services/materials'
 import { createTransfer } from '../services/transfers'
+import { listWarehouses } from '../services/warehouses'
 import { useToast } from '../hooks/useToasts'
 import type { InventoryRow } from '../types'
 
@@ -48,7 +49,9 @@ export default function SeccionGeneral({
     almacen: '',
   })
   const [rows, setRows] = useState<InventoryRow[]>([])
-  const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([])
+  const [warehouses, setWarehouses] = useState<
+    { id: string; name: string; is_active: boolean }[]
+  >([])
   const [categorias, setCategorias] = useState<string[]>([])
   const [unidades, setUnidades] = useState<string[]>([])
   const [selected, setSelected] = useState<InventoryRow | null>(null)
@@ -60,16 +63,14 @@ export default function SeccionGeneral({
   const [transferOpen, setTransferOpen] = useState(false)
 
   useEffect(() => {
+    listWarehouses().then(setWarehouses)
     listInventory().then((all) => {
-      const wh = new Map<string, string>()
       const cats = new Set<string>()
       const ums = new Set<string>()
       all.forEach((row) => {
-        wh.set(row.almacen_id, row.almacen)
         if (row.categoria) cats.add(row.categoria)
         if (row.um) ums.add(row.um)
       })
-      setWarehouses([...wh].map(([id, name]) => ({ id, name })))
       setCategorias([...cats])
       setUnidades([...ums])
     })
@@ -262,6 +263,7 @@ export default function SeccionGeneral({
           }
           stockActual={selected?.stock_actual ?? 0}
           alertaStock={selected?.alerta_stock ?? false}
+          almacenId={selected?.almacen_id}
           onSubmit={handleSubmitMaterial}
           onCancel={() => setFormMode(null)}
         />

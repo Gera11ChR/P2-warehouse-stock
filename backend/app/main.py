@@ -2,33 +2,31 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api.v1 import (
-    audit,
-    fiber_optics,
-    inventory,
-    kpis,
-    materials,
-    stock_transfers,
-    team_inventory,
+    ajustes,
+    auditoria,
+    cancelaciones,
+    catalog,
+    equipos,
+    inventario,
+    movimientos,
 )
 from app.errors import (
     AuthorizationError,
     BusinessRuleError,
-    TransferIdempotencyConflictError,
-    TransferNotFoundError,
-    TransferStateConflictError,
+    MovimientoNotFoundError,
+    MovimientoStateError,
 )
-from app.services.audit import record_durable_audit
-from app.telemetry import current_trace_id, emit_log, new_trace_id, trace_id_var
+from app.telemetry import emit_log, new_trace_id, trace_id_var
 
-app = FastAPI(title="P2 Inventory API", version="0.1.0")
+app = FastAPI(title="DMS - TELECOM Inventory API", version="1.0.0")
 
-app.include_router(stock_transfers.router, prefix="/api/v1")
-app.include_router(materials.router, prefix="/api/v1")
-app.include_router(inventory.router, prefix="/api/v1")
-app.include_router(team_inventory.router, prefix="/api/v1")
-app.include_router(fiber_optics.router, prefix="/api/v1")
-app.include_router(kpis.router, prefix="/api/v1")
-app.include_router(audit.router, prefix="/api/v1")
+app.include_router(catalog.router, prefix="/api/v1")
+app.include_router(inventario.router, prefix="/api/v1")
+app.include_router(movimientos.router, prefix="/api/v1")
+app.include_router(cancelaciones.router, prefix="/api/v1")
+app.include_router(ajustes.router, prefix="/api/v1")
+app.include_router(equipos.router, prefix="/api/v1")
+app.include_router(auditoria.router, prefix="/api/v1")
 
 
 @app.middleware("http")
@@ -53,15 +51,6 @@ async def trace_middleware(request: Request, call_next):
 async def authorization_handler(
     request: Request, exc: AuthorizationError
 ) -> JSONResponse:
-    await record_durable_audit(
-        action="AUTHZ_DENIED",
-        actor=exc.actor or "-",
-        details={
-            "path": request.url.path,
-            "code": exc.code,
-            "required_scope": exc.required_scope,
-        },
-    )
     emit_log(
         "authorization_denied",
         code=exc.code,
@@ -72,26 +61,23 @@ async def authorization_handler(
 
 
 @app.exception_handler(BusinessRuleError)
-async def business_rule_handler(request: Request, exc: BusinessRuleError) -> JSONResponse:
-    return JSONResponse(status_code=422, content=exc.to_http_detail())
-
-
-@app.exception_handler(TransferIdempotencyConflictError)
-async def idempotency_conflict_handler(
-    request: Request, exc: TransferIdempotencyConflictError
+async def business_rule_handler(
+    request: Request, exc: BusinessRuleError
 ) -> JSONResponse:
-    return JSONResponse(status_code=409, content=exc.to_http_detail())
+    return JSONResponse(
+        status_code=exc.status_code, content=exc.to_http_detail()
+    )
 
 
-@app.exception_handler(TransferStateConflictError)
-async def state_conflict_handler(
-    request: Request, exc: TransferStateConflictError
-) -> JSONResponse:
-    return JSONResponse(status_code=409, content=exc.to_http_detail())
-
-
-@app.exception_handler(TransferNotFoundError)
-async def not_found_handler(
-    request: Request, exc: TransferNotFoundError
+@app.exception_handler(MovimientoNotFoundError)
+async def movimiento_not_found_handler(
+    request: Request, exc: MovimientoNotFoundError
 ) -> JSONResponse:
     return JSONResponse(status_code=404, content=exc.to_http_detail())
+
+
+@app.exception_handler(MovimientoStateError)
+async def movimiento_state_handler(
+    request: Request, exc: MovimientoStateError
+) -> JSONResponse:
+    return JSONResponse(status_code=409, content=exc.to_http_detail())

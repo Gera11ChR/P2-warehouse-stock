@@ -7,7 +7,7 @@ import { MATERIAL_FIELD_LABELS } from '../utils/materialFields'
 interface TransferDialogProps {
   open: boolean
   material: InventoryRow
-  warehouses: { id: string; name: string }[]
+  warehouses: { id: string; name: string; is_active: boolean }[]
   onSubmit: (destination: string, quantity: number) => void
   onCancel: () => void
 }
@@ -46,7 +46,9 @@ export default function TransferDialog({
     }
   }
 
-  const destinations = warehouses.filter((w) => w.id !== material.almacen_id)
+  const destinations = warehouses
+    .filter((w) => w.id !== material.almacen_id && w.is_active)
+    .map((w) => ({ value: w.id, label: w.name }))
 
   return (
     <Modal open={open} title="Transferir Stock" onClose={onCancel}>
@@ -97,8 +99,8 @@ export default function TransferDialog({
           >
             <option value="">Seleccionar almacén…</option>
             {destinations.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
+              <option key={w.value} value={w.value}>
+                {w.label}
               </option>
             ))}
           </select>

@@ -10,6 +10,7 @@ interface MaterialFormProps {
   initial?: Material
   stockActual?: number
   alertaStock?: boolean
+  almacenId?: string
   onSubmit: (payload: MaterialPayload) => void
   onCancel: () => void
 }
@@ -19,6 +20,7 @@ export default function MaterialForm({
   initial,
   stockActual = 0,
   alertaStock = false,
+  almacenId,
   onSubmit,
   onCancel,
 }: MaterialFormProps) {
@@ -30,6 +32,7 @@ export default function MaterialForm({
   const [codigo, setCodigo] = useState(initial?.codigo ?? '')
   const [categoria, setCategoria] = useState(initial?.categoria ?? '')
   const [tipo, setTipo] = useState(initial?.tipo ?? 'GENERAL')
+  const [stockActualValue, setStockActualValue] = useState(String(stockActual))
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -42,6 +45,9 @@ export default function MaterialForm({
     }
     if (mode === 'create') {
       payload.codigo = codigo
+    } else if (stockActualValue !== '' && Number(stockActualValue) !== stockActual) {
+      payload.on_hand_quantity = Number(stockActualValue)
+      payload.warehouse_id = almacenId
     }
     onSubmit(payload)
   }
@@ -61,12 +67,26 @@ export default function MaterialForm({
       </div>
 
       <div>
-        <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <label
+          htmlFor="stock-actual"
+          className="text-xs font-semibold uppercase tracking-wide text-slate-400"
+        >
           {MATERIAL_FIELD_LABELS.stock_actual}
         </label>
-        <div className="mt-1 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          {stockActual.toLocaleString('es-MX')}
-        </div>
+        {mode === 'edit' ? (
+          <input
+            id="stock-actual"
+            type="number"
+            min={0}
+            value={stockActualValue}
+            onChange={(event) => setStockActualValue(event.target.value)}
+            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        ) : (
+          <div className="mt-1 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
+            {stockActual.toLocaleString('es-MX')}
+          </div>
+        )}
       </div>
 
       <div>

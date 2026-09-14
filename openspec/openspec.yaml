@@ -1,0 +1,127 @@
+openspec: "1.0.0"
+info:
+  title: "DMS - TELECOM Inventory Specification"
+  version: "1.0.0"
+  description: "Contrato de arquitectura y API para la gestión de inventarios y transferencias de DMS - TELECOM."
+
+domain_rules:
+  immutable_id_lista:
+    required: true
+    description: "El id_lista es inmutable, permanente y nunca se re-numera."
+  sparse_equipment_model:
+    required: true
+    description: "inventario_equipos solo contiene filas con existencias o movimientos reales."
+  transaction_delegation:
+    required: true
+    mandatory_functions:
+      - "fn_procesar_movimiento"
+      - "fn_cancelar_movimiento"
+      - "fn_cargar_stock_inicial"
+      - "fn_ajustar_stock_almacen"
+    prohibition: "Cálculos matemáticos de stock prohibidos en Python/FastAPI."
+  classification_schema:
+    legacy_removed: "TIPO"
+    fields:
+      - "categoria_id"
+      - "nueva_categoria"
+
+paths:
+  /api/v1/movimientos/procesar:
+    post:
+      summary: "Ejecutar transferencia TEAMS o devolución DEVOL"
+      operationId: "procesarMovimiento"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - movimiento_id
+              properties:
+                movimiento_id:
+                  type: integer
+      responses:
+        "200":
+          description: "Movimiento procesado exitosamente vía fn_procesar_movimiento"
+        "400":
+          description: "Stock insuficiente o movimiento en estado no válido"
+  /api/v1/movimientos/{id}/cancelar:
+    post:
+      summary: "Cancelar y revertir un movimiento CONFIRMADO"
+      operationId: "cancelarMovimiento"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                motivo:
+                  type: string
+      responses:
+        "200":
+          description: "Movimiento revertido vía fn_cancelar_movimiento"
+        "400":
+          description: "Stock insuficiente para revertir"
+        "409":
+          description: "Movimiento en estado no cancelable"
+  /api/v1/ajustes/carga-inicial:
+    post:
+      summary: "Carga inicial de inventario (alta de material)"
+      operationId: "cargarStockInicial"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - almacen_id
+                - material_id
+                - cantidad
+              properties:
+                almacen_id:
+                  type: integer
+                material_id:
+                  type: integer
+                cantidad:
+                  type: integer
+                motivo:
+                  type: string
+      responses:
+        "200":
+          description: "Inventario inicial registrado vía fn_cargar_stock_inicial"
+        "400":
+          description: "Cantidad negativa o registro de inventario ya existente"
+  /api/v1/ajustes/stock-almacen:
+    post:
+      summary: "Ajuste administrativo de existencias (conciliación)"
+      operationId: "ajustarStockAlmacen"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - almacen_id
+                - material_id
+                - nuevo_stock
+                - motivo
+              properties:
+                almacen_id:
+                  type: integer
+                material_id:
+                  type: integer
+                nuevo_stock:
+                  type: integer
+                motivo:
+                  type: string
+      responses:
+        "200":
+          description: "Stock ajustado vía fn_ajustar_stock_almacen"
+        "400":
+          description: "Stock final negativo o motivo vacío"
+        "404":
+          description: "Sin registro de inventario previo (requiere carga inicial)"
