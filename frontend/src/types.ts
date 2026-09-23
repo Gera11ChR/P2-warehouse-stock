@@ -1,44 +1,78 @@
+// ============================================================================
+// CATÁLOGO Y MATERIALES (contrato real /api/v1/catalogo)
+// ============================================================================
+
+export interface Categoria {
+  id: number
+  nombre: string
+  is_active: boolean
+}
+
 export interface Material {
-  codigo: string
-  descripcion: string | null
-  um: string | null
-  stock_minimo: number | null
+  id_lista: number
+  codigo: string | null
+  descripcion: string
+  categoria_id: number | null
   categoria: string | null
-  tipo: string
+  u_m: string | null
+  stock_minimo: number | null
+  is_active: boolean
 }
 
-export interface InventoryRow {
-  codigo: string
-  descripcion: string | null
-  um: string | null
-  categoria: string | null
+// ============================================================================
+// INVENTARIO Y SECCIONES (contrato real /api/v1/inventario)
+// ============================================================================
+
+export interface Seccion {
+  almacen_id: number
+  nombre: string
   tipo: string
-  stock_actual: number
+  is_active: boolean
+}
+
+export interface SeccionStockRow {
+  material_id: number
+  codigo: string | null
+  descripcion: string
+  u_m: string | null
   stock_minimo: number | null
+  stock_actual: number
   alerta_stock: boolean
+}
+
+/** Fila de inventario con contexto de sección para la UI */
+export interface InventoryRow extends SeccionStockRow {
+  almacen_id: number
   almacen: string
-  almacen_id: string
 }
 
-export interface TeamInventoryItem {
-  id: number
-  equipo: string
-  usuario: string
-  codigo: string
+// ============================================================================
+// EQUIPOS (FASE 2 — contrato real /api/v1/equipos)
+// ============================================================================
+
+export interface Equipo {
+  equipo_id: number
+  nombre: string
   descripcion: string | null
-  cantidad: number
-  ultima_modificacion: string
+  is_active: boolean
+  integrantes: string[]
 }
 
-export interface FiberVariant {
-  id: number
-  codigo: string
-  descripcion: string | null
-  variante: string
-  metros_restantes: number
+/** Fila del inventario sparse por equipo (vista vw_inventario_equipo_completo) */
+export interface CatalogoEquipoRow {
+  equipo_id: number
+  id_lista: number
+  codigo: string | null
+  descripcion: string
+  u_m: string | null
+  stock_minimo: number | null
   stock_actual: number
-  almacen: string | null
+  alerta_stock: boolean
 }
+
+// ============================================================================
+// KPIs (sin endpoint /kpis — agregación visual en FASE 1)
+// ============================================================================
 
 export interface Kpis {
   total_materiales: number
@@ -47,35 +81,87 @@ export interface Kpis {
   transferencias_hoy: number
 }
 
-export interface TransferLine {
-  line_id: number
-  sku: string
-  dispatched_quantity: number
-  received_quantity: number | null
+// ============================================================================
+// MOVIMIENTOS (FASE 3 — contrato real /api/v1/movimientos)
+// ============================================================================
+
+export type TipoMovimiento = 'TEAMS' | 'DEVOL'
+export type EstadoMovimiento = 'BORRADOR' | 'CONFIRMADO' | 'CANCELADO'
+
+export interface DetalleMovimiento {
+  material_id: number
+  cantidad: number
 }
 
-export interface Transfer {
-  transfer_id: string
-  idempotency_key: string
-  status: string
-  source_warehouse_id: string
-  destination_warehouse_id: string
-  requested_by: string
-  approved_by: string | null
+export interface Movimiento {
+  id: number
+  tipo_movimiento: TipoMovimiento
+  estado: EstadoMovimiento
+  usuario: string
+  origen_almacen_id: number | null
+  destino_almacen_id: number | null
+  origen_equipo_id: number | null
+  destino_equipo_id: number | null
+  observaciones: string | null
+  detalle: DetalleMovimiento[]
+}
+
+export const ESTADOS_MOVIMIENTO: Record<EstadoMovimiento, string> = {
+  BORRADOR: 'Borrador',
+  CONFIRMADO: 'Confirmado',
+  CANCELADO: 'Cancelado',
+}
+
+export const TIPOS_MOVIMIENTO: Record<TipoMovimiento, string> = {
+  TEAMS: 'TEAMS',
+  DEVOL: 'DEVOL',
+}
+
+/** Línea de carrito temporal (UX). cantidad_transferir/cantidad_devolver
+ *  son campos SOLO del carrito; el payload real usa material_id + cantidad. */
+export interface CartLine {
+  material_id: number
+  codigo: string | null
+  descripcion: string
+  u_m: string | null
+  stock_disponible: number
+  cantidad_transferir?: number
+  cantidad_devolver?: number
+}
+
+// ============================================================================
+// AUDITORÍA (contrato real /api/v1/auditoria)
+// ============================================================================
+
+export interface EventoAuditoria {
+  id: number
+  usuario: string | null
+  tipo_accion: string
+  material_id: number | null
+  equipo_origen_id: number | null
+  equipo_destino_id: number | null
+  almacen_origen_id: number | null
+  almacen_destino_id: number | null
+  cantidad: number | null
+  resultado: string | null
+  detalles: Record<string, unknown> | null
   created_at: string
-  dispatched_at: string | null
-  received_at: string | null
-  lines: TransferLine[]
 }
 
-export interface AuditLogItem {
-  log_id: number
-  action: string
-  actor: string
-  details: Record<string, unknown> | null
-  created_at: string
+export const TIPOS_ACCION_AUDITORIA: Record<string, string> = {
+  MATERIAL_MODIFICADO: 'Material modificado',
+  TEAMS_TRANSFERENCIA: 'TEAMS — transferencia',
+  DEVOL_DEVOLUCION: 'DEVOL — devolución',
+  MOVIMIENTO_CANCELADO: 'Movimiento cancelado',
+  STOCK_INICIAL: 'Carga inicial de stock',
+  AJUSTE_INVENTARIO: 'Ajuste de inventario',
 }
 
+// ============================================================================
+// CONSTANTES DEL DOMINIO
+// ============================================================================
+
+/** Unidades de medida soportadas (FASE 1 — coincide con backend SUPPORTED_UNITS) */
 export const UNIDADES = [
   'PZ',
   'LT',
@@ -89,37 +175,9 @@ export const UNIDADES = [
   'UNIDAD',
 ] as const
 
-export const TIPOS = ['GENERAL', 'FIBRA'] as const
-
-export const ESTADOS_TRANSFERENCIA: Record<string, string> = {
-  PENDING_APPROVAL: 'Pendiente de aprobación',
-  APPROVED: 'Aprobado',
-  IN_TRANSIT: 'En tránsito',
-  RECEIVED: 'Recibido',
-  REJECTED: 'Rechazado',
-  CANCELLED: 'Cancelado',
-}
-
-export const ACCIONES_AUDITORIA: Record<string, string> = {
-  MATERIAL_CREATE: 'Material creado',
-  MATERIAL_UPDATE: 'Material modificado',
-  MATERIAL_DELETE: 'Material eliminado',
-  TEAM_INVENTORY_CREATE: 'Asignación creada',
-  TEAM_INVENTORY_UPDATE: 'Asignación modificada',
-  TEAM_INVENTORY_DELETE: 'Asignación eliminada',
-  FIBER_VARIANT_CREATE: 'Variante creada',
-  TRANSFER_CREATE: 'Transferencia creada',
-  TRANSFER_APPROVE: 'Transferencia aprobada',
-  TRANSFER_REJECT: 'Transferencia rechazada',
-  TRANSFER_DISPATCH: 'Transferencia despachada',
-  TRANSFER_RECEIVE: 'Transferencia recibida',
-  TRANSFER_CANCEL: 'Transferencia cancelada',
-  AUTHZ_DENIED: 'Acceso denegado',
-  STOCK_ADJUST: 'Ajuste de stock',
-  STOCK_ADJUST_BULK: 'Ajuste de stock masivo',
-  STOCK_ADJUST_MANUAL: 'Ajuste manual',
-  FLEET_ALLOCATION: 'Asignación de flota',
-}
+// ============================================================================
+// NAVEGACIÓN (UI)
+// ============================================================================
 
 export interface NavigationTarget {
   page: string

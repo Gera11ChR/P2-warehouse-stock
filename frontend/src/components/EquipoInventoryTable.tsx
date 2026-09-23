@@ -1,4 +1,4 @@
-import type { InventoryRow } from '../types'
+import type { CatalogoEquipoRow } from '../types'
 import { stockLevel } from '../utils/stockLevel'
 import type { StockLevel } from '../utils/stockLevel'
 
@@ -8,17 +8,13 @@ const LEVEL_CLASS: Record<StockLevel, string> = {
   critical: 'bg-red-100 text-red-700',
 }
 
-interface InventoryTableProps {
-  rows: InventoryRow[]
-  selectedCodigo: string | null
-  onSelect: (row: InventoryRow) => void
+interface EquipoInventoryTableProps {
+  rows: CatalogoEquipoRow[]
 }
 
-export default function InventoryTable({
+export default function EquipoInventoryTable({
   rows,
-  selectedCodigo,
-  onSelect,
-}: InventoryTableProps) {
+}: EquipoInventoryTableProps) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <table className="w-full text-left text-sm">
@@ -31,26 +27,20 @@ export default function InventoryTable({
             <th className="px-4 py-3">Stock Actual</th>
             <th className="px-4 py-3">Stock Mínimo</th>
             <th className="px-4 py-3">Alerta Stock</th>
-            <th className="px-4 py-3">Almacén</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((row) => {
             const level = stockLevel(row)
-            const selected = selectedCodigo === row.codigo
             return (
-              <tr
-                key={`${row.material_id}-${row.almacen_id}`}
-                onClick={() => onSelect(row)}
-                className={`cursor-pointer transition-colors hover:bg-blue-50 ${
-                  selected ? 'bg-blue-50' : ''
-                }`}
-              >
+              <tr key={row.id_lista} className="hover:bg-slate-50">
                 <td className="px-4 py-3 font-mono text-sm font-semibold text-slate-600">
-                  {row.material_id}
+                  {row.id_lista}
                 </td>
-                <td className="px-4 py-3 font-mono text-slate-700">{row.codigo ?? '—'}</td>
-                <td className="px-4 py-3 text-slate-700">{row.descripcion ?? '—'}</td>
+                <td className="px-4 py-3 font-mono text-slate-700">
+                  {row.codigo ?? '—'}
+                </td>
+                <td className="px-4 py-3 text-slate-700">{row.descripcion}</td>
                 <td className="px-4 py-3 text-slate-500">{row.u_m ?? '—'}</td>
                 <td className="px-4 py-3">
                   <span
@@ -71,12 +61,16 @@ export default function InventoryTable({
                     <span className="text-slate-400">—</span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-slate-700">{row.almacen}</td>
               </tr>
             )
           })}
         </tbody>
       </table>
+      {rows.length === 0 && (
+        <div className="p-6 text-center text-sm text-slate-500">
+          No hay registros de inventario para este equipo.
+        </div>
+      )}
     </div>
   )
 }

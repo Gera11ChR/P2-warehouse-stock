@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowRightLeft, Pencil, Trash2, X } from 'lucide-react'
+import { Pencil, Trash2, X } from 'lucide-react'
 
 interface MaterialDetailDrawerProps {
   open: boolean
@@ -13,7 +13,6 @@ interface MaterialDetailDrawerProps {
   metrosRestantes?: number | null
   onModificar: () => void
   onEliminar: () => void
-  onTransferir: () => void
 }
 
 function Field({
@@ -45,7 +44,6 @@ export default function MaterialDetailDrawer({
   metrosRestantes,
   onModificar,
   onEliminar,
-  onTransferir,
 }: MaterialDetailDrawerProps) {
   if (!open) {
     return null
@@ -112,13 +110,6 @@ export default function MaterialDetailDrawer({
           className="flex flex-1 items-center justify-center gap-1 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
         >
           <Trash2 className="h-4 w-4" /> Eliminar
-        </button>
-        <button
-          type="button"
-          onClick={onTransferir}
-          className="flex flex-1 items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <ArrowRightLeft className="h-4 w-4" /> Transferir Stock
         </button>
       </div>
     </aside>

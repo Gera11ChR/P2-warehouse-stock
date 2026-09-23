@@ -1,69 +1,82 @@
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import {
   AlertTriangle,
   ArrowRightLeft,
   Boxes,
   Layers,
 } from 'lucide-react'
-import { getKpis } from '../services/kpis'
-import type { Kpis } from '../types'
+import type { SeccionStockRow } from '../types'
 
 interface KpiCardsProps {
-  refreshToken: number
+  stock: SeccionStockRow[]
 }
 
 interface CardDef {
-  key: keyof Kpis
+  key: string
   label: string
+  value: number
   icon: typeof Boxes
   iconClass: string
+  note?: string
 }
 
-const CARDS: CardDef[] = [
-  {
-    key: 'total_materiales',
-    label: 'Total Materiales',
-    icon: Boxes,
-    iconClass: 'bg-blue-500',
-  },
-  {
-    key: 'stock_total',
-    label: 'Stock Total',
-    icon: Layers,
-    iconClass: 'bg-green-500',
-  },
-  {
-    key: 'alertas_stock',
-    label: 'Alertas Stock',
-    icon: AlertTriangle,
-    iconClass: 'bg-amber-500',
-  },
-  {
-    key: 'transferencias_hoy',
-    label: 'Transferencias Hoy',
-    icon: ArrowRightLeft,
-    iconClass: 'bg-purple-500',
-  },
-]
+export default function KpiCards({
+  stock,
+}: KpiCardsProps) {
+  // ============================================================================
+  // AGREGACIÓN VISUAL (permitida por prompt maestro como proyección visual)
+  // ============================================================================
 
-export default function KpiCards({ refreshToken }: KpiCardsProps) {
-  const [kpis, setKpis] = useState<Kpis | null>(null)
+  const cards: CardDef[] = useMemo(() => {
+    // Total Materiales: unique material_id in stock (conteo de filas únicas)
+    const totalMateriales = new Set(stock.map((r) => r.material_id)).size
 
-  useEffect(() => {
-    let active = true
-    getKpis().then((data) => {
-      if (active) setKpis(data)
-    })
-    return () => {
-      active = false
-    }
-  }, [refreshToken])
+    // Stock Total: suma de stock_actual
+    const stockTotal = stock.reduce((acc, row) => acc + row.stock_actual, 0)
+
+    // Alertas Stock: cantidad de filas con alerta_stock = true
+    const alertasStock = stock.filter((row) => row.alerta_stock).length
+
+    // Transferencias Hoy: sin endpoint /kpis ni movimientos (FASE 3) → 0
+    const transferenciasHoy = 0
+
+    return [
+      {
+        key: 'total_materiales',
+        label: 'Total Materiales',
+        value: totalMateriales,
+        icon: Boxes,
+        iconClass: 'bg-blue-500',
+      },
+      {
+        key: 'stock_total',
+        label: 'Stock Total',
+        value: stockTotal,
+        icon: Layers,
+        iconClass: 'bg-green-500',
+      },
+      {
+        key: 'alertas_stock',
+        label: 'Alertas Stock',
+        value: alertasStock,
+        icon: AlertTriangle,
+        iconClass: 'bg-amber-500',
+      },
+      {
+        key: 'transferencias_hoy',
+        label: 'Transferencias Hoy',
+        value: transferenciasHoy,
+        icon: ArrowRightLeft,
+        iconClass: 'bg-purple-500',
+        note: 'Disponible en FASE 3',
+      },
+    ]
+  }, [stock])
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {CARDS.map((card) => {
+      {cards.map((card) => {
         const Icon = card.icon
-        const value = kpis ? kpis[card.key] : 0
         return (
           <div
             key={card.key}
@@ -74,11 +87,14 @@ export default function KpiCards({ refreshToken }: KpiCardsProps) {
             >
               <Icon className="h-6 w-6 text-white" />
             </div>
-            <div>
+            <div className="flex-1">
               <p className="text-sm text-slate-500">{card.label}</p>
               <p className="text-2xl font-semibold text-slate-800">
-                {value.toLocaleString('es-MX')}
+                {card.value.toLocaleString('es-MX')}
               </p>
+              {card.note && (
+                <p className="text-xs text-slate-400">{card.note}</p>
+              )}
             </div>
           </div>
         )

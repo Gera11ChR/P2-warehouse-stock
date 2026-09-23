@@ -1,8 +1,12 @@
-import type { InventoryRow } from '../types'
-
 export type StockLevel = 'normal' | 'low' | 'critical'
 
-export function stockLevel(row: InventoryRow): StockLevel {
+interface StockRow {
+  stock_actual: number
+  stock_minimo: number | null
+  alerta_stock: boolean
+}
+
+export function stockLevel(row: StockRow): StockLevel {
   if (row.alerta_stock || row.stock_actual <= 0) {
     return 'critical'
   }

@@ -3,7 +3,7 @@ export const MATERIAL_FIELD_ORDER = [
   'stock_actual',
   'stock_minimo',
   'alerta_stock',
-  'um',
+  'u_m',
   'codigo',
 ] as const
 
@@ -14,6 +14,6 @@ export const MATERIAL_FIELD_LABELS: Record<MaterialFieldKey, string> = {
   stock_actual: 'Stock Actual',
   stock_minimo: 'Stock Mínimo',
   alerta_stock: 'Alerta Stock',
-  um: 'U.M.',
+  u_m: 'U.M.',
   codigo: 'Código (SKU)',
 }

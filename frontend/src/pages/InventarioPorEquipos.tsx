@@ -1,215 +1,312 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
-import { Plus, Trash2, Pencil } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import axios from 'axios'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 import {
-  createTeamInventory,
-  deleteTeamInventory,
-  listTeamInventory,
-  updateTeamInventory,
-} from '../services/teamInventory'
-import { listMaterials } from '../services/materials'
+  listEquipos,
+  createEquipo,
+  updateEquipo,
+  deleteEquipo,
+} from '../services/equipos'
+import type {
+  EquipoCreatePayload,
+  EquipoUpdatePayload,
+} from '../services/equipos'
+import { catalogoEquipo } from '../services/inventory'
+import EquipoInventoryTable from '../components/EquipoInventoryTable'
+import EquipoForm from '../components/EquipoForm'
+import Modal from '../components/Modal'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../hooks/useToasts'
-import type { Material, TeamInventoryItem } from '../types'
+import type { Equipo } from '../types'
 
-function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString('es-MX')
+function errorMessage(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data as
+      | { error?: { message?: string } }
+      | undefined
+    if (detail?.error?.message) {
+      return detail.error.message
+    }
+  }
+  return 'Ocurrió un error'
 }
 
 export default function InventarioPorEquipos() {
   const { pushToast, pushError } = useToast()
-  const [items, setItems] = useState<TeamInventoryItem[]>([])
-  const [materials, setMaterials] = useState<Material[]>([])
-  const [equipo, setEquipo] = useState('')
-  const [usuario, setUsuario] = useState('')
-  const [codigo, setCodigo] = useState('')
-  const [cantidad, setCantidad] = useState('')
-  const [editingId, setEditingId] = useState<number | null>(null)
+  const queryClient = useQueryClient()
 
-  const refresh = () => {
-    listTeamInventory().then(setItems)
-  }
+  const [selectedEquipoId, setSelectedEquipoId] = useState<number | null>(null)
+  const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null)
+  const [equipoToEdit, setEquipoToEdit] = useState<Equipo | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [equipoToDelete, setEquipoToDelete] = useState<Equipo | null>(null)
 
-  useEffect(() => {
-    refresh()
-    listMaterials().then(setMaterials)
-  }, [])
+  // ============================================================================
+  // QUERIES
+  // ============================================================================
 
-  const descripcion = useMemo(() => {
-    const material = materials.find((m) => m.codigo === codigo)
-    return material?.descripcion ?? null
-  }, [materials, codigo])
+  const {
+    data: equipos = [],
+    isLoading: equiposLoading,
+    isError: equiposError,
+  } = useQuery({
+    queryKey: ['equipos'],
+    queryFn: listEquipos,
+  })
 
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!equipo || !usuario || !codigo || cantidad === '') {
-      return
+  // Compute effective equipo_id: use selected or default to first active
+  const effectiveEquipoId = useMemo(() => {
+    if (selectedEquipoId !== null) {
+      return selectedEquipoId
     }
-    try {
-      if (editingId === null) {
-        await createTeamInventory({
-          equipo,
-          usuario,
-          codigo,
-          cantidad: Number(cantidad),
-        })
-        pushToast('Asignación creada')
-      } else {
-        await updateTeamInventory(editingId, {
-          equipo,
-          usuario,
-          cantidad: Number(cantidad),
-        })
-        pushToast('Asignación modificada')
+    const first = equipos.find((e) => e.is_active)
+    return first?.equipo_id ?? null
+  }, [selectedEquipoId, equipos])
+
+  const {
+    data: inventarioRows = [],
+    isLoading: inventarioLoading,
+    isError: inventarioError,
+    error: inventarioErrorObj,
+  } = useQuery({
+    queryKey: ['equipo', effectiveEquipoId],
+    queryFn: () => catalogoEquipo(effectiveEquipoId!),
+    enabled: effectiveEquipoId !== null,
+  })
+
+  // ============================================================================
+  // MUTATIONS
+  // ============================================================================
+
+  const createMut = useMutation({
+    mutationFn: createEquipo,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipos'] })
+      pushToast('Equipo creado')
+      setFormMode(null)
+    },
+    onError: (error) => pushError(errorMessage(error)),
+  })
+
+  const updateMut = useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: number
+      payload: EquipoUpdatePayload
+    }) => updateEquipo(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipos'] })
+      queryClient.invalidateQueries({ queryKey: ['equipo', effectiveEquipoId] })
+      pushToast('Equipo modificado')
+      setFormMode(null)
+      setEquipoToEdit(null)
+    },
+    onError: (error) => pushError(errorMessage(error)),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: deleteEquipo,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipos'] })
+      pushToast('Equipo eliminado')
+      setDeleteOpen(false)
+      setEquipoToDelete(null)
+      // Si eliminamos el equipo actualmente seleccionado, limpiar la selección
+      if (equipoToDelete?.equipo_id === selectedEquipoId) {
+        setSelectedEquipoId(null)
       }
-      setEquipo('')
-      setUsuario('')
-      setCodigo('')
-      setCantidad('')
-      setEditingId(null)
-      refresh()
-    } catch {
-      pushError('No se pudo guardar la asignación')
+    },
+    onError: (error) => pushError(errorMessage(error)),
+  })
+
+  const handleSubmitEquipo = async (
+    payload: EquipoCreatePayload | EquipoUpdatePayload,
+  ) => {
+    if (formMode === 'create') {
+      createMut.mutate(payload as EquipoCreatePayload)
+    } else if (equipoToEdit) {
+      updateMut.mutate({ id: equipoToEdit.equipo_id, payload })
     }
   }
 
-  const handleEdit = (item: TeamInventoryItem) => {
-    setEditingId(item.id)
-    setEquipo(item.equipo)
-    setUsuario(item.usuario)
-    setCodigo(item.codigo)
-    setCantidad(String(item.cantidad))
-  }
-
-  const handleDelete = async (id: number) => {
-    try {
-      await deleteTeamInventory(id)
-      pushToast('Asignación eliminada')
-      refresh()
-    } catch {
-      pushError('No se pudo eliminar la asignación')
+  const handleDelete = () => {
+    if (equipoToDelete) {
+      deleteMut.mutate(equipoToDelete.equipo_id)
     }
   }
+
+  const handleEditEquipo = (equipo: Equipo) => {
+    setEquipoToEdit(equipo)
+    setFormMode('edit')
+  }
+
+  const handleDeleteEquipo = (equipo: Equipo) => {
+    setEquipoToDelete(equipo)
+    setDeleteOpen(true)
+  }
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
 
   return (
     <div className="space-y-4">
-      <form
-        onSubmit={handleSubmit}
-        className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-5"
-      >
-        <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Equipo
-          </label>
-          <input
-            type="text"
-            value={equipo}
-            onChange={(event) => setEquipo(event.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Usuario
-          </label>
-          <input
-            type="text"
-            value={usuario}
-            onChange={(event) => setUsuario(event.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Código SKU
-          </label>
-          <input
-            type="text"
-            value={codigo}
-            disabled={editingId !== null}
-            onChange={(event) => setCodigo(event.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm disabled:bg-slate-100"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Descripción
-          </label>
-          <div className="mt-1 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-            {descripcion ?? '—'}
-          </div>
-        </div>
-        <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Cantidad
-          </label>
-          <input
-            type="number"
-            min={1}
-            value={cantidad}
-            onChange={(event) => setCantidad(event.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
+      {/* Header con acciones */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-semibold text-slate-800">
+          Inventario por Equipos
+        </h2>
         <button
-          type="submit"
-          className="col-span-2 mt-1 flex items-center justify-center gap-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 md:col-span-5"
+          type="button"
+          onClick={() => setFormMode('create')}
+          className="flex items-center gap-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
         >
-          <Plus className="h-4 w-4" />
-          {editingId === null ? 'Asignar' : 'Actualizar'}
+          <Plus className="h-4 w-4" /> Crear Equipo
         </button>
-      </form>
-
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Equipo</th>
-              <th className="px-4 py-3">Usuario</th>
-              <th className="px-4 py-3">Código SKU</th>
-              <th className="px-4 py-3">Descripción</th>
-              <th className="px-4 py-3">Cantidad</th>
-              <th className="px-4 py-3">Última Modificación</th>
-              <th className="px-4 py-3">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {items.map((item) => (
-              <tr key={item.id}>
-                <td className="px-4 py-3 text-slate-700">{item.equipo}</td>
-                <td className="px-4 py-3 text-slate-700">{item.usuario}</td>
-                <td className="px-4 py-3 font-mono text-slate-700">{item.codigo}</td>
-                <td className="px-4 py-3 text-slate-700">
-                  {item.descripcion ?? '—'}
-                </td>
-                <td className="px-4 py-3 text-slate-700">{item.cantidad}</td>
-                <td className="px-4 py-3 text-slate-500">
-                  {formatTimestamp(item.ultima_modificacion)}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(item)}
-                      className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                      aria-label="Modificar"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(item.id)}
-                      className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                      aria-label="Eliminar"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
+
+      {/* Selector de equipo */}
+      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-700">
+              Seleccionar Equipo
+            </label>
+            {equiposLoading && (
+              <p className="mt-1 text-sm text-slate-500">Cargando equipos...</p>
+            )}
+            {equiposError && (
+              <p className="mt-1 text-sm text-red-600">
+                No se pudieron cargar los equipos
+              </p>
+            )}
+            {!equiposLoading && !equiposError && (
+              <select
+                value={effectiveEquipoId ?? ''}
+                onChange={(e) =>
+                  setSelectedEquipoId(
+                    e.target.value === '' ? null : Number(e.target.value),
+                  )
+                }
+                className="mt-1 w-full max-w-md rounded-md border border-slate-300 px-3 py-2 text-sm font-medium"
+              >
+                <option value="">— Seleccione un equipo —</option>
+                {equipos
+                  .filter((e) => e.is_active)
+                  .map((e) => (
+                    <option key={e.equipo_id} value={e.equipo_id}>
+                      {e.nombre} ({e.integrantes.length}{' '}
+                      {e.integrantes.length === 1 ? 'integrante' : 'integrantes'})
+                    </option>
+                  ))}
+              </select>
+            )}
+          </div>
+          {effectiveEquipoId !== null && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const equipo = equipos.find(
+                    (e) => e.equipo_id === effectiveEquipoId,
+                  )
+                  if (equipo) handleEditEquipo(equipo)
+                }}
+                className="flex items-center gap-1 rounded-md bg-yellow-500 px-3 py-2 text-sm font-medium text-white hover:bg-yellow-600"
+              >
+                <Pencil className="h-4 w-4" /> Modificar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const equipo = equipos.find(
+                    (e) => e.equipo_id === effectiveEquipoId,
+                  )
+                  if (equipo) handleDeleteEquipo(equipo)
+                }}
+                className="flex items-center gap-1 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                <Trash2 className="h-4 w-4" /> Eliminar
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tabla de inventario sparse */}
+      <div>
+        {effectiveEquipoId === null && (
+          <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
+            <p className="text-slate-500">
+              Seleccione un equipo para ver su inventario
+            </p>
+          </div>
+        )}
+
+        {effectiveEquipoId !== null && inventarioLoading && (
+          <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
+            <p className="text-slate-500">Cargando inventario...</p>
+          </div>
+        )}
+
+        {effectiveEquipoId !== null && inventarioError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+            <p className="text-red-700">
+              No se pudo obtener el inventario del equipo
+            </p>
+            <p className="mt-1 text-sm text-red-600">
+              {errorMessage(inventarioErrorObj)}
+            </p>
+          </div>
+        )}
+
+        {effectiveEquipoId !== null &&
+          !inventarioLoading &&
+          !inventarioError && (
+            <>
+              <EquipoInventoryTable rows={inventarioRows} />
+              <p className="mt-2 text-xs text-slate-500">
+                Mostrando {inventarioRows.length} materiales (modelo sparse: stock 0
+                donde no hay registro físico)
+              </p>
+            </>
+          )}
+      </div>
+
+      {/* Modal CRUD */}
+      <Modal
+        open={formMode !== null}
+        title={formMode === 'create' ? 'Crear Equipo' : 'Modificar Equipo'}
+        onClose={() => {
+          setFormMode(null)
+          setEquipoToEdit(null)
+        }}
+      >
+        <EquipoForm
+          mode={formMode ?? 'create'}
+          initial={equipoToEdit ?? undefined}
+          onSubmit={handleSubmitEquipo}
+          onCancel={() => {
+            setFormMode(null)
+            setEquipoToEdit(null)
+          }}
+        />
+      </Modal>
+
+      {/* Confirmación de eliminación */}
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Eliminar Equipo"
+        message={`¿Seguro que deseas eliminar el equipo "${equipoToDelete?.nombre ?? ''}"? Esta acción marcará el equipo como inactivo.`}
+        onConfirm={handleDelete}
+        onCancel={() => {
+          setDeleteOpen(false)
+          setEquipoToDelete(null)
+        }}
+      />
     </div>
   )
 }

@@ -47,7 +47,7 @@ export default function Sidebar({ current, onNavigate }: SidebarProps) {
     <aside className="flex h-screen w-64 shrink-0 flex-col bg-slate-900 text-slate-200">
       <div className="flex h-16 items-center gap-2 border-b border-slate-700 px-5">
         <Cable className="h-6 w-6 text-blue-400" />
-        <span className="text-lg font-semibold text-white">P2 WMS</span>
+        <span className="text-lg font-semibold text-white">DMS - TELECOM</span>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {NAV_ITEMS.map((item) => {

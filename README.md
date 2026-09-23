@@ -111,8 +111,9 @@ P2-warehouse-stock/
 ├── backend/
 │   ├── alembic/              # Migraciones DDL de base de datos
 │   ├── app/                  # Código fuente de FastAPI (Routers, Core, Models, Services)
+│   ├── db/                   # Contrato DDL de base de datos (ddl.sql)
 │   └── tests/                # Suite E2E de pruebas aisladas
-├── data/                     # Scripts de base de datos y siembra inicial (ddl.sql)
+├── data/                     # Archivos de siembra inicial (Excel DMS)
 ├── docs/                     # Informes de auditoría y dictámenes
 ├── frontend/                 # Aplicación SPA cliente (React/Vite)
 └── openspec/                 # Especificaciones del contrato API y reglas de negocio

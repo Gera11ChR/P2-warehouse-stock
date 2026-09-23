@@ -1,4 +1,4 @@
-import { Plus, Pencil, Trash2, ArrowRightLeft } from 'lucide-react'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 
 export interface FilterState {
   buscar: string
@@ -13,10 +13,11 @@ interface FilterToolbarProps {
   categorias: string[]
   unidades: string[]
   almacenes: { id: string; name: string }[]
+  selectedAlmacen?: number | null
+  onAlmacenChange?: (id: number) => void
   onAgregar: () => void
   onModificar: () => void
   onEliminar: () => void
-  onTransferir: () => void
 }
 
 export default function FilterToolbar({
@@ -25,10 +26,11 @@ export default function FilterToolbar({
   categorias,
   unidades,
   almacenes,
+  selectedAlmacen,
+  onAlmacenChange,
   onAgregar,
   onModificar,
   onEliminar,
-  onTransferir,
 }: FilterToolbarProps) {
   const set = (key: keyof FilterState, value: string) =>
     onChange({ ...filters, [key]: value })
@@ -66,18 +68,25 @@ export default function FilterToolbar({
           </option>
         ))}
       </select>
-      <select
-        value={filters.almacen}
-        onChange={(event) => set('almacen', event.target.value)}
-        className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-      >
-        <option value="">Almacén</option>
-        {almacenes.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name}
-          </option>
-        ))}
-      </select>
+
+      {onAlmacenChange && (
+        <select
+          value={selectedAlmacen ?? ''}
+          onChange={(event) =>
+            onAlmacenChange(
+              event.target.value === '' ? 0 : Number(event.target.value),
+            )
+          }
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium"
+        >
+          <option value="">— Almacén —</option>
+          {almacenes.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      )}
 
       <div className="ml-auto flex items-center gap-2">
         <button
@@ -100,13 +109,6 @@ export default function FilterToolbar({
           className="flex items-center gap-1 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
         >
           <Trash2 className="h-4 w-4" /> Eliminar
-        </button>
-        <button
-          type="button"
-          onClick={onTransferir}
-          className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <ArrowRightLeft className="h-4 w-4" /> Transferir Stock
         </button>
       </div>
     </div>
