@@ -107,7 +107,7 @@ El proyecto evoluciona mediante **Spec-Driven Development (SDD)**. Toda modifica
 ## 📂 Estructura del Repositorio
 
 ```text
-P2-warehouse-stock/
+P2/
 ├── backend/
 │   ├── alembic/              # Migraciones DDL de base de datos
 │   ├── app/                  # Código fuente de FastAPI (Routers, Core, Models, Services)
