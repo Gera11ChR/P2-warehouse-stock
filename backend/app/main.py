@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1 import (
@@ -20,6 +21,15 @@ from app.errors import (
 from app.telemetry import emit_log, new_trace_id, trace_id_var
 
 app = FastAPI(title="DMS - TELECOM Inventory API", version="1.0.0")
+
+# Origen del dev server Vite (sin ["*"] por default-deny, Constitution 3.1;
+# la autenticación viaja en X-Actor, no en cookies).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(catalog.router, prefix="/api/v1")
 app.include_router(inventario.router, prefix="/api/v1")

@@ -1,4 +1,4 @@
-import type { CatalogoEquipoRow } from '../types'
+import type { InventarioEquipoRow } from '../types'
 import { stockLevel } from '../utils/stockLevel'
 import type { StockLevel } from '../utils/stockLevel'
 
@@ -9,7 +9,7 @@ const LEVEL_CLASS: Record<StockLevel, string> = {
 }
 
 interface EquipoInventoryTableProps {
-  rows: CatalogoEquipoRow[]
+  rows: InventarioEquipoRow[]
 }
 
 export default function EquipoInventoryTable({
@@ -20,7 +20,7 @@ export default function EquipoInventoryTable({
       <table className="w-full text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr>
-            <th className="px-4 py-3">ID Lista</th>
+            <th className="px-4 py-3">Nº</th>
             <th className="px-4 py-3">Código</th>
             <th className="px-4 py-3">Descripción</th>
             <th className="px-4 py-3">U.M.</th>
@@ -30,12 +30,12 @@ export default function EquipoInventoryTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((row) => {
+          {rows.map((row, index) => {
             const level = stockLevel(row)
             return (
-              <tr key={row.id_lista} className="hover:bg-slate-50">
+              <tr key={row.material_id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 font-mono text-sm font-semibold text-slate-600">
-                  {row.id_lista}
+                  {index + 1}
                 </td>
                 <td className="px-4 py-3 font-mono text-slate-700">
                   {row.codigo ?? '—'}

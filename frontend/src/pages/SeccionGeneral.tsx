@@ -12,6 +12,7 @@ import MaterialForm from '../components/MaterialForm'
 import ConfirmDialog from '../components/ConfirmDialog'
 import {
   listCategorias,
+  listCatalog,
   createMaterial,
   updateMaterial,
   deleteMaterial,
@@ -68,6 +69,37 @@ export default function SeccionGeneral({
     queryFn: listCategorias,
   })
 
+  // REQ-UI-005: join de PRESENTACIÓN material_id → categoría desde el
+  // contrato oficial /catalogo. La fila de stock por sección no incluye
+  // categoría; este mapa solo proyecta la columna y alimenta el filtro.
+  const { data: catalogoData } = useQuery({
+    queryKey: ['catalogo'],
+    queryFn: () => listCatalog(),
+    select: (data) => data.materiales,
+  })
+
+  const categoriaPorMaterial = useMemo(() => {
+    const mapa: Record<number, string> = {}
+    for (const m of catalogoData ?? []) {
+      if (m.categoria) {
+        mapa[m.id_lista] = m.categoria
+      }
+    }
+    return mapa
+  }, [catalogoData])
+
+  // F.4 (REQ-API-004/005): precarga del id de categoría al editar material.
+  // Evita el síntoma del Issue #10 ("la categoría desaparece al editar").
+  const categoriaIdPorMaterial = useMemo(() => {
+    const mapa: Record<number, number> = {}
+    for (const m of catalogoData ?? []) {
+      if (m.categoria_id != null) {
+        mapa[m.id_lista] = m.categoria_id
+      }
+    }
+    return mapa
+  }, [catalogoData])
+
   const { data: secciones = [] } = useQuery({
     queryKey: ['secciones'],
     queryFn: listSecciones,
@@ -114,24 +146,21 @@ export default function SeccionGeneral({
       result = result.filter(
         (row) =>
           row.descripcion?.toLowerCase().includes(lower) ||
-          row.codigo?.toLowerCase().includes(lower) ||
-          String(row.material_id).includes(lower),
+          row.codigo?.toLowerCase().includes(lower),
       )
     }
     if (filters.um) {
       result = result.filter((row) => row.u_m === filters.um)
     }
-    // categoria filter by nombre — need to resolve id from categorias
+    // REQ-UI-005: filtro por categoría (nombre) resuelto con el join de
+    // presentación material_id → categoría del catálogo oficial.
     if (filters.categoria) {
-      const catId = categorias.find((c) => c.nombre === filters.categoria)?.id
-      if (catId !== undefined) {
-        // We don't have categoria_id in SeccionStockRow; we'd need to join with catalog
-        // For simplicity, skip categoria filter on stock view or fetch full catalog
-        // Let's skip it for now (or filter by fetching catalog — beyond minimal FASE 1)
-      }
+      result = result.filter(
+        (row) => categoriaPorMaterial[row.material_id] === filters.categoria,
+      )
     }
     return result
-  }, [rows, globalSearch, filters, categorias])
+  }, [rows, globalSearch, filters, categoriaPorMaterial])
 
   const handleFiltersChange = (next: FilterState) => {
     setFilters(next)
@@ -154,6 +183,7 @@ export default function SeccionGeneral({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stock', effectiveAlmacenId] })
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
+      queryClient.invalidateQueries({ queryKey: ['catalogo'] })
       pushToast('Material creado')
       setFormMode(null)
     },
@@ -166,6 +196,7 @@ export default function SeccionGeneral({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stock', effectiveAlmacenId] })
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
+      queryClient.invalidateQueries({ queryKey: ['catalogo'] })
       pushToast('Material modificado')
       setFormMode(null)
     },
@@ -175,7 +206,18 @@ export default function SeccionGeneral({
   const deleteMut = useMutation({
     mutationFn: deleteMaterial,
     onSuccess: () => {
+      // REQ-UI-003 (F.2): el material eliminado debe desaparecer de TODAS
+      // las vistas activas — stock de sección, catálogo (Buscador a granel,
+      // Reportes y join de categoría), inventario autónomo de equipos e
+      // inventarios FO. El backend ya lo omite en las respuestas; estas
+      // invalidaciones fuerzan el refetch para reflejarlo sin ghost records.
       queryClient.invalidateQueries({ queryKey: ['stock', effectiveAlmacenId] })
+      queryClient.invalidateQueries({ queryKey: ['catalogo'] })
+      queryClient.invalidateQueries({ queryKey: ['categorias'] })
+      queryClient.invalidateQueries({ queryKey: ['equipos'] })
+      queryClient.invalidateQueries({ queryKey: ['equipo'] })
+      queryClient.invalidateQueries({ queryKey: ['fibra'] })
+      queryClient.invalidateQueries({ queryKey: ['auditoria'] })
       pushToast('Material eliminado')
       setDeleteOpen(false)
       setSelected(null)
@@ -264,6 +306,7 @@ export default function SeccionGeneral({
                 rows={paginatedRows}
                 selectedCodigo={selected?.codigo ?? null}
                 onSelect={setSelected}
+                categoriaPorMaterial={categoriaPorMaterial}
               />
               <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
                 <span>
@@ -326,8 +369,8 @@ export default function SeccionGeneral({
                   descripcion: selected.descripcion,
                   u_m: selected.u_m,
                   stock_minimo: selected.stock_minimo,
-                  categoria_id: null,
-                  categoria: null,
+                  categoria_id: categoriaIdPorMaterial[selected.material_id] ?? null,
+                  categoria: categoriaPorMaterial[selected.material_id] ?? null,
                   is_active: true,
                 }
               : undefined

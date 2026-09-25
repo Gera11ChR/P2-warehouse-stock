@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Check, Plus, Search, Trash2, Undo2, X } from 'lucide-react'
 import Modal from '../components/Modal'
-import { listEquipos } from '../services/equipos'
-import { catalogoEquipo, listSecciones, stockSeccion } from '../services/inventory'
+import { listEquipos, inventarioEquipo } from '../services/equipos'
+import { listSecciones, stockSeccion } from '../services/inventory'
 import {
   cancelarMovimiento,
   crearBorrador,
@@ -99,6 +99,9 @@ function CartRows({
                 saldoEstimado < 0 ? 'font-semibold text-red-600' : 'text-slate-500'
               }`}
             >
+              <span className="mr-1 inline-flex rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+                Proyección visual
+              </span>
               Saldo estimado después de la operación:{' '}
               {saldoEstimado.toLocaleString('es-MX')}
               {saldoEstimado < 0 && ' — supera el stock disponible (visual)'}
@@ -155,7 +158,7 @@ export default function Transferencias() {
 
   const inventarioEquipoQuery = useQuery({
     queryKey: ['equipo', equipoOrigen],
-    queryFn: () => catalogoEquipo(equipoOrigen!),
+    queryFn: () => inventarioEquipo(equipoOrigen!),
     enabled: tab === 'DEVOL' && equipoOrigen !== null,
   })
 
@@ -197,7 +200,7 @@ export default function Transferencias() {
           (r.codigo ?? '').toLowerCase().includes(term),
       )
       .map((r) => ({
-        material_id: r.id_lista,
+        material_id: r.material_id,
         codigo: r.codigo,
         descripcion: r.descripcion,
         u_m: r.u_m,
@@ -242,19 +245,47 @@ export default function Transferencias() {
       return !Number.isFinite(c) || c <= 0
     })
 
+  // Trazabilidad total: motivo obligatorio en TODO movimiento (TEAMS/DEVOL)
+  // y en toda cancelación. La UI exige no vacío; el backend conserva su
+  // contrato (el borrador lo recibe como `observaciones`).
+  const motivoValido = observaciones.trim().length > 0
+  const motivoCancelacionValido = motivoCancelacion.trim().length > 0
+
+  // --- Simulación UX de stock (solo proyección visual) ----------------------
+  // Aritmética del CARRITO (suma de cantidades tecleadas), NUNCA stock
+  // confirmado. El saldo definitivo lo calcula el servidor en el commit.
+  const totalCantidades = carrito.reduce((suma, l) => {
+    const c = l[field] ?? 0
+    return Number.isFinite(c) && c > 0 ? suma + c : suma
+  }, 0)
+
+  // Líneas cuya proyección visual deja saldo negativo: bloquean Confirmar
+  // (validación por línea, previa al commit; el servidor sigue siendo la
+  // autoridad final del stock).
+  const lineasSaldoNegativo = carrito.filter((l) => {
+    const c = l[field] ?? 0
+    return Number.isFinite(c) && c > 0 && l.stock_disponible - c < 0
+  })
+  const bloqueoPorStock = lineasSaldoNegativo.length > 0
+
   const extremosValidos =
     tab === 'TEAMS'
       ? seccionOrigen !== null && equipoDestino !== null
       : equipoOrigen !== null && seccionDestino !== null
 
+  // CONTRATO (REQ-API-009, EARS v1.1): el backend valida el borrador con un
+  // modelo extra="forbid". El ÚNICO campo válido para el motivo en el payload
+  // del borrador es `observaciones` — inventar un campo `motivo` aquí
+  // produciría un 422. La obligatoriedad la garantiza esta UI (motivoValido),
+  // sin redefinir el contrato TEAMS/DEVOL.
   const payload: MovimientoBorradorCreatePayload | null =
-    extremosValidos && !carritoInvalido
+    extremosValidos && !carritoInvalido && !bloqueoPorStock && motivoValido
       ? tab === 'TEAMS'
         ? {
             tipo_movimiento: 'TEAMS',
             origen_almacen_id: seccionOrigen,
             destino_equipo_id: equipoDestino,
-            observaciones: observaciones.trim() || null,
+            observaciones: observaciones.trim(),
             detalle: carrito.map((l) => ({
               material_id: l.material_id,
               cantidad: l[field] ?? 0,
@@ -264,7 +295,7 @@ export default function Transferencias() {
             tipo_movimiento: 'DEVOL',
             origen_equipo_id: equipoOrigen,
             destino_almacen_id: seccionDestino,
-            observaciones: observaciones.trim() || null,
+            observaciones: observaciones.trim(),
             detalle: carrito.map((l) => ({
               material_id: l.material_id,
               cantidad: l[field] ?? 0,
@@ -363,10 +394,13 @@ export default function Transferencias() {
   })
 
   const confirmarCancelacion = () => {
-    if (movimientoACancelar) {
+    // Contrato REQ-API-009 intacto: cancelar recibe `motivo` (string, campo
+    // ya existente). La UI garantiza no vacío; el backend lo exige
+    // (RAISE on NULL/empty en fn_cancelar_movimiento).
+    if (movimientoACancelar && motivoCancelacionValido) {
       cancelarMut.mutate({
         id: movimientoACancelar.id,
-        motivo: motivoCancelacion.trim() || null,
+        motivo: motivoCancelacion.trim(),
       })
     }
   }
@@ -531,16 +565,32 @@ export default function Transferencias() {
           </>
         )}
         <div className="sm:col-span-2">
-          <label className="block text-sm font-medium text-slate-700">
-            Observaciones
+          <label
+            htmlFor="transferencias-motivo"
+            className="block text-sm font-medium text-slate-700"
+          >
+            Motivo / Observaciones (obligatorio)
           </label>
           <input
+            id="transferencias-motivo"
             type="text"
             value={observaciones}
             onChange={(e) => setObservaciones(e.target.value)}
             maxLength={2000}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            required
+            placeholder="Motivo de la operación — obligatorio para trazabilidad"
+            aria-invalid={!motivoValido && carrito.length > 0}
+            className={`mt-1 w-full rounded-md border px-3 py-2 text-sm ${
+              !motivoValido && (carrito.length > 0 || observaciones.length > 0)
+                ? 'border-red-400'
+                : 'border-slate-300'
+            }`}
           />
+          {!motivoValido && (carrito.length > 0 || observaciones.length > 0) && (
+            <p className="mt-1 text-xs text-red-600">
+              El motivo es obligatorio para confirmar {tab}.
+            </p>
+          )}
         </div>
       </div>
 
@@ -591,7 +641,7 @@ export default function Transferencias() {
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-2">ID Lista</th>
+                <th className="px-4 py-2">Nº</th>
                 <th className="px-4 py-2">Código</th>
                 <th className="px-4 py-2">Descripción</th>
                 <th className="px-4 py-2">U.M.</th>
@@ -600,10 +650,14 @@ export default function Transferencias() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filasDisponibles.map((fila) => (
+              {/* REQ-UI-001/002: Nº dinámico 1-indexed SOLO para display.
+                  material_id no se muestra — el operador trabaja con
+                  Código/Descripción. La clave React sigue siendo material_id
+                  (interna, no visible). */}
+              {filasDisponibles.map((fila, index) => (
                 <tr key={fila.material_id} className="hover:bg-slate-50">
                   <td className="px-4 py-2 font-mono text-slate-600">
-                    {fila.material_id}
+                    {index + 1}
                   </td>
                   <td className="px-4 py-2 font-mono text-slate-700">
                     {fila.codigo ?? '—'}
@@ -664,10 +718,39 @@ export default function Transferencias() {
           onChange={actualizarCantidad}
           onRemove={quitarDelCarrito}
         />
+        {carrito.length > 0 && (
+          <div className="border-t border-slate-100 bg-slate-50/70 p-3">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-slate-600">
+              <span>
+                <span className="font-semibold text-slate-800">
+                  {carrito.length}
+                </span>{' '}
+                {carrito.length === 1
+                  ? 'línea en el carrito'
+                  : 'líneas en el carrito'}
+              </span>
+              <span>
+                Total de unidades a mover:{' '}
+                <span className="font-semibold text-slate-800">
+                  {totalCantidades.toLocaleString('es-MX')}
+                </span>{' '}
+                (suma del carrito — proyección visual)
+              </span>
+            </div>
+            {bloqueoPorStock && (
+              <p className="mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs font-medium text-red-700">
+                {lineasSaldoNegativo.length}{' '}
+                {lineasSaldoNegativo.length === 1
+                  ? 'línea deja un saldo estimado negativo'
+                  : 'líneas dejan un saldo estimado negativo'}{' '}
+                (proyección visual). Ajuste las cantidades para poder confirmar.
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex items-center justify-between border-t border-slate-100 p-3">
           <p className="text-xs text-slate-400">
-            Proyecciones visuales: no representan el saldo confirmado por el
-            servidor.
+            Proyección visual — el saldo definitivo lo calcula el servidor.
           </p>
           <button
             type="button"
@@ -675,8 +758,17 @@ export default function Transferencias() {
             disabled={
               carritoInvalido ||
               !extremosValidos ||
+              bloqueoPorStock ||
+              !motivoValido ||
               crearBorradorMut.isPending ||
               procesarMut.isPending
+            }
+            title={
+              !motivoValido
+                ? 'El motivo es obligatorio para confirmar'
+                : bloqueoPorStock
+                  ? 'Hay líneas con saldo estimado negativo (proyección visual)'
+                  : undefined
             }
             className="flex items-center gap-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
@@ -807,17 +899,34 @@ export default function Transferencias() {
             y queda registrada en auditoría.
           </p>
           <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Motivo (opcional)
+            <label
+              htmlFor="cancelacion-motivo"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Motivo (obligatorio)
             </label>
             <textarea
+              id="cancelacion-motivo"
               value={motivoCancelacion}
               onChange={(e) => setMotivoCancelacion(e.target.value)}
               rows={3}
               maxLength={500}
-              placeholder="Motivo de la cancelación"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              required
+              placeholder="Motivo de la cancelación — obligatorio para trazabilidad"
+              aria-invalid={
+                !motivoCancelacionValido && motivoCancelacion.length > 0
+              }
+              className={`mt-1 w-full rounded-md border px-3 py-2 text-sm focus:border-blue-500 focus:outline-none ${
+                !motivoCancelacionValido && motivoCancelacion.length > 0
+                  ? 'border-red-400'
+                  : 'border-slate-300'
+              }`}
             />
+            {!motivoCancelacionValido && motivoCancelacion.length > 0 && (
+              <p className="mt-1 text-xs text-red-600">
+                El motivo es obligatorio para confirmar la cancelación.
+              </p>
+            )}
           </div>
           <div className="flex justify-end gap-2">
             <button
@@ -830,7 +939,12 @@ export default function Transferencias() {
             <button
               type="button"
               onClick={confirmarCancelacion}
-              disabled={cancelarMut.isPending}
+              disabled={cancelarMut.isPending || !motivoCancelacionValido}
+              title={
+                !motivoCancelacionValido
+                  ? 'El motivo es obligatorio para cancelar'
+                  : undefined
+              }
               className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
             >
               {cancelarMut.isPending ? 'Cancelando…' : 'Confirmar Cancelación'}

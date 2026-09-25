@@ -9,6 +9,8 @@ export interface ListEventosParams {
   material_id?: number
   tipo_accion?: string
   usuario?: string
+  /** Filtro por descripción del material (ILIKE en backend, REQ-UI-006). */
+  descripcion?: string
   limit?: number
 }
 
