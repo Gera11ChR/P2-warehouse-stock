@@ -2,8 +2,18 @@ from app.schemas.ajuste import AjusteOut, AjusteStockAlmacenRequest, CargaInicia
 from app.schemas.auditoria import AuditoriaListOut, AuditoriaOut
 from app.schemas.cancelacion import CanceladoOut, CancelarMovimientoRequest
 from app.schemas.equipo import EquipoCreate, EquipoOut, EquipoUpdate
-from app.schemas.inventario import CatalogoEquipoOut, SeccionOut, SeccionStockOut
+from app.schemas.inventario import (
+    FibraAjusteRequest,
+    FibraCargaInicialRequest,
+    FibraModulo,
+    FibraOperacionOut,
+    FibraStockOut,
+    InventarioEquipoOut,
+    SeccionOut,
+    SeccionStockOut,
+)
 from app.schemas.material import (
+    BusquedaGranelParams,
     CategoriaCreate,
     CategoriaOut,
     MaterialCreate,
@@ -30,7 +40,7 @@ __all__ = [
     "CanceladoOut",
     "CancelarMovimientoRequest",
     "CargaInicialRequest",
-    "CatalogoEquipoOut",
+    "BusquedaGranelParams",
     "CategoriaCreate",
     "CategoriaOut",
     "DetalleLine",
@@ -38,6 +48,12 @@ __all__ = [
     "EquipoCreate",
     "EquipoOut",
     "EquipoUpdate",
+    "FibraAjusteRequest",
+    "FibraCargaInicialRequest",
+    "FibraModulo",
+    "FibraOperacionOut",
+    "FibraStockOut",
+    "InventarioEquipoOut",
     "MaterialCreate",
     "MaterialListOut",
     "MaterialOut",

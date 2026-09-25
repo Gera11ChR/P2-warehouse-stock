@@ -1,21 +1,25 @@
-"""Lecturas de inventario — SOLO LECTURA (Invariantes 2 y 5).
+"""Lecturas del inventario central (Inventario General) — SOLO LECTURA
+(Invariantes 2 y 5).
 
-Las secciones se leen de inventario_almacen (JOIN catálogo); el catálogo
-completo por equipo se lee de la vista vw_inventario_equipo_completo, que
-renderiza stock = 0 para materiales sin registro físico (Sparse Model).
-Cero escrituras y cero aritmética de stock en este módulo.
+Ámbito de este módulo: el maestro de secciones (`secciones`) y el stock por
+sección (`inventario_almacen`, JOIN al catálogo activo con filtro estricto
+`is_active` — REQ-API-001, cero fantasmas). Cero escrituras y cero
+aritmética de stock.
+
+Nota histórica: este módulo se llamaba `sparse_inventory` y era la puerta de
+lectura del Modelo Sparse. Ese modelo y la vista
+`vw_inventario_equipo_completo` quedaron deprecados con la migración 0012
+(REQ-DOMAIN-001/002): el inventario autónomo de equipos se lee directamente
+de `inventario_equipos` vía `api/v1/equipos.py`, y el de Fibra Óptica de
+`inventario_fibra` vía `api/v1/fibra.py`. Este módulo conserva únicamente
+las lecturas del inventario central.
 """
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import (
-    CatalogoMaterial,
-    InventarioAlmacen,
-    Seccion,
-    vw_inventario_equipo_completo,
-)
-from app.schemas.inventario import CatalogoEquipoOut, SeccionOut, SeccionStockOut
+from app.models import CatalogoMaterial, InventarioAlmacen, Seccion
+from app.schemas.inventario import SeccionOut, SeccionStockOut
 
 
 async def listar_secciones(session: AsyncSession) -> list[SeccionOut]:
@@ -51,7 +55,12 @@ async def stock_seccion(
             CatalogoMaterial,
             CatalogoMaterial.id_lista == InventarioAlmacen.material_id,
         )
-        .where(InventarioAlmacen.almacen_id == almacen_id)
+        .where(
+            InventarioAlmacen.almacen_id == almacen_id,
+            # REQ-API-001 (Task 3.1): cero fantasmas también en stock por
+            # sección — los materiales desactivados se omiten del payload.
+            CatalogoMaterial.is_active == True,  # noqa: E712
+        )
         .order_by(InventarioAlmacen.material_id.asc())
     )
     filas = (await session.execute(stmt)).all()
@@ -71,16 +80,3 @@ async def stock_seccion(
         )
         for f in filas
     ]
-
-
-async def catalogo_equipo(
-    session: AsyncSession, equipo_id: int
-) -> list[CatalogoEquipoOut]:
-    """Catálogo completo del equipo vía vista (stock 0 donde no hay fila)."""
-    stmt = (
-        select(vw_inventario_equipo_completo)
-        .where(vw_inventario_equipo_completo.c.equipo_id == equipo_id)
-        .order_by(vw_inventario_equipo_completo.c.id_lista.asc())
-    )
-    filas = (await session.execute(stmt)).mappings().all()
-    return [CatalogoEquipoOut.model_validate(dict(f)) for f in filas]

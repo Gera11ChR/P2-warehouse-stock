@@ -1,11 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.encoders import jsonable_encoder
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.errors import BusinessRuleError
 from app.schemas.material import (
+    BusquedaGranelParams,
     CategoriaCreate,
     CategoriaOut,
     MaterialCreate,
@@ -25,10 +28,38 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ActorDep = Annotated[ActorContext, Depends(get_current_actor)]
 
 
+def busqueda_granel_params(
+    desde_numero_lista: int | None = None,
+    hasta_numero_lista: int | None = None,
+    desde_descripcion: str | None = None,
+    hasta_descripcion: str | None = None,
+) -> BusquedaGranelParams:
+    """Dependencia que reconstruye `BusquedaGranelParams` desde los query
+    params del Buscador a granel (REQ-API-006/007).
+
+    El modelo concentra TODA la validación de rango (ge=1,
+    hasta >= desde) y las violaciones se traducen a 422 con el detalle de
+    Pydantic. No se usa un query-model directo porque FastAPI solo aplana
+    modelos de query cuando son el ÚNICO parámetro; conviviendo con los
+    filtros clásicos (buscar, sku, etc.) se necesita esta dependencia."""
+    try:
+        return BusquedaGranelParams(
+            desde_numero_lista=desde_numero_lista,
+            hasta_numero_lista=hasta_numero_lista,
+            desde_descripcion=desde_descripcion,
+            hasta_descripcion=hasta_descripcion,
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422, detail=jsonable_encoder(exc.errors())
+        ) from exc
+
+
 @router.get("", response_model=MaterialListOut)
 async def list_materiales(
     session: SessionDep,
     _actor: ActorDep,
+    params: Annotated[BusquedaGranelParams, Depends(busqueda_granel_params)],
     buscar: str | None = None,
     categoria_id: int | None = None,
     desde_id_lista: int | None = None,
@@ -36,7 +67,15 @@ async def list_materiales(
     desde_sku: str | None = None,
     hasta_sku: str | None = None,
 ) -> MaterialListOut:
-    materiales = await catalogo_svc.listar(
+    """Listado del catálogo activo con rango ordinal opcional
+    (Buscador a granel, REQ-API-006/007).
+
+    `BusquedaGranelParams` valida los rangos (ge=1, hasta >= desde → 422);
+    el posicionamiento ordinal determinista se resuelve 100 % en backend y
+    la respuesta devuelve `start_index` para que el frontend renderice
+    números de lista continuos 1-indexed sin descargar el catálogo
+    completo (Principio 4)."""
+    materiales, start_index = await catalogo_svc.listar(
         session,
         buscar=buscar,
         categoria_id=categoria_id,
@@ -44,8 +83,12 @@ async def list_materiales(
         hasta_id_lista=hasta_id_lista,
         desde_sku=desde_sku,
         hasta_sku=hasta_sku,
+        desde_numero_lista=params.desde_numero_lista,
+        hasta_numero_lista=params.hasta_numero_lista,
+        desde_descripcion=params.desde_descripcion,
+        hasta_descripcion=params.hasta_descripcion,
     )
-    return MaterialListOut(materiales=materiales)
+    return MaterialListOut(start_index=start_index, materiales=materiales)
 
 
 @router.post("", response_model=MaterialOut, status_code=201)
@@ -126,6 +169,14 @@ async def actualizar_material(
     session: SessionDep,
     actor_ctx: ActorDep,
 ) -> MaterialOut:
+    """Edición de material (alcance Inventario General, REQ-UI-004).
+
+    El stock JAMÁS se actualiza por ORM: si `stock_actual` viene en el
+    payload, el ajuste se enruta a `fn_ajustar_stock_general` →
+    `fn_ajustar_stock_almacen` (Constitution 2.4): el diferencial, la
+    validación de no-negatividad y la auditoría viven en PostgreSQL.
+    Atomicidad 4.1: todo ocurre dentro del mismo `session.begin()` — si el
+    ajuste falla, la edición del material también revierte."""
     assert_authenticated(actor_ctx)
     async with session.begin():
         material = await catalogo_svc.actualizar(
@@ -136,6 +187,16 @@ async def actualizar_material(
                 "Material no encontrado",
                 coordinates=[{"id_lista": id_lista}],
                 status_code=404,
+            )
+        if payload.stock_actual is not None:
+            # El validator del schema (_check_stock_motivo) garantiza motivo
+            # no vacío cuando stock_actual está presente.
+            assert payload.motivo is not None
+            await transaccional.ajustar_stock_general(
+                session,
+                material_id=material.id_lista,
+                nuevo_stock=payload.stock_actual,
+                motivo=payload.motivo,
             )
         return material
 

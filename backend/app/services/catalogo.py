@@ -69,7 +69,22 @@ async def listar(
     hasta_id_lista: int | None = None,
     desde_sku: str | None = None,
     hasta_sku: str | None = None,
-) -> list[MaterialOut]:
+    desde_numero_lista: int | None = None,
+    hasta_numero_lista: int | None = None,
+    desde_descripcion: str | None = None,
+    hasta_descripcion: str | None = None,
+) -> tuple[list[MaterialOut], int]:
+    """Listado del catálogo activo con posicionamiento ordinal opcional.
+
+    Orden de aplicación (REQ-API-006/007): primero se filtran los criterios
+    de negocio — buscar, categoria_id, rangos id_lista/SKU y rangos de
+    descripción — y DESPUÉS se aplica el OFFSET/LIMIT ordinal
+    (determinista: ORDER BY descripcion ASC, id_lista ASC,
+    OFFSET = desde_numero_lista - 1, LIMIT = hasta - desde + 1,
+    start_index = desde_numero_lista or 1). Sin parámetros ordinales se
+    conserva el comportamiento histórico (ORDER BY id_lista ASC,
+    start_index = 1). Prohibido descargar el catálogo completo al cliente.
+    """
     stmt = select(CatalogoMaterial).where(CatalogoMaterial.is_active == True)  # noqa: E712
     if buscar:
         patron = f"%{buscar}%"
@@ -90,9 +105,33 @@ async def listar(
         stmt = stmt.where(CatalogoMaterial.codigo >= desde_sku)
     if hasta_sku is not None:
         stmt = stmt.where(CatalogoMaterial.codigo <= hasta_sku)
-    stmt = stmt.order_by(CatalogoMaterial.id_lista.asc())
+    # Rangos por descripción (REQ-API-007): filtros deterministas que
+    # aplican junto con el resto de criterios ANTES del posicionamiento.
+    if desde_descripcion:
+        stmt = stmt.where(CatalogoMaterial.descripcion >= desde_descripcion)
+    if hasta_descripcion:
+        stmt = stmt.where(CatalogoMaterial.descripcion <= hasta_descripcion)
+
+    # Posicionamiento ordinal determinista (REQ-API-006).
+    if desde_numero_lista is not None or hasta_numero_lista is not None:
+        stmt = stmt.order_by(
+            CatalogoMaterial.descripcion.asc(),
+            CatalogoMaterial.id_lista.asc(),
+        )
+        offset = (desde_numero_lista - 1) if desde_numero_lista is not None else 0
+        stmt = stmt.offset(offset)
+        if desde_numero_lista is not None and hasta_numero_lista is not None:
+            stmt = stmt.limit(hasta_numero_lista - desde_numero_lista + 1)
+        elif hasta_numero_lista is not None:
+            # Desde implícito = 1 (REQ-API-006): LIMIT = Y.
+            stmt = stmt.limit(hasta_numero_lista)
+        start_index = desde_numero_lista or 1
+    else:
+        stmt = stmt.order_by(CatalogoMaterial.id_lista.asc())
+        start_index = 1
+
     materiales = (await session.execute(stmt)).scalars().all()
-    return [await _to_out(session, m) for m in materiales]
+    return [await _to_out(session, m) for m in materiales], start_index
 
 
 async def obtener(session: AsyncSession, id_lista: int) -> MaterialOut | None:
@@ -149,7 +188,11 @@ async def actualizar(
         categoria_id = payload.categoria_id
 
     update = payload.model_dump(
-        exclude_unset=True, exclude={"categoria_id", "nueva_categoria"}
+        exclude_unset=True,
+        # stock_actual/motivo jamás pasan por setattr: el stock se ajusta
+        # exclusivamente vía fn_ajustar_stock_general → fn_ajustar_stock_almacen
+        # (Task 3.4); incluirlos aquí rompería el flush del ORM.
+        exclude={"categoria_id", "nueva_categoria", "stock_actual", "motivo"},
     )
     for field, value in update.items():
         setattr(material, field, value)
