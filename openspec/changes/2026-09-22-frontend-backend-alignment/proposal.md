@@ -1,5 +1,5 @@
 # OpenSpec Proposal: Frontend-Backend Contract Alignment & Domain Adjustments
-**Document Status:** Draft / Proposed
+**Document Status:** Approved (Phase 1 Review — clarifications incorporated)
 **Target Systems:** `backend/` (FastAPI), `frontend/` (React), `db/` (PostgreSQL)
 
 ## 1. Executive Summary
@@ -40,7 +40,18 @@ Based on the feedback from the administrative operators, the current system enfo
 * **Requirement:** The `Categoría` field MUST persist successfully in the database when assigned or modified.
 * **Requirement:** The `Categoría` MUST be returned in the API payload and displayed as a column in the `Inventario General` table to enable correct filtering.
 
+## 3.7. Ratified Domain Clarifications (Fase 0/1)
+
+Approved by the @arq-reviewer / @auditor governance pair and recorded in `domain-validation.md`. These clarifications REPLACE any conflicting interpretation above:
+
+1. **Teams:** each `Equipo` owns an autonomous inventory (NOT a "team catalog"): `inventario_equipos` is initialized empty at team creation, populated ONLY by audited TEAMS/DEVOL transfers, renders zero ghost/zero-stock rows, and every entry traces to its originating movement.
+2. **Bulk search:** list-number ranges are resolved 100% in the backend via deterministic ordinal positioning (stable `ORDER BY descripcion ASC, id_lista ASC`, `OFFSET/LIMIT`, `start_index`). Downloading full datasets to the client is forbidden (Principle 4).
+3. **Audit:** the ledger remains fully immutable; name resolution uses `LEFT JOIN` without activity filters; optional `[Inactivo]` label; deactivation only affects operational selectors.
+4. **Governance:** TEAMS/DEVOL contracts unchanged (`REQ-API-009`); `motivo` mandatory on stock adjustments; strict `is_active` filtering in operational views; Backend-First — `frontend/` frozen until backend Phases 1–5 are approved.
+
 ## 4. Execution Tasks for OpenCode Agents
+
+> **Backend-First Gate (ratified):** All frontend tasks below are BLOCKED until backend Phases 1–5 are completed and approved. See `tasks.md` Phase F.
 
 ### UI/UX Agent (`ux-agent.md`, `ui-agent.md`)
 - [ ] Remove `ID Lista` columns from all `InventoryTable`, `EquipoInventoryTable`, and `Auditoría` components. Replace with dynamic `número de lista`.
