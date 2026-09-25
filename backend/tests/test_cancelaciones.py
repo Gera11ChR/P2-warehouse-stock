@@ -11,9 +11,9 @@ from tests.helpers.fabrica import (
     borrador_teams,
     cancelar,
     carga_inicial,
-    catalogo_equipo,
     crear_equipo,
     crear_material,
+    inventario_equipo,
     procesar,
     stock_seccion,
 )
@@ -51,8 +51,10 @@ async def test_cancelar_teams_restituye_exacto(
     assert resultado["estado"] == "CANCELADO"
 
     assert await stock_seccion(client, 1) == {material["id_lista"]: 100}
-    filas = await catalogo_equipo(client, equipo["equipo_id"])
-    assert filas[material["id_lista"]]["stock_actual"] == 0
+    # REQ-DOMAIN-002: tras la cancelación TEAMS la fila del equipo
+    # desaparece (stock 0 no se renderiza — cero fantasmas).
+    filas = await inventario_equipo(client, equipo["equipo_id"])
+    assert material["id_lista"] not in filas
 
 
 @pytest.mark.critical
@@ -138,7 +140,7 @@ async def test_cancelar_devol_restituye_inverso(client: AsyncClient) -> None:
     await cancelar(client, b2["id"], motivo="DEVOL errónea")
 
     assert await stock_seccion(client, 1) == {material["id_lista"]: 60}
-    filas = await catalogo_equipo(client, equipo["equipo_id"])
+    filas = await inventario_equipo(client, equipo["equipo_id"])
     assert filas[material["id_lista"]]["stock_actual"] == 40
 
 

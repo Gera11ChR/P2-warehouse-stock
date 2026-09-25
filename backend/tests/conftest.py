@@ -3,7 +3,7 @@
 Estrategia de aislamiento (FASE 5, decisión D3): TRUNCATE + resiembra.
 La suite opera EXCLUSIVAMENTE sobre la base de datos `p2_test`; la BD de
 desarrollo `p2` jamás es tocada. El esquema se migra con `alembic upgrade
-head` (cadena completa 0001 -> 0011, idéntica a producción).
+head` (cadena completa 0001 -> 0013, idéntica a producción).
 
 Regla crítica: P2_DATABASE_URL se fija ANTES de importar `app.*`
 (app.config lee la variable en tiempo de importación).
@@ -16,6 +16,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from sqlalchemy.engine import make_url
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -34,13 +35,12 @@ ACTOR_SIN_SCOPE = "intruso"
 
 SECCIONES_SEMILLA = [
     ("Inventario General", "GENERAL"),
-    ("Fibra Optica - Paquete", "FO_PAQUETE"),
-    ("Fibra Optica - En Uso", "FO_EN_USO"),
 ]
 
 TABLAS_DOMINIO = [
     "inventario_equipos",
     "inventario_almacen",
+    "inventario_fibra",
     "movimientos_detalle",
     "movimientos_cabecera",
     "equipos_integrantes",
@@ -49,6 +49,7 @@ TABLAS_DOMINIO = [
     "catalogo_materiales",
     "categorias",
     "actor_almacen_scopes",
+    "administradores",
 ]
 
 
@@ -58,8 +59,12 @@ def _ensure_test_database() -> None:
             cur.execute("SELECT 1 FROM pg_database WHERE datname = 'p2_test'")
             if cur.fetchone() is None:
                 cur.execute("CREATE DATABASE p2_test")
-    with psycopg.connect(ADMIN_DB_URL.replace("/p2", "/p2_test"),
-                         autocommit=True) as conn:
+    # Construcción correcta de la URL de p2_test (sin .replace, que corrompe
+    # URLs cuyo usuario empieza por "p2", p.ej. p2admin -> p2_testadmin).
+    test_db_url = make_url(ADMIN_DB_URL).set(
+        database="p2_test"
+    ).render_as_string(hide_password=False)
+    with psycopg.connect(test_db_url, autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute("GRANT ALL ON SCHEMA public TO p2admin")
             cur.execute("GRANT ALL ON DATABASE p2_test TO p2admin")

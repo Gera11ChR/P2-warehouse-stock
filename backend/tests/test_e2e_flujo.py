@@ -2,8 +2,8 @@
 verificación de FASE 2 dentro de pytest (11 pasos de dominio).
 
 Alta catálogo -> alta equipo -> carga inicial -> TEAMS -> DEVOL ->
-cancelación DEVOL -> cancelación TEAMS -> vista sparse -> 400 stock ->
-409 estado -> 404 -> auditoría completa.
+cancelación DEVOL -> cancelación TEAMS -> inventario autónomo del equipo
+(cero fantasmas) -> 400 stock -> 409 estado -> 404 -> auditoría completa.
 """
 
 import pytest
@@ -16,9 +16,9 @@ from tests.helpers.fabrica import (
     borrador_teams,
     cancelar,
     carga_inicial,
-    catalogo_equipo,
     crear_equipo,
     crear_material,
+    inventario_equipo,
     procesar,
     stock_seccion,
 )
@@ -53,7 +53,7 @@ async def test_flujo_completo_11_pasos(
     )
     await procesar(client, b_teams["id"])
     assert await stock_seccion(client, 1) == {material["id_lista"]: 60}
-    filas = await catalogo_equipo(client, equipo["equipo_id"])
+    filas = await inventario_equipo(client, equipo["equipo_id"])
     assert filas[material["id_lista"]]["stock_actual"] == 40
 
     # 4. DEVOL 15
@@ -71,16 +71,17 @@ async def test_flujo_completo_11_pasos(
     await cancelar(client, b_devol["id"], motivo="E2E")
     assert await stock_seccion(client, 1) == {material["id_lista"]: 60}
 
-    # 6. Cancelar TEAMS (sparse: fila viva con 0)
+    # 6. Cancelar TEAMS (inventario autónomo: la fila del equipo desaparece)
     await cancelar(client, b_teams["id"], motivo="E2E")
     assert await stock_seccion(client, 1) == {material["id_lista"]: 100}
-    filas = await catalogo_equipo(client, equipo["equipo_id"])
-    assert filas[material["id_lista"]]["stock_actual"] == 0
+    filas = await inventario_equipo(client, equipo["equipo_id"])
+    assert material["id_lista"] not in filas
 
-    # 7. Sparse: material sin registro renderiza stock 0
+    # 7. Inventario autónomo: un material sin movimientos NO aparece
+    #    (cero herencia del catálogo global, cero filas fantasma)
     material2 = await crear_material(client, descripcion="E2E Sin Stock")
-    filas = await catalogo_equipo(client, equipo["equipo_id"])
-    assert filas[material2["id_lista"]]["stock_actual"] == 0
+    filas = await inventario_equipo(client, equipo["equipo_id"])
+    assert material2["id_lista"] not in filas
 
     # 8. Stock insuficiente -> 400 (P0001)
     b_insuf = await borrador_teams(

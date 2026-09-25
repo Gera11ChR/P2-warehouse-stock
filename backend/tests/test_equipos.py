@@ -1,8 +1,20 @@
-"""CRUD de equipos e integrantes vía API — DMS - TELECOM."""
+"""CRUD de equipos e integrantes vía API — DMS - TELECOM.
+
+Incluye el contrato autónomo del inventario del equipo
+(REQ-DOMAIN-001/002): el equipo nace con inventario VACÍO ([] en 200) y solo
+registra stock físico originado en movimientos TEAMS auditados.
+"""
 
 from httpx import AsyncClient
 
-from tests.helpers.fabrica import crear_equipo
+from tests.helpers.fabrica import (
+    borrador_teams,
+    carga_inicial,
+    crear_equipo,
+    crear_material,
+    inventario_equipo,
+    procesar,
+)
 
 
 async def test_crear_equipo_con_integrantes(client: AsyncClient) -> None:
@@ -48,4 +60,44 @@ async def test_delete_soft_delete(client: AsyncClient) -> None:
     assert resp.status_code == 204
 
     resp = await client.get(f"/api/v1/equipos/{equipo['equipo_id']}")
+    assert resp.status_code == 404
+
+
+async def test_equipo_nuevo_inventario_vacio_200(client: AsyncClient) -> None:
+    """REQ-DOMAIN-001/002: el equipo nuevo devuelve [] (200) en su inventario
+    autónomo — cero herencia del catálogo global."""
+    await crear_material(client, descripcion="Material del catálogo global")
+    equipo = await crear_equipo(client, nombre="Equipo Autónomo Nuevo")
+
+    resp = await client.get(f"/api/v1/equipos/{equipo['equipo_id']}/inventario")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+async def test_inventario_tras_teams_con_trazabilidad(
+    client: AsyncClient,
+) -> None:
+    """REQ-DOMAIN-002: tras un TEAMS auditado la fila aparece con
+    `ultimo_movimiento_id` = movimiento de origen."""
+    material = await crear_material(client, descripcion="Material TEAMS EQ")
+    equipo = await crear_equipo(client, nombre="Equipo Trazado")
+    await carga_inicial(
+        client, material_id=material["id_lista"], cantidad=50
+    )
+    b = await borrador_teams(
+        client,
+        almacen_id=1,
+        equipo_id=equipo["equipo_id"],
+        material_id=material["id_lista"],
+        cantidad=20,
+    )
+    await procesar(client, b["id"])
+
+    filas = await inventario_equipo(client, equipo["equipo_id"])
+    assert filas[material["id_lista"]]["stock_actual"] == 20
+    assert filas[material["id_lista"]]["ultimo_movimiento_id"] == b["id"]
+
+
+async def test_inventario_equipo_inexistente_404(client: AsyncClient) -> None:
+    resp = await client.get("/api/v1/equipos/9999/inventario")
     assert resp.status_code == 404
