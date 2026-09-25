@@ -1,65 +1,545 @@
-# Flujo Operacional Consolidado (DMS - TELECOM SDD v10/10)
+# DMS-TELECOM Backend Development Operating Model
 
-## Arquitectura del Flujo (Pipeline de 5 Fases)
+## Specification-Driven Development (SDD) with OpenSpec
 
-### FASE 1: CONTRATO & DISEÑO
-`OpenSpec (openspec.yaml)` + `DDL SQL PostgreSQL 10/10` -> `@arq-reviewer`
-*(Resultado: Contrato Aprobado)*
+**Effective Date:** September 2026
 
-### FASE 2: IMPLEMENTACIÓN BACKEND
-Sub-agente `@coder` genera Schemas Pydantic V2, ORM y rutas FastAPI.
+**Project Context:** P2 → DMS-TELECOM Transition
 
-### FASE 3: AUDITORÍA DE DOMINIO Y ESPECIALIDAD
-- `@dba-guard`: Bloqueos `FOR UPDATE`, Stored Functions e Inmutabilidad.
-- `@sec-ops`: RBAC, `extra="forbid"` y Parsers CSV/XLSX/XML.
-- `@auditor`: Verificación de Drift vs Contrato OpenSpec.
+**Repository Structure:** Consolidated Monorepo (`~/P2`)
 
-### FASE 4: LOOP DE RETROALIMENTACIÓN || FASE 5: QA & AUTOMACIÓN
-- *(Si hay Hallazgos)*: Drift Report -> `@coder` refactoriza bloque.
-- *(Sin Hallazgos / Aprobado)*: `@tester` ejecuta Pytest. -> **[PRODUCCIÓN READY]**
+**Primary Objective:** Deliver backend changes required by the current Issue Breakdown while preserving architectural integrity, constitutional invariants, traceability, and long-term maintainability.
 
 ---
 
-## Detalle Operacional Fase por Fase
+# 1. Purpose
 
-### Fase 1: Gobernanza de Contrato y Arquitectura
-1. **Carga de Fuente Única de Verdad**: Se deposita en la raíz/rutas designadas los archivos `openspec.yaml` y el script DDL SQL.
-2. **Validación de Invariantes (`@arq-reviewer`)**: Verifica que la especificación cumpla con las reglas no negociables del dominio:
-   - `id_lista` visible, permanente e inmutable (sin re-numeración).
-   - Modelo disperso (*Sparse Model*) para catálogo por equipos.
-   - Uso exclusivo de `inventario_almacen` (eliminando la ambigüedad de almacenes).
-   - Eliminación definitiva del campo `TIPO` por el selector dual de categorías.
+This document defines the official backend development workflow for DMS-TELECOM.
 
-### Fase 2: Codificación Restringida (`@coder`)
-1. **Generación de DTOs y Controladores**: Coder construye las estructuras en FastAPI y Pydantic V2.
-2. **Delegación Transaccional Obligatoria**: Toda modificación de inventario (TEAMS, DEVOL o Reversión) se delega a la base de datos mediante la invocación directa de `fn_procesar_movimiento` y `fn_cancelar_movimiento`. Se prohíbe reescribir lógica de cálculo de stock en Python.[cite: 1]
+The workflow exists to ensure that:
 
-### Fase 3: Triada de Fiscalización Especializada
-1. **Auditoría SQL (`@dba-guard`)**: Revisa que las consultas lean la vista `vw_inventario_equipo_completo` y que no existan escrituras directas sobre las tablas de inventario sin pasar por las Stored Functions.
-2. **Auditoría de Seguridad (`@sec-ops`)**: Exige que todos los esquemas Pydantic incluyan `model_config = ConfigDict(extra="forbid")` para bloquear la inyección de atributos no declarados, y verifica la sanitización en la carga masiva registrada en `historial_importaciones`.
-3. **Auditoría de Conformidad (`@auditor`)**: Emite el reporte de desvíos (*Drift Report*).
+* Business requirements are translated into formal specifications before implementation.
+* Domain-level changes are identified before code is written.
+* Constitutional invariants remain protected.
+* Database, API, and security concerns are designed intentionally.
+* Every implemented requirement is verifiable through automated tests.
+* Technical debt is controlled through structured auditing and refactoring.
 
-### Protocolo de Retroalimentación y Remediación (Feedback Loop)
-Cuando Auditor, `@dba-guard` o `@sec-ops` emiten un estado **RECHAZADO**, se ejecuta el siguiente ciclo automático de resolución
-`[ARCHIVO RECHAZADO]` -> `[REPORTE DE HALLAZGOS]` -> `[REFACTORIZACIÓN EN CODER]` -> `[RE-EVALUACIÓN]`
+---
 
-1. **Aislamiento del Punto de Fallo**: El sub-agente fiscalizador genera un ticket estructurado en formato markdown conteniendo:
-   - Archivo y líneas afectadas (Ej. `app/routers/teams.py:45`).
-   - Regla Violada (Ej. Intento de actualización directa de stock en Python en lugar de invocar `fn_procesar_movimiento`).
-   - Acción Correctora Requerida (Especificación exacta de la firma SQL a consumir).
-2. **Refactorización Enfocada (`Coder`)**: Coder recibe el reporte, aplica el ajuste únicamente sobre el bloque observado sin alterar otros componentes del sistema, y notifica la corrección.
-3. **Control de Ciclos**: Se establece un límite máximo de 3 re-intentos de refactorización. Si en el tercer intento persiste el desvío, la tarea escala a revisión humana.
+# 2. Current Development Priority
 
-### Protocolo de Versionado del Contrato OpenSpec
-- **Cambios Menores (Non-breaking)**: Adición de campos opcionales en respuestas JSON o nuevos reportes exportables incrementan la versión minor del contrato (`v1.1.0`). No requieren ajustes en esquemas de BD existentes.
-- **Cambios Mayores (Breaking Changes)**: Alteraciones en firmas de Stored Functions, nuevos estados en `movimientos_cabecera` o ajustes en el DDL incrementan la versión major (`v2.0.0`).
-  - *Regla de Ejecución*: Ante un cambio major, el flujo obliga a re-ejecutar en secuencia estricta a `@arq-reviewer` para validar retrocompatibilidad antes de permitir que Coder toque el código fuente.
+The current initiative is:
 
-### Fase 5: Testing Automático e Integración Continua (`@tester`)
-Una vez obtenida la aprobación de compliance (`Auditor: APROBADO`), el sub-agente `@tester` ejecuta la suite automatizada en Pytest:
-1. **Prueba de Atomicidad TEAMS**: Valida que una transferencia descuente stock en la sección origen e incremente en el equipo dentro de la misma transacción.
-2. **Prueba de Límite TEAMS**: Intenta transferir una cantidad superior al stock disponible y verifica el lanzamiento de error HTTP 400/422.
-3. **Prueba Upsert DEVOL**: Verifica que la devolución de un material cree automáticamente el registro en la sección central si este no existía previamente (`ON CONFLICT DO UPDATE`).
-4. **Prueba Alerta Stock Mínimo**: Confirma la presencia de la bandera `alerta_stock_minimo: true` en los detalles JSONB de auditoría cuando el remanente cae por debajo del umbral configurado.
-5. **Prueba de Reversión**: Ejecuta `fn_cancelar_movimiento` y comprueba la restitution matemática exacta de inventarios.
-6. **Prueba de Importación Masiva**: Procesa un archivo CSV corrupto y verifica la inserción de métricas y log de errores en `historial_importaciones`.
+## Backend Logistics Alignment
+
+Based on the approved Issue Breakdown, the highest-priority backend concerns are:
+
+### Priority A — Inventory Domain Alignment
+
+1. Team Inventory Isolation
+2. Fiber Optic Inventory Isolation
+3. Elimination of Global Catalog Coupling
+
+### Priority B — Data Integrity
+
+4. Category Persistence
+5. Ghost Record Elimination
+6. Active Inventory Filtering
+
+### Priority C — Administrative Operations
+
+7. Editable SKU
+8. Editable Stock Through Audited Adjustments
+9. Human-Readable Audit Records
+
+These priorities drive all planning and implementation activities until completion.
+
+---
+
+# 3. Core Operating Principles
+
+## Principle 1 — Specification Before Implementation
+
+No backend code shall be created or modified before:
+
+* Proposal approval
+* Requirement definition
+* Task decomposition
+
+Workflow:
+
+```text
+Issue
+ ↓
+Proposal
+ ↓
+EARS Requirements
+ ↓
+Tasks
+ ↓
+Implementation
+ ↓
+Testing
+ ↓
+Integration
+```
+
+---
+
+## Principle 2 — Domain Change Is Not a Bug
+
+The following changes must be treated as potential domain modifications:
+
+* Inventory isolation
+* Catalog ownership changes
+* Inventory lifecycle changes
+* Warehouse model changes
+* Material identity changes
+
+These changes require architectural validation before implementation.
+
+---
+
+## Principle 3 — Constitution Supremacy
+
+The Constitution remains the highest authority.
+
+Examples:
+
+### Allowed
+
+Frontend stock editing that produces:
+
+```text
+Adjustment Event
+   +
+Audit Record
+   +
+Ledger Entry
+```
+
+### Forbidden
+
+Direct inventory mutation that bypasses:
+
+```text
+Audit
+Ledger
+Authorization
+Transaction Boundaries
+```
+
+---
+
+## Principle 4 — Backend Is the Source of Truth
+
+The frontend may:
+
+* Validate inputs
+* Improve usability
+* Format information
+
+The backend remains responsible for:
+
+* Inventory calculations
+* Business rules
+* State transitions
+* Authorization decisions
+* Audit generation
+
+---
+
+## Principle 5 — Requirement-Based Verification
+
+Tests exist to verify requirements.
+
+Not code.
+
+Every implemented requirement must be traceable to at least one automated verification artifact.
+
+Example:
+
+```text
+REQ-CAT-001
+      ↓
+test_category_persistence()
+
+REQ-STOCK-004
+      ↓
+test_stock_adjustment_generates_audit_event()
+```
+
+---
+
+# 4. SDD Execution Pipeline
+
+---
+
+# Phase 0 — Domain & Architecture Validation
+
+## Purpose
+
+Determine whether the requested changes fit the existing domain model or require structural evolution.
+
+## Agents
+
+* arq-reviewer
+* auditor
+
+## Inputs
+
+* Issue Breakdown
+* Proposal Draft
+* Existing OpenSpec Documentation
+
+## Activities
+
+* Classify each issue:
+
+  * Bug Fix
+  * Functional Enhancement
+  * Domain Change
+
+* Identify:
+
+  * New entities
+  * New relationships
+  * Deprecated assumptions
+  * Inventory ownership impacts
+
+## Deliverable
+
+Domain Validation Report
+
+## Exit Criteria
+
+Every issue is classified and architectural direction is approved.
+
+---
+
+# Phase 1 — Specification & Constitutional Impact Review
+
+## Purpose
+
+Create the formal contract governing implementation.
+
+## Agents
+
+* arq-reviewer
+* auditor
+
+## Inputs
+
+* Approved Domain Validation Report
+
+## Deliverables
+
+Inside:
+
+```text
+openspec/changes/<change-name>/
+```
+
+### proposal.md
+
+Business justification and scope.
+
+### EARS.md
+
+Formal requirements.
+
+### tasks.md
+
+Implementation breakdown.
+
+### constitution-impact.md
+
+Mandatory analysis documenting:
+
+* Affected invariants
+* Risks
+* Mitigation strategy
+
+Examples:
+
+* Immutable Ledger
+* Non-Negative Inventory
+* Transaction Atomicity
+* Audit Preservation
+
+## Exit Criteria
+
+OpenSpec package approved and internally consistent.
+
+---
+
+# Phase 2 — Data, Schemas & Security Design
+
+## Purpose
+
+Prepare the database and API contracts before implementation.
+
+## Agents
+
+* dba-guard
+* sec-ops
+
+## Inputs
+
+Approved specifications.
+
+## Activities
+
+### Database
+
+* Schema review
+* DDL changes
+* Migration strategy
+* Index validation
+
+### API Contracts
+
+* Pydantic models
+* DTO validation
+* Error contracts
+
+### Security
+
+* RBAC review
+* Authorization boundaries
+* Payload validation
+
+## Deliverables
+
+```text
+backend/alembic/versions/
+backend/db/ddl.sql
+backend/app/schemas/
+```
+
+## Exit Criteria
+
+Schema, contracts, and security model approved.
+
+---
+
+# Phase 3 — Backend Implementation
+
+## Purpose
+
+Implement approved functionality.
+
+## Agent
+
+* coder
+
+## Inputs
+
+* Tasks
+* Migrations
+* Schemas
+
+## Activities
+
+### API
+
+```text
+backend/app/api/v1/
+```
+
+### Services
+
+```text
+backend/app/services/
+```
+
+### Models
+
+```text
+backend/app/models/
+```
+
+### Business Rules
+
+* Inventory filtering
+* Category persistence
+* Audit generation
+* Stock adjustment workflows
+* Catalog isolation
+
+## Exit Criteria
+
+All tasks completed without deviations from specifications.
+
+---
+
+# Phase 3.5 — Refactor & Dead Code Audit
+
+## Purpose
+
+Remove obsolete artifacts without mixing cleanup and feature development.
+
+## Agent
+
+* auditor
+
+## Activities
+
+* Remove deprecated endpoints
+* Remove dead services
+* Remove unused imports
+* Simplify redundant modules
+* Identify legacy code paths
+
+## Deliverable
+
+Refactoring Report
+
+## Exit Criteria
+
+No unused implementation remains related to replaced behavior.
+
+---
+
+# Phase 4 — Requirement-Based Testing & QA
+
+## Purpose
+
+Verify compliance with specifications.
+
+## Agents
+
+* tester
+* qa-agent
+
+## Inputs
+
+* Implemented code
+* EARS requirements
+
+## Activities
+
+### Automated Tests
+
+```text
+backend/tests/
+```
+
+### Traceability Matrix
+
+Generate:
+
+```text
+REQ-ID
+   ↓
+Test Artifact
+```
+
+### Validation
+
+* pytest
+* mypy
+* regression testing
+
+## Deliverables
+
+* New automated tests
+* Traceability Matrix
+* QA Report
+
+## Exit Criteria
+
+* All tests pass
+* No regressions detected
+* Every requirement mapped to verification
+
+---
+
+# Phase 5 — Integration, Archive & Sign-Off
+
+## Purpose
+
+Finalize and formally close the change.
+
+## Agents
+
+* arq-reviewer
+* auditor
+
+## Activities
+
+### Architecture Review
+
+Final compliance validation.
+
+### OpenSpec Closure
+
+Move completed change:
+
+```text
+openspec/changes/<change-name>
+```
+
+to:
+
+```text
+openspec/changes/archive/
+```
+
+### Git Integration
+
+Merge:
+
+```text
+feat/backend-logistics-fixes
+```
+
+into:
+
+```text
+main
+```
+
+## Deliverables
+
+* Architecture Sign-Off
+* Archived Specification
+* Merged Branch
+
+## Exit Criteria
+
+Change fully integrated and archived.
+
+---
+
+# 5. Agent Responsibility Matrix
+
+| Domain      | Agents                | Responsibility                                    |
+| ----------- | --------------------- | ------------------------------------------------- |
+| Governance  | arq-reviewer, auditor | Domain validation, specification review, sign-off |
+| Database    | dba-guard             | DDL, migrations, schema integrity                 |
+| Security    | sec-ops               | Authorization, RBAC, payload validation           |
+| Backend     | coder                 | FastAPI, SQLAlchemy, services, APIs               |
+| Refactoring | auditor               | Cleanup and technical debt control                |
+| Testing     | tester, qa-agent      | Verification and traceability                     |
+
+---
+
+# 6. Immediate Next Action
+
+Execute:
+
+```text
+Phase 0 — Domain & Architecture Validation
+```
+
+Target Issues:
+
+1. Team Inventory Isolation
+2. Fiber Optic Inventory Isolation
+3. Stock Editing Under Immutable Ledger Constraints
+
+Expected Outcome:
+
+A formal determination of whether these requirements can be implemented within the current logistics model or require a domain evolution before entering specification and implementation phases.
