@@ -28,6 +28,15 @@ _SQL_CARGAR_STOCK_INICIAL = text(
 _SQL_AJUSTAR_STOCK_ALMACEN = text(
     "SELECT fn_ajustar_stock_almacen(:almacen_id, :material_id, :nuevo_stock, :motivo)"
 )
+_SQL_CARGAR_STOCK_INICIAL_FIBRA = text(
+    "SELECT fn_cargar_stock_inicial_fibra(:modulo, :material_id, :cantidad, :motivo)"
+)
+_SQL_AJUSTAR_STOCK_FIBRA = text(
+    "SELECT fn_ajustar_stock_fibra(:modulo, :material_id, :nuevo_stock, :motivo)"
+)
+_SQL_AJUSTAR_STOCK_GENERAL = text(
+    "SELECT fn_ajustar_stock_general(:material_id, :nuevo_stock, :motivo)"
+)
 
 
 def _sqlstate(exc: DBAPIError) -> str | None:
@@ -68,6 +77,16 @@ async def _mapear_raise_exception(exc: DBAPIError) -> Exception:
 
     if "No se encuentra registro de inventario" in mensaje:
         return BusinessRuleError(mensaje, status_code=404)
+
+    # fn_ajustar_stock_general: el material no tiene fila en la sección
+    # GENERAL activa (ajuste de stock desde Inventario General, REQ-API-002).
+    if "No se encontró inventario del material" in mensaje:
+        return BusinessRuleError(mensaje, status_code=400)
+
+    # fn_ajustar_stock_general: ambigüedad de destino (más de una sección
+    # GENERAL activa con el material) — conflicto de estado del dominio.
+    if "no es posible determinar un destino único" in mensaje:
+        return BusinessRuleError(mensaje, status_code=409)
 
     if "no puede ser negativa" in mensaje or "no puede ser negativo" in mensaje:
         return BusinessRuleError(mensaje, status_code=400)
@@ -200,6 +219,77 @@ async def ajustar_stock_almacen(
         _SQL_AJUSTAR_STOCK_ALMACEN,
         {
             "almacen_id": almacen_id,
+            "material_id": material_id,
+            "nuevo_stock": nuevo_stock,
+            "motivo": motivo,
+        },
+    )
+
+
+async def cargar_stock_inicial_fibra(
+    session: AsyncSession,
+    *,
+    modulo: str,
+    material_id: int,
+    cantidad: int,
+    motivo: str | None,
+) -> None:
+    """fn_cargar_stock_inicial_fibra: alta única e idempotente de inventario
+    FO (PAQUETE/EN_USO). Rechaza si la fila (modulo, material_id) ya existe
+    y audita 'STOCK_INICIAL_FO' en PostgreSQL."""
+    await _prechequear_material(session, material_id=material_id)
+    await _ejecutar(
+        session,
+        _SQL_CARGAR_STOCK_INICIAL_FIBRA,
+        {
+            "modulo": modulo,
+            "material_id": material_id,
+            "cantidad": cantidad,
+            "motivo": motivo,
+        },
+    )
+
+
+async def ajustar_stock_fibra(
+    session: AsyncSession,
+    *,
+    modulo: str,
+    material_id: int,
+    nuevo_stock: int,
+    motivo: str,
+) -> None:
+    """fn_ajustar_stock_fibra: ajuste administrativo FO con motivo
+    obligatorio. Diferencial, FOR UPDATE y auditoría
+    ('AJUSTE_INVENTARIO_FO') calculados en PostgreSQL."""
+    await _prechequear_material(session, material_id=material_id)
+    await _ejecutar(
+        session,
+        _SQL_AJUSTAR_STOCK_FIBRA,
+        {
+            "modulo": modulo,
+            "material_id": material_id,
+            "nuevo_stock": nuevo_stock,
+            "motivo": motivo,
+        },
+    )
+
+
+async def ajustar_stock_general(
+    session: AsyncSession,
+    *,
+    material_id: int,
+    nuevo_stock: int,
+    motivo: str,
+) -> None:
+    """fn_ajustar_stock_general: edición de stock desde Inventario General
+    (REQ-API-002/003). Localiza en PostgreSQL la fila del material en la
+    sección GENERAL activa y delega en fn_ajustar_stock_almacen: el
+    diferencial y la auditoría viven íntegros en la base de datos."""
+    await _prechequear_material(session, material_id=material_id)
+    await _ejecutar(
+        session,
+        _SQL_AJUSTAR_STOCK_GENERAL,
+        {
             "material_id": material_id,
             "nuevo_stock": nuevo_stock,
             "motivo": motivo,

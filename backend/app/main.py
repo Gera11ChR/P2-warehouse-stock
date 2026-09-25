@@ -7,6 +7,7 @@ from app.api.v1 import (
     cancelaciones,
     catalog,
     equipos,
+    fibra,
     inventario,
     movimientos,
 )
@@ -26,6 +27,7 @@ app.include_router(movimientos.router, prefix="/api/v1")
 app.include_router(cancelaciones.router, prefix="/api/v1")
 app.include_router(ajustes.router, prefix="/api/v1")
 app.include_router(equipos.router, prefix="/api/v1")
+app.include_router(fibra.router, prefix="/api/v1")
 app.include_router(auditoria.router, prefix="/api/v1")
 
 

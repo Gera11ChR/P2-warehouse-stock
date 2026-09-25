@@ -5,7 +5,7 @@ de modo que todo fixture transita por el mismo camino de producción:
 validación Pydantic -> routers -> services -> Stored Functions.
 """
 
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 
 ALMACEN_GENERAL = 1
 ALMACEN_PAQUETE = 2
@@ -183,10 +183,73 @@ async def stock_seccion(
     return {f["material_id"]: f["stock_actual"] for f in resp.json()}
 
 
-async def catalogo_equipo(
+async def inventario_equipo(
     client: AsyncClient, equipo_id: int
 ) -> dict[int, dict]:
-    """Mapa {id_lista: fila} del catálogo sparse del equipo (vía API pública)."""
-    resp = await client.get(f"/api/v1/inventario/equipos/{equipo_id}")
+    """Mapa {material_id: fila} del inventario AUTÓNOMO del equipo
+    (GET /api/v1/equipos/{id}/inventario, REQ-DOMAIN-001/002).
+
+    Solo filas físicas de `inventario_equipos` con stock real originado en
+    movimientos TEAMS/DEVOL auditados: cero filas fantasma (stock 0) y cero
+    materiales inactivos. Un equipo nuevo devuelve [] (200)."""
+    resp = await client.get(f"/api/v1/equipos/{equipo_id}/inventario")
     assert resp.status_code == 200, resp.text
-    return {f["id_lista"]: f for f in resp.json()}
+    return {f["material_id"]: f for f in resp.json()}
+
+
+async def fibra_carga_inicial(
+    client: AsyncClient,
+    *,
+    modulo: str,
+    material_id: int,
+    cantidad: int,
+    motivo: str | None = "Carga inicial FO QA",
+    expect: int = 200,
+) -> dict:
+    """Alta única de inventario FO (fn_cargar_stock_inicial_fibra)."""
+    payload: dict = {
+        "modulo": modulo,
+        "material_id": material_id,
+        "cantidad": cantidad,
+    }
+    if motivo is not None:
+        payload["motivo"] = motivo
+    resp = await client.post("/api/v1/fibra/carga-inicial", json=payload)
+    assert resp.status_code == expect, resp.text
+    return resp.json()
+
+
+async def fibra_ajuste(
+    client: AsyncClient,
+    *,
+    modulo: str,
+    material_id: int,
+    nuevo_stock: int,
+    motivo: str = "Ajuste FO QA",
+    expect: int = 200,
+) -> dict:
+    """Ajuste administrativo FO (fn_ajustar_stock_fibra)."""
+    resp = await client.post(
+        "/api/v1/fibra/ajuste",
+        json={
+            "modulo": modulo,
+            "material_id": material_id,
+            "nuevo_stock": nuevo_stock,
+            "motivo": motivo,
+        },
+    )
+    assert resp.status_code == expect, resp.text
+    return resp.json()
+
+
+async def patch_material(
+    client: AsyncClient,
+    id_lista: int,
+    **campos,
+) -> Response:
+    """PATCH /api/v1/catalogo/{id_lista} con campos arbitrarios.
+
+    Devuelve la respuesta cruda httpx (sin assert de status) para que cada
+    test decida el código esperado y valide tanto status como payload."""
+    resp = await client.patch(f"/api/v1/catalogo/{id_lista}", json=campos)
+    return resp

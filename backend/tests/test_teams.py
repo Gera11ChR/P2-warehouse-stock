@@ -12,11 +12,12 @@ from sqlalchemy import select
 
 from app.models import AuditoriaEvento
 from tests.helpers.fabrica import (
+    borrador_devol,
     borrador_teams,
     carga_inicial,
-    catalogo_equipo,
     crear_equipo,
     crear_material,
+    inventario_equipo,
     procesar,
     stock_seccion,
 )
@@ -59,7 +60,7 @@ async def test_teams_exitoso_descuenta_y_suma(
     assert resultado["estado"] == "CONFIRMADO"
 
     assert await stock_seccion(client, 1) == {material["id_lista"]: 60}
-    filas = await catalogo_equipo(client, equipo["equipo_id"])
+    filas = await inventario_equipo(client, equipo["equipo_id"])
     assert filas[material["id_lista"]]["stock_actual"] == 40
 
 
@@ -233,9 +234,14 @@ async def test_patch_confirmado_409(client: AsyncClient) -> None:
 
 
 @pytest.mark.critical
-async def test_teams_cantidad_exacta_deja_fila_viva_con_cero(
+async def test_teams_cantidad_exacta_luego_devol_total_elimina_fila(
     client: AsyncClient,
 ) -> None:
+    """REQ-DOMAIN-002: cero filas fantasma en el inventario autónomo.
+
+    TEAMS por el total del stock (40/40) deja el origen en 0 y el equipo en
+    40; tras una DEVOL total, la fila del equipo DESAPARECE del inventario
+    (no se renderizan filas de stock 0)."""
     material, equipo = await _setup_stock(client, cantidad=40)
 
     borrador = await borrador_teams(
@@ -248,8 +254,21 @@ async def test_teams_cantidad_exacta_deja_fila_viva_con_cero(
     await procesar(client, borrador["id"])
 
     assert await stock_seccion(client, 1) == {material["id_lista"]: 0}
-    filas = await catalogo_equipo(client, equipo["equipo_id"])
+    filas = await inventario_equipo(client, equipo["equipo_id"])
     assert filas[material["id_lista"]]["stock_actual"] == 40
+
+    devol = await borrador_devol(
+        client,
+        equipo_id=equipo["equipo_id"],
+        almacen_id=1,
+        material_id=material["id_lista"],
+        cantidad=40,
+    )
+    await procesar(client, devol["id"])
+
+    assert await stock_seccion(client, 1) == {material["id_lista"]: 40}
+    filas = await inventario_equipo(client, equipo["equipo_id"])
+    assert material["id_lista"] not in filas
 
 
 @pytest.mark.critical

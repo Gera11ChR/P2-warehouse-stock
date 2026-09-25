@@ -68,10 +68,14 @@ class InventarioAlmacen(Base):
 
 
 class InventarioEquipo(Base):
-    """Sparse Model: solo existen filas cuando un equipo tiene stock o
-    movimientos reales. La vista vw_inventario_equipo_completo renderiza el
-    catálogo completo con stock 0 donde no hay registro. LECTURA ESTRICTA:
-    las mutaciones ocurren únicamente dentro de las Stored Functions."""
+    """Inventario autónomo del equipo (REQ-DOMAIN-001/002).
+
+    El Modelo Sparse y la vista `vw_inventario_equipo_completo` quedaron
+    deprecados: `inventario_equipos` es la fuente física autónoma del stock
+    de cada equipo, inicializada VACÍA al crear el equipo (cero herencia del
+    catálogo global) y poblada EXCLUSIVAMENTE por movimientos TEAMS/DEVOL
+    auditados (`fn_procesar_movimiento`). LECTURA ESTRICTA: las mutaciones
+    ocurren únicamente dentro de las Stored Functions."""
 
     __tablename__ = "inventario_equipos"
     __table_args__ = (
@@ -84,6 +88,50 @@ class InventarioEquipo(Base):
     equipo_id: Mapped[int] = mapped_column(
         ForeignKey("equipos.equipo_id", ondelete="RESTRICT"), primary_key=True
     )
+    material_id: Mapped[int] = mapped_column(
+        ForeignKey("catalogo_materiales.id_lista", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    stock_actual: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    # Puntero lógico al movimiento de origen (trazabilidad REQ-DOMAIN-002).
+    # Sin FK declarativa a movimientos_cabecera: el ledger de movimientos es
+    # append-only (jamás se borran físicamente), por lo que el puntero aporta
+    # la misma trazabilidad sin acoplar el inventario al ciclo de vida del
+    # movimiento. Las filas preexistentes quedan en NULL (sin atribución
+    # fabricada: el stock acumulado puede provenir de varios movimientos).
+    ultimo_movimiento_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+
+class InventarioFibra(Base):
+    """Inventario independiente de Fibra Óptica (REQ-DOMAIN-003/004/005/006).
+
+    `PAQUETE` y `EN_USO` son raíces de inventario autónomas con el esquema
+    estándar (ya NO secciones del Inventario General). Las filas son
+    registros físicos reales creados por `fn_cargar_stock_inicial_fibra` y
+    mutados SOLO por `fn_ajustar_stock_fibra`; la métrica de cada activo la
+    gobierna el campo `u_m` del catálogo maestro (nunca columnas
+    carretes/metros del legacy `fiber_variants`). LECTURA ESTRICTA desde el
+    backend: prohibido session.add/delete o UPDATE directo sobre esta tabla."""
+
+    __tablename__ = "inventario_fibra"
+    __table_args__ = (
+        CheckConstraint(
+            "modulo IN ('PAQUETE','EN_USO')", name="ck_inventario_fibra_modulo"
+        ),
+        CheckConstraint(
+            "stock_actual >= 0", name="ck_inventario_fibra_non_negative"
+        ),
+        Index("ix_inventario_fibra_material", "material_id"),
+    )
+
+    modulo: Mapped[str] = mapped_column(String(20), primary_key=True)
     material_id: Mapped[int] = mapped_column(
         ForeignKey("catalogo_materiales.id_lista", ondelete="RESTRICT"),
         primary_key=True,

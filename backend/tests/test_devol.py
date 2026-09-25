@@ -7,9 +7,9 @@ from tests.helpers.fabrica import (
     borrador_devol,
     borrador_teams,
     carga_inicial,
-    catalogo_equipo,
     crear_equipo,
     crear_material,
+    inventario_equipo,
     procesar,
     stock_seccion,
 )
@@ -49,8 +49,10 @@ async def test_devol_exitoso(client: AsyncClient) -> None:
     assert resultado["estado"] == "CONFIRMADO"
 
     assert await stock_seccion(client, 1) == {material["id_lista"]: 25}
-    filas = await catalogo_equipo(client, equipo["equipo_id"])
-    assert filas[material["id_lista"]]["stock_actual"] == 0
+    # REQ-DOMAIN-002: tras DEVOL total la fila del equipo desaparece
+    # (cero fantasmas; no se renderizan filas de stock 0).
+    filas = await inventario_equipo(client, equipo["equipo_id"])
+    assert material["id_lista"] not in filas
 
 
 @pytest.mark.critical
@@ -73,7 +75,7 @@ async def test_devol_bloqueado_por_falta_stock_400(
     assert resp.status_code == 400
     assert "stock suficiente" in resp.json()["error"]["message"]
 
-    filas = await catalogo_equipo(client, equipo["equipo_id"])
+    filas = await inventario_equipo(client, equipo["equipo_id"])
     assert filas[material["id_lista"]]["stock_actual"] == 10
     assert await stock_seccion(client, 1) == {material["id_lista"]: 0}
 

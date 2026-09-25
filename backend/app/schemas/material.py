@@ -71,8 +71,17 @@ class MaterialCreate(BaseModel):
 
 
 class MaterialUpdate(BaseModel):
-    """Edición de material. `id_lista` es INMUTABLE: no existe como campo de
-    escritura. El stock nunca se modifica por esta vía (solo catálogo)."""
+    """Edición de material (alcance: Inventario General, REQ-UI-004).
+
+    `id_lista` es INMUTABLE: no existe como campo de escritura.
+
+    El stock NO se actualiza por ORM: si `stock_actual` viene en el payload,
+    el servicio calcula el delta (Nuevo − Actual) y lo enruta a
+    `fn_ajustar_stock_almacen` (vía `fn_ajustar_stock_general`) con
+    `motivo` obligatorio y no vacío, de modo que PostgreSQL registre el
+    ajuste como evento de Auditoría (Constitution 2.4: ledger inmutable;
+    jamás UPDATE directo de stock). Este campo solo aplica al Inventario
+    General, nunca a inventarios de Equipos ni de Fibra Óptica."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -82,6 +91,8 @@ class MaterialUpdate(BaseModel):
     nueva_categoria: str | None = Field(default=None, max_length=100)
     u_m: str | None = None
     stock_minimo: int | None = Field(default=None, ge=0)
+    stock_actual: int | None = Field(default=None, ge=0)
+    motivo: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
 
     _check_um = field_validator("u_m")(_validate_um)
@@ -92,6 +103,19 @@ class MaterialUpdate(BaseModel):
             raise ValueError(
                 "Use solo una rama del selector dual: categoria_id o nueva_categoria."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _check_stock_motivo(self) -> "MaterialUpdate":
+        """REQ-API-003: si se envía `stock_actual`, el `motivo` es
+        obligatorio y no vacío; el ajuste debe quedar trazado en el ledger."""
+        if self.stock_actual is not None:
+            if self.motivo is None or not self.motivo.strip():
+                raise ValueError(
+                    "motivo es obligatorio y no puede estar vacío cuando se "
+                    "modifica stock_actual: todo ajuste de stock debe quedar "
+                    "trazado en el ledger de Auditoría."
+                )
         return self
 
 
@@ -109,4 +133,38 @@ class MaterialOut(BaseModel):
 
 
 class MaterialListOut(BaseModel):
+    """Listado del catálogo. `start_index` (REQ-API-006) es el índice ordinal
+    de inicio para que el frontend renderice números de lista continuos
+    1-indexed sin descargar el catálogo completo (Principio 4)."""
+
+    start_index: int = 1
     materiales: list[MaterialOut]
+
+
+class BusquedaGranelParams(BaseModel):
+    """Parámetros de consulta del Buscador a granel (REQ-UI-007,
+    REQ-API-006/007). El rango por número de lista se resuelve 100 % en
+    backend con posicionamiento ordinal determinista
+    (`ORDER BY descripcion ASC, id_lista ASC`, `OFFSET = X - 1`,
+    `LIMIT = Y - X + 1`); la respuesta devuelve `start_index = X`.
+    Prohibido descargar datasets completos al cliente."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    desde_numero_lista: int | None = Field(default=None, ge=1)
+    hasta_numero_lista: int | None = Field(default=None, ge=1)
+    desde_descripcion: str | None = Field(default=None, max_length=255)
+    hasta_descripcion: str | None = Field(default=None, max_length=255)
+
+    @model_validator(mode="after")
+    def _check_rango_numero_lista(self) -> "BusquedaGranelParams":
+        if (
+            self.desde_numero_lista is not None
+            and self.hasta_numero_lista is not None
+            and self.hasta_numero_lista < self.desde_numero_lista
+        ):
+            raise ValueError(
+                "hasta_numero_lista debe ser mayor o igual que "
+                "desde_numero_lista."
+            )
+        return self

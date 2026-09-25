@@ -7,8 +7,9 @@ from sqlalchemy.orm import selectinload
 
 from app.db import get_session
 from app.errors import BusinessRuleError
-from app.models import Equipo, EquipoIntegrante
+from app.models import CatalogoMaterial, Equipo, EquipoIntegrante, InventarioEquipo
 from app.schemas.equipo import EquipoCreate, EquipoOut, EquipoUpdate
+from app.schemas.inventario import InventarioEquipoOut
 from app.security import ActorContext, assert_authenticated, get_current_actor
 
 router = APIRouter(prefix="/equipos", tags=["equipos"])
@@ -55,6 +56,13 @@ async def crear_equipo(
     session: SessionDep,
     actor_ctx: ActorDep,
 ) -> EquipoOut:
+    """Alta de equipo (REQ-DOMAIN-001/002, Task 3.5).
+
+    INVARIANTE EXPLÍCITA: NO se insertan filas de inventario. El inventario
+    autónomo del equipo nace VACÍO (cero herencia del catálogo global) y
+    solo se puebla por movimientos TEAMS/DEVOL auditados
+    (fn_procesar_movimiento). GET /{equipo_id}/inventario devuelve [] (200)
+    para un equipo nuevo."""
     assert_authenticated(actor_ctx)
     async with session.begin():
         equipo = Equipo(
@@ -81,6 +89,68 @@ async def obtener_equipo(
             status_code=404,
         )
     return _to_out(equipo)
+
+
+@router.get("/{equipo_id}/inventario", response_model=list[InventarioEquipoOut])
+async def inventario_equipo(
+    equipo_id: int, session: SessionDep, _actor: ActorDep
+) -> list[InventarioEquipoOut]:
+    """Inventario autónomo del equipo (REQ-DOMAIN-001/002, Task 3.6).
+
+    Query directa a `inventario_equipos` (la vista sparse ya no existe):
+    solo filas físicas con stock real originado en movimientos TEAMS/DEVOL
+    auditados. Cero fantasmas: se omiten materiales inactivos y filas de
+    stock 0 (REQ-API-001). Cada fila traza su movimiento de origen vía
+    `ultimo_movimiento_id`. Un equipo nuevo devuelve [] (200) — inventario
+    autónomo vacío, jamás 404 por catálogo vacío."""
+    equipo = await _obtener(session, equipo_id)
+    if equipo is None:
+        raise BusinessRuleError(
+            "Equipo no encontrado",
+            coordinates=[{"equipo_id": equipo_id}],
+            status_code=404,
+        )
+    stmt = (
+        select(
+            InventarioEquipo.equipo_id,
+            InventarioEquipo.material_id,
+            CatalogoMaterial.codigo,
+            CatalogoMaterial.descripcion,
+            CatalogoMaterial.u_m,
+            CatalogoMaterial.stock_minimo,
+            InventarioEquipo.stock_actual,
+            InventarioEquipo.ultimo_movimiento_id,
+        )
+        .join(
+            CatalogoMaterial,
+            CatalogoMaterial.id_lista == InventarioEquipo.material_id,
+        )
+        .where(
+            InventarioEquipo.equipo_id == equipo_id,
+            CatalogoMaterial.is_active == True,  # noqa: E712
+            InventarioEquipo.stock_actual > 0,
+        )
+        .order_by(InventarioEquipo.material_id.asc())
+    )
+    filas = (await session.execute(stmt)).all()
+    return [
+        InventarioEquipoOut(
+            equipo_id=f.equipo_id,
+            material_id=f.material_id,
+            codigo=f.codigo,
+            descripcion=f.descripcion,
+            u_m=f.u_m,
+            stock_minimo=f.stock_minimo,
+            stock_actual=f.stock_actual,
+            alerta_stock=(
+                f.stock_actual <= f.stock_minimo
+                if f.stock_minimo is not None
+                else False
+            ),
+            ultimo_movimiento_id=f.ultimo_movimiento_id,
+        )
+        for f in filas
+    ]
 
 
 @router.patch("/{equipo_id}", response_model=EquipoOut)
