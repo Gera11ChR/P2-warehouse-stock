@@ -10,7 +10,6 @@ interface MaterialDetailDrawerProps {
   alertaStock: boolean
   um: string | null
   codigo: string
-  metrosRestantes?: number | null
   onModificar: () => void
   onEliminar: () => void
 }
@@ -41,7 +40,6 @@ export default function MaterialDetailDrawer({
   alertaStock,
   um,
   codigo,
-  metrosRestantes,
   onModificar,
   onEliminar,
 }: MaterialDetailDrawerProps) {
@@ -83,17 +81,6 @@ export default function MaterialDetailDrawer({
         <Field label="Código (SKU)">
           <span className="font-mono">{codigo}</span>
         </Field>
-
-        {metrosRestantes != null && (
-          <div className="mt-4 rounded-md border border-blue-200 bg-blue-50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-blue-500">
-              Metros Restantes
-            </p>
-            <p className="mt-1 text-xl font-semibold text-blue-700">
-              {metrosRestantes.toLocaleString('es-MX')} m
-            </p>
-          </div>
-        )}
       </div>
 
       <div className="flex gap-2 border-t border-slate-200 px-5 py-4">

@@ -12,21 +12,30 @@ interface InventoryTableProps {
   rows: InventoryRow[]
   selectedCodigo: string | null
   onSelect: (row: InventoryRow) => void
+  /**
+   * REQ-UI-005: join de PRESENTACIÓN material_id → nombre de categoría.
+   * Resuelto desde el endpoint oficial /catalogo (la fila de stock por
+   * sección no incluye categoría); el frontend solo proyecta, nunca
+   * es fuente de verdad.
+   */
+  categoriaPorMaterial?: Record<number, string>
 }
 
 export default function InventoryTable({
   rows,
   selectedCodigo,
   onSelect,
+  categoriaPorMaterial,
 }: InventoryTableProps) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
       <table className="w-full text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr>
-            <th className="px-4 py-3">ID Lista</th>
+            <th className="px-4 py-3">Nº</th>
             <th className="px-4 py-3">Código</th>
             <th className="px-4 py-3">Descripción</th>
+            <th className="px-4 py-3">Categoría</th>
             <th className="px-4 py-3">U.M.</th>
             <th className="px-4 py-3">Stock Actual</th>
             <th className="px-4 py-3">Stock Mínimo</th>
@@ -35,7 +44,7 @@ export default function InventoryTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((row) => {
+          {rows.map((row, index) => {
             const level = stockLevel(row)
             const selected = selectedCodigo === row.codigo
             return (
@@ -47,10 +56,13 @@ export default function InventoryTable({
                 }`}
               >
                 <td className="px-4 py-3 font-mono text-sm font-semibold text-slate-600">
-                  {row.material_id}
+                  {index + 1}
                 </td>
                 <td className="px-4 py-3 font-mono text-slate-700">{row.codigo ?? '—'}</td>
                 <td className="px-4 py-3 text-slate-700">{row.descripcion ?? '—'}</td>
+                <td className="px-4 py-3 text-slate-600">
+                  {categoriaPorMaterial?.[row.material_id] ?? '—'}
+                </td>
                 <td className="px-4 py-3 text-slate-500">{row.u_m ?? '—'}</td>
                 <td className="px-4 py-3">
                   <span

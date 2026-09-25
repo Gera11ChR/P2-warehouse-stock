@@ -7,12 +7,12 @@ import {
   createEquipo,
   updateEquipo,
   deleteEquipo,
+  inventarioEquipo,
 } from '../services/equipos'
 import type {
   EquipoCreatePayload,
   EquipoUpdatePayload,
 } from '../services/equipos'
-import { catalogoEquipo } from '../services/inventory'
 import EquipoInventoryTable from '../components/EquipoInventoryTable'
 import EquipoForm from '../components/EquipoForm'
 import Modal from '../components/Modal'
@@ -71,7 +71,7 @@ export default function InventarioPorEquipos() {
     error: inventarioErrorObj,
   } = useQuery({
     queryKey: ['equipo', effectiveEquipoId],
-    queryFn: () => catalogoEquipo(effectiveEquipoId!),
+    queryFn: () => inventarioEquipo(effectiveEquipoId!),
     enabled: effectiveEquipoId !== null,
   })
 
@@ -236,7 +236,7 @@ export default function InventarioPorEquipos() {
         </div>
       </div>
 
-      {/* Tabla de inventario sparse */}
+      {/* Tabla de inventario autónomo */}
       <div>
         {effectiveEquipoId === null && (
           <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
@@ -269,8 +269,8 @@ export default function InventarioPorEquipos() {
             <>
               <EquipoInventoryTable rows={inventarioRows} />
               <p className="mt-2 text-xs text-slate-500">
-                Mostrando {inventarioRows.length} materiales (modelo sparse: stock 0
-                donde no hay registro físico)
+                Mostrando {inventarioRows.length} materiales (inventario
+                autónomo: solo materiales con stock real)
               </p>
             </>
           )}

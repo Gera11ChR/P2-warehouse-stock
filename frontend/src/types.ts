@@ -19,6 +19,17 @@ export interface Material {
   is_active: boolean
 }
 
+/**
+ * Respuesta de GET /api/v1/catalogo (contrato real MaterialListOut).
+ * `start_index` es el ordinal 1-indexed de la primera fila del rango
+ * (REQ-API-006): el frontend numera filas continuas SIN descargar el
+ * catálogo completo.
+ */
+export interface MaterialList {
+  start_index: number
+  materiales: Material[]
+}
+
 // ============================================================================
 // INVENTARIO Y SECCIONES (contrato real /api/v1/inventario)
 // ============================================================================
@@ -58,16 +69,70 @@ export interface Equipo {
   integrantes: string[]
 }
 
-/** Fila del inventario sparse por equipo (vista vw_inventario_equipo_completo) */
-export interface CatalogoEquipoRow {
+/**
+ * Fila del inventario AUTÓNOMO del equipo (contrato real
+ * GET /api/v1/equipos/{equipo_id}/inventario, InventarioEquipoOut;
+ * REQ-DOMAIN-001/002). Reemplaza al modelo sparse deprecado
+ * (vw_inventario_equipo_completo, CatalogoEquipoRow): SOLO filas físicas
+ * con stock real originado en movimientos TEAMS/DEVOL auditados
+ * (cero fantasmas de stock 0). `ultimo_movimiento_id` traza el movimiento
+ * de origen. Equipo nuevo → [] (200); 404 solo si el equipo no existe.
+ */
+export interface InventarioEquipoRow {
   equipo_id: number
-  id_lista: number
+  material_id: number
   codigo: string | null
   descripcion: string
   u_m: string | null
   stock_minimo: number | null
   stock_actual: number
   alerta_stock: boolean
+  ultimo_movimiento_id: number | null
+}
+
+// ============================================================================
+// FIBRA ÓPTICA — inventarios independientes PAQUETE / EN_USO
+// (contrato real /api/v1/fibra; REQ-DOMAIN-003/004/005)
+// ============================================================================
+
+export type FibraModulo = 'PAQUETE' | 'EN_USO'
+
+/** Fila de stock FO con esquema estándar (CÓDIGO, DESCRIPCIÓN, U.M.,
+ *  STOCK ACTUAL, STOCK MÍNIMO, ALERTA STOCK). La métrica la gobierna `u_m`
+ *  (el legado carretes/metros de fiber_variants está deprecado). */
+export interface FibraStockRow {
+  modulo: FibraModulo
+  material_id: number
+  codigo: string | null
+  descripcion: string
+  u_m: string | null
+  stock_minimo: number | null
+  stock_actual: number
+  alerta_stock: boolean
+}
+
+/** POST /api/v1/fibra/carga-inicial — alta única e idempotente.
+ *  `cantidad` >= 0; `motivo` opcional. */
+export interface FibraCargaInicialPayload {
+  modulo: FibraModulo
+  material_id: number
+  cantidad: number
+  motivo?: string
+}
+
+/** POST /api/v1/fibra/ajuste — ajuste administrativo.
+ *  `nuevo_stock` >= 0; `motivo` OBLIGATORIO y no vacío (422 si falta). */
+export interface FibraAjustePayload {
+  modulo: FibraModulo
+  material_id: number
+  nuevo_stock: number
+  motivo: string
+}
+
+/** Eco mínimo de una operación FO (FibraOperacionOut). */
+export interface FibraOperacionOut {
+  modulo: FibraModulo
+  material_id: number
 }
 
 // ============================================================================
@@ -146,6 +211,12 @@ export interface EventoAuditoria {
   resultado: string | null
   detalles: Record<string, unknown> | null
   created_at: string
+  /** LEFT JOIN al catálogo SIN filtro is_active (REQ-API-008):
+   *  el historial queda íntegro aunque el material esté inactivo. */
+  descripcion: string | null
+  codigo: string | null
+  categoria: string | null
+  estado_activo: boolean | null
 }
 
 export const TIPOS_ACCION_AUDITORIA: Record<string, string> = {
@@ -155,6 +226,9 @@ export const TIPOS_ACCION_AUDITORIA: Record<string, string> = {
   MOVIMIENTO_CANCELADO: 'Movimiento cancelado',
   STOCK_INICIAL: 'Carga inicial de stock',
   AJUSTE_INVENTARIO: 'Ajuste de inventario',
+  STOCK_INICIAL_FO: 'Carga inicial FO',
+  AJUSTE_INVENTARIO_FO: 'Ajuste de inventario FO',
+  MIGRACION_FO: 'Migración FO',
 }
 
 // ============================================================================

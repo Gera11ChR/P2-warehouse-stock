@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
 import { listEventos } from '../services/auditoria'
-import { listCatalog } from '../services/catalog'
 import { listSecciones } from '../services/inventory'
 import { listEquipos } from '../services/equipos'
 import { TIPOS_ACCION_AUDITORIA } from '../types'
@@ -14,26 +13,23 @@ function formatFecha(iso: string): string {
 }
 
 export default function Auditoria() {
-  const [materialId, setMaterialId] = useState('')
+  const [descripcion, setDescripcion] = useState('')
   const [tipoAccion, setTipoAccion] = useState('')
   const [usuario, setUsuario] = useState('')
   const [fechaDesde, setFechaDesde] = useState('')
   const [expandidos, setExpandidos] = useState<Set<number>>(new Set())
 
   const eventosQuery = useQuery({
-    queryKey: ['auditoria', materialId, tipoAccion, usuario],
+    queryKey: ['auditoria', descripcion, tipoAccion, usuario],
     queryFn: () =>
       listEventos({
-        material_id: materialId ? Number(materialId) : undefined,
+        // REQ-UI-006: el filtro es por DESCRIPCIÓN del material (ILIKE en
+        // backend), no por el deprecado ID Lista.
+        descripcion: descripcion.trim() || undefined,
         tipo_accion: tipoAccion || undefined,
         usuario: usuario.trim() || undefined,
         limit: 500,
       }),
-  })
-
-  const { data: catalogo = [] } = useQuery({
-    queryKey: ['catalogo'],
-    queryFn: () => listCatalog(),
   })
 
   const { data: secciones = [] } = useQuery({
@@ -46,17 +42,11 @@ export default function Auditoria() {
     queryFn: listEquipos,
   })
 
-  const nombreMaterial = useMemo(() => {
-    const map = new Map<number, { codigo: string | null; descripcion: string }>()
-    catalogo.forEach((m) =>
-      map.set(m.id_lista, { codigo: m.codigo, descripcion: m.descripcion }),
-    )
-    return (id: number | null): string => {
-      if (id == null) return '—'
-      const m = map.get(id)
-      return m ? `${m.descripcion} (${m.codigo ?? id})` : `ID LISTA ${id}`
-    }
-  }, [catalogo])
+  // REQ-API-008: cada evento ya trae descripcion/codigo/categoria/
+  // estado_activo vía LEFT JOIN al catálogo SIN filtro de actividad.
+  // El frontend NO re-une contra el catálogo local (una sola fuente) y
+  // NUNCA filtra/oculta eventos de materiales inactivos: el historial
+  // es un ledger append-only inmutable.
 
   const nombreSeccion = (id: number | null): string =>
     secciones.find((s) => s.almacen_id === id)?.nombre ?? `Sección ${id}`
@@ -105,13 +95,13 @@ export default function Auditoria() {
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-500">
-            Material (ID LISTA)
+            Material (descripción)
           </label>
           <input
-            type="number"
-            value={materialId}
-            onChange={(e) => setMaterialId(e.target.value)}
-            placeholder="Ej. 12"
+            type="text"
+            value={descripcion}
+            onChange={(e) => setDescripcion(e.target.value)}
+            placeholder="Ej. Cable"
             className="mt-1 w-32 rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
@@ -165,7 +155,7 @@ export default function Auditoria() {
                 <th className="px-4 py-2">Fecha y Hora</th>
                 <th className="px-4 py-2">Usuario</th>
                 <th className="px-4 py-2">Acción</th>
-                <th className="px-4 py-2">Material Afectado</th>
+                <th className="px-4 py-2">Descripción</th>
                 <th className="px-4 py-2">Origen → Destino</th>
                 <th className="px-4 py-2">Cantidad</th>
                 <th className="px-4 py-2">Resultado</th>
@@ -188,7 +178,19 @@ export default function Auditoria() {
                       </span>
                     </td>
                     <td className="px-4 py-2 text-slate-700">
-                      {nombreMaterial(e.material_id)}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{e.descripcion ?? '—'}</span>
+                        {e.estado_activo === false && (
+                          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                            [Inactivo]
+                          </span>
+                        )}
+                      </div>
+                      {e.codigo && (
+                        <div className="mt-0.5 font-mono text-xs text-slate-500">
+                          {e.codigo}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-slate-700">
                       {e.almacen_origen_id != null ||

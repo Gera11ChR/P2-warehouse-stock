@@ -20,8 +20,23 @@ const mockCategorias = [
 ]
 
 describe('MaterialForm STOCK ACTUAL', () => {
-  it('renders stock actual as read-only in both create and edit modes', () => {
-    const { rerender } = render(
+  it('renderiza stock actual como solo lectura en modo create', () => {
+    render(
+      <MaterialForm
+        mode="create"
+        stockActual={0}
+        categorias={mockCategorias}
+        onSubmit={() => undefined}
+        onCancel={() => undefined}
+      />,
+    )
+
+    expect(screen.getByText('0')).toBeInTheDocument()
+    expect(screen.getByText(/Solo lectura/i)).toBeInTheDocument()
+  })
+
+  it('habilita Stock Actual y Código (SKU) como editables en modo edit', () => {
+    render(
       <MaterialForm
         mode="edit"
         initial={baseMaterial}
@@ -31,24 +46,19 @@ describe('MaterialForm STOCK ACTUAL', () => {
         onCancel={() => undefined}
       />,
     )
-    
-    expect(screen.getByText('42')).toBeInTheDocument()
-    expect(screen.getByText(/Solo lectura/i)).toBeInTheDocument()
-    
-    rerender(
-      <MaterialForm
-        mode="create"
-        stockActual={0}
-        categorias={mockCategorias}
-        onSubmit={() => undefined}
-        onCancel={() => undefined}
-      />,
-    )
-    
-    expect(screen.getByText('0')).toBeInTheDocument()
+
+    // Stock Actual ahora es un input numérico editable (no un div de solo lectura)
+    const stockInput = screen.getAllByRole('spinbutton')[0]
+    expect(stockInput).toHaveValue(42)
+    expect(stockInput).toBeEnabled()
+    expect(screen.queryByText(/Solo lectura/i)).not.toBeInTheDocument()
+
+    // Código (SKU) editable en edición
+    const codigoInput = screen.getByDisplayValue('SKU-1')
+    expect(codigoInput).toBeEnabled()
   })
 
-  it('does not include stock fields in payload (read-only)', async () => {
+  it('no incluye stock_actual ni motivo en el payload si el stock no se tocó', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(
@@ -61,11 +71,100 @@ describe('MaterialForm STOCK ACTUAL', () => {
         onCancel={() => undefined}
       />,
     )
-    
+
     await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
     const payload = onSubmit.mock.calls[0][0]
-    expect(payload.on_hand_quantity).toBeUndefined()
     expect(payload.stock_actual).toBeUndefined()
+    expect(payload.motivo).toBeUndefined()
+  })
+
+  it('exige motivo al editar el stock: no llama onSubmit y muestra error', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <MaterialForm
+        mode="edit"
+        initial={baseMaterial}
+        stockActual={42}
+        categorias={mockCategorias}
+        onSubmit={onSubmit}
+        onCancel={() => undefined}
+      />,
+    )
+
+    const stockInput = screen.getAllByRole('spinbutton')[0]
+    await user.clear(stockInput)
+    await user.type(stockInput, '60')
+
+    // Al modificar el stock aparece el campo Motivo del ajuste + proyección
+    expect(screen.getByPlaceholderText(/Conteo físico/)).toBeInTheDocument()
+    expect(screen.getByText(/Proyección visual/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(
+      screen.getByText(/El motivo del ajuste es obligatorio/i),
+    ).toBeInTheDocument()
+  })
+
+  it('envía stock_actual + motivo cuando se edita el stock con motivo válido', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <MaterialForm
+        mode="edit"
+        initial={baseMaterial}
+        stockActual={42}
+        categorias={mockCategorias}
+        onSubmit={onSubmit}
+        onCancel={() => undefined}
+      />,
+    )
+
+    const stockInput = screen.getAllByRole('spinbutton')[0]
+    await user.clear(stockInput)
+    await user.type(stockInput, '60')
+    await user.type(
+      screen.getByPlaceholderText(/Conteo físico/),
+      'Conteo físico',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stock_actual: 60,
+        motivo: 'Conteo físico',
+      }),
+    )
+  })
+
+  it('despacha el código (SKU) editado en el payload de update', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <MaterialForm
+        mode="edit"
+        initial={baseMaterial}
+        stockActual={42}
+        categorias={mockCategorias}
+        onSubmit={onSubmit}
+        onCancel={() => undefined}
+      />,
+    )
+
+    const codigoInput = screen.getByDisplayValue('SKU-1')
+    await user.clear(codigoInput)
+    await user.type(codigoInput, 'SKU-2')
+
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ codigo: 'SKU-2' }),
+    )
   })
 })
 
@@ -79,7 +178,7 @@ describe('MaterialForm CATEGORÍA DUAL', () => {
         onCancel={() => undefined}
       />,
     )
-    
+
     expect(screen.getByText('Selector')).toBeInTheDocument()
     expect(screen.getAllByRole('combobox')).toHaveLength(2) // U.M. + Categoría
   })
@@ -94,7 +193,7 @@ describe('MaterialForm CATEGORÍA DUAL', () => {
         onCancel={() => undefined}
       />,
     )
-    
+
     await user.click(screen.getByText('Nueva categoría'))
     expect(
       screen.getByPlaceholderText('Nombre de la nueva categoría'),
@@ -112,7 +211,7 @@ describe('MaterialForm CATEGORÍA DUAL', () => {
         onCancel={() => undefined}
       />,
     )
-    
+
     // Fill required descripcion field (first textbox)
     const descripcionInput = screen.getAllByRole('textbox')[0]
     await user.type(descripcionInput, 'Producto nuevo')
@@ -122,11 +221,40 @@ describe('MaterialForm CATEGORÍA DUAL', () => {
       'Ferretería',
     )
     await user.click(screen.getByRole('button', { name: 'Agregar' }))
-    
+
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         nueva_categoria: 'Ferretería',
         categoria_id: null,
+      }),
+    )
+  })
+
+  it('precarga y despacha categoria_id en modo edit (selector dual)', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <MaterialForm
+        mode="edit"
+        initial={baseMaterial}
+        stockActual={42}
+        categorias={mockCategorias}
+        onSubmit={onSubmit}
+        onCancel={() => undefined}
+      />,
+    )
+
+    // El selector precarga la categoría actual del material
+    const categoriaSelect = screen.getAllByRole('combobox')[1] as HTMLSelectElement
+    expect(categoriaSelect.value).toBe('1')
+
+    await user.selectOptions(categoriaSelect, '2')
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        categoria_id: 2,
+        nueva_categoria: null,
       }),
     )
   })
@@ -142,7 +270,7 @@ describe('MaterialForm SIN CAMPO TIPO', () => {
         onCancel={() => undefined}
       />,
     )
-    
+
     // Verify TIPO label doesn't exist
     expect(screen.queryByText('Tipo')).not.toBeInTheDocument()
     // Verify old TIPO options (Fibra Óptica / GENERAL as TIPO values) don't exist

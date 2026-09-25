@@ -36,6 +36,9 @@ export default function Reportes() {
   const catalogoQuery = useQuery({
     queryKey: ['catalogo'],
     queryFn: () => listCatalog(),
+    // Contrato MaterialListOut {start_index, materiales}: la vista solo
+    // consume el arreglo de materiales (numeración ordinal no aplica aquí).
+    select: (data) => data.materiales,
   })
 
   const seccionesQuery = useQuery({
@@ -180,7 +183,7 @@ export default function Reportes() {
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-2">ID Lista</th>
+                <th className="px-4 py-2">Nº</th>
                 <th className="px-4 py-2">Código</th>
                 <th className="px-4 py-2">Descripción</th>
                 <th className="px-4 py-2">Categoría</th>
@@ -189,10 +192,10 @@ export default function Reportes() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {catalogoFiltrado.map((m) => (
+              {catalogoFiltrado.map((m, index) => (
                 <tr key={m.id_lista} className="hover:bg-slate-50">
                   <td className="px-4 py-2 font-mono font-semibold text-slate-600">
-                    {m.id_lista}
+                    {index + 1}
                   </td>
                   <td className="px-4 py-2 font-mono text-slate-700">
                     {m.codigo ?? '—'}
