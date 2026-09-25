@@ -24,16 +24,128 @@ The workflow exists to ensure that:
 * Database, API, and security concerns are designed intentionally.
 * Every implemented requirement is verifiable through automated tests.
 * Technical debt is controlled through structured auditing and refactoring.
+* All agents operate under a single authoritative document hierarchy.
 
 ---
 
-# 2. Current Development Priority
+# 2. Repository Governance Structure
 
-The current initiative is:
+```text
+~/P2
+│
+├── .opencode/
+│   └── agents/
+│
+├── backend/
+├── frontend/
+│
+├── docs/
+│   ├── constitution.md
+│   ├── flujo_operacional.md
+│   └── archive/
+│
+├── openspec/
+│   ├── changes/
+│   │   └── 2026-09-22-frontend-backend-alignment/
+│   │       ├── proposal.md
+│   │       ├── EARS.md
+│   │       ├── issues-breakdown.md
+│   │       ├── constitution-impact.md
+│   │       └── tasks.md
+│   │
+│   └── specs/
+│
+├── .agents.md
+└── README.md
+```
 
-## Backend Logistics Alignment
+---
 
-Based on the approved Issue Breakdown, the highest-priority backend concerns are:
+# 3. Document Authority Hierarchy
+
+All agents MUST follow the document hierarchy below.
+
+## Level 1 — Supreme Authority
+
+```text
+docs/constitution.md
+```
+
+Defines:
+
+* Business invariants
+* Security invariants
+* Architectural invariants
+* Non-negotiable rules
+
+---
+
+## Level 2 — Operational Governance
+
+```text
+docs/flujo_operacional.md
+.agents.md
+```
+
+Defines:
+
+* Workflow execution
+* Agent responsibilities
+* Approval flow
+* Development governance
+
+---
+
+## Level 3 — Active Change Package (Udoc2)
+
+```text
+openspec/changes/2026-09-22-frontend-backend-alignment/
+
+proposal.md
+EARS.md
+issues-breakdown.md
+```
+
+These three documents collectively form:
+
+```text
+Udoc2
+```
+
+Udoc2 is the operational source of truth for the active initiative.
+
+---
+
+## Level 4 — Derived Execution Documents
+
+```text
+constitution-impact.md
+tasks.md
+```
+
+These documents translate Udoc2 into executable implementation work.
+
+---
+
+## Level 5 — Implementation Artifacts
+
+```text
+backend/
+frontend/
+tests/
+```
+
+Code must conform to all higher-level documents.
+
+---
+
+# 4. Current Development Priority
+
+The active initiative is:
+
+## Frontend-Backend Contract Alignment & Domain Adjustments
+
+Based on Udoc2, the highest-priority backend concerns are:
 
 ### Priority A — Inventory Domain Alignment
 
@@ -53,11 +165,11 @@ Based on the approved Issue Breakdown, the highest-priority backend concerns are
 8. Editable Stock Through Audited Adjustments
 9. Human-Readable Audit Records
 
-These priorities drive all planning and implementation activities until completion.
+No work outside these priorities may be introduced without a new OpenSpec change package.
 
 ---
 
-# 3. Core Operating Principles
+# 5. Core Operating Principles
 
 ## Principle 1 — Specification Before Implementation
 
@@ -105,25 +217,21 @@ These changes require architectural validation before implementation.
 
 The Constitution remains the highest authority.
 
-Examples:
-
-### Allowed
-
-Frontend stock editing that produces:
+Allowed:
 
 ```text
 Adjustment Event
-   +
+      +
 Audit Record
-   +
+      +
 Ledger Entry
 ```
 
-### Forbidden
-
-Direct inventory mutation that bypasses:
+Forbidden:
 
 ```text
+Direct Inventory Mutation
+      Without
 Audit
 Ledger
 Authorization
@@ -152,11 +260,9 @@ The backend remains responsible for:
 
 ## Principle 5 — Requirement-Based Verification
 
-Tests exist to verify requirements.
+Tests verify requirements.
 
-Not code.
-
-Every implemented requirement must be traceable to at least one automated verification artifact.
+Not implementation details.
 
 Example:
 
@@ -172,7 +278,72 @@ test_stock_adjustment_generates_audit_event()
 
 ---
 
-# 4. SDD Execution Pipeline
+## Principle 6 — Backend-First Rule
+
+For the current initiative:
+
+Frontend implementation is blocked until:
+
+1. Domain validation is completed.
+2. Backend specifications are approved.
+3. Database design is approved.
+4. API contracts are finalized.
+
+Frontend may only consume approved backend contracts.
+
+Frontend SHALL NOT redefine backend behavior.
+
+---
+
+# 6. Pre-Phase Validation Gate (Udoc2)
+
+Before any implementation work begins, the following documents MUST exist:
+
+```text
+proposal.md
+EARS.md
+issues-breakdown.md
+```
+
+These documents collectively form:
+
+```text
+Udoc2
+```
+
+Agents MUST verify:
+
+1. Every Issue appears in the Proposal.
+2. Every Proposal item maps to one or more EARS requirements.
+3. Every EARS requirement traces back to an originating Issue.
+
+Implementation is blocked if traceability is incomplete.
+
+---
+
+# 7. Traceability Matrix Requirement
+
+The following chain MUST exist before coding:
+
+```text
+Issue
+ ↓
+Proposal Item
+ ↓
+EARS Requirement
+ ↓
+Task
+ ↓
+Implementation
+ ↓
+Test
+```
+
+Missing links invalidate the change package.
+
+---
+
+# 8. SDD Execution Pipeline
 
 ---
 
@@ -180,7 +351,7 @@ test_stock_adjustment_generates_audit_event()
 
 ## Purpose
 
-Determine whether the requested changes fit the existing domain model or require structural evolution.
+Determine whether requested changes fit the current domain model or require domain evolution.
 
 ## Agents
 
@@ -189,32 +360,54 @@ Determine whether the requested changes fit the existing domain model or require
 
 ## Inputs
 
-* Issue Breakdown
-* Proposal Draft
-* Existing OpenSpec Documentation
+### Governance
+
+```text
+docs/constitution.md
+docs/flujo_operacional.md
+.agents.md
+```
+
+### Udoc2
+
+```text
+proposal.md
+EARS.md
+issues-breakdown.md
+```
+
+### Existing Architecture
+
+```text
+openspec/specs/
+backend/
+```
 
 ## Activities
 
-* Classify each issue:
+Classify each issue as:
 
-  * Bug Fix
-  * Functional Enhancement
-  * Domain Change
+* Bug Fix
+* Functional Enhancement
+* Domain Change
 
-* Identify:
+Identify:
 
-  * New entities
-  * New relationships
-  * Deprecated assumptions
-  * Inventory ownership impacts
+* New entities
+* New relationships
+* Deprecated assumptions
+* Inventory ownership impacts
+* Catalog ownership impacts
 
 ## Deliverable
 
+```text
 Domain Validation Report
+```
 
 ## Exit Criteria
 
-Every issue is classified and architectural direction is approved.
+Every issue classified and architectural direction approved.
 
 ---
 
@@ -222,7 +415,7 @@ Every issue is classified and architectural direction is approved.
 
 ## Purpose
 
-Create the formal contract governing implementation.
+Create the formal implementation contract.
 
 ## Agents
 
@@ -231,7 +424,7 @@ Create the formal contract governing implementation.
 
 ## Inputs
 
-* Approved Domain Validation Report
+Approved Domain Validation Report
 
 ## Deliverables
 
@@ -257,16 +450,21 @@ Implementation breakdown.
 
 Mandatory analysis documenting:
 
-* Affected invariants
-* Risks
-* Mitigation strategy
-
-Examples:
-
 * Immutable Ledger
 * Non-Negative Inventory
 * Transaction Atomicity
 * Audit Preservation
+* Authorization Boundaries
+
+## Constitutional Review Gate
+
+Phase 2 is blocked until:
+
+```text
+constitution-impact.md
+```
+
+is approved.
 
 ## Exit Criteria
 
@@ -278,7 +476,7 @@ OpenSpec package approved and internally consistent.
 
 ## Purpose
 
-Prepare the database and API contracts before implementation.
+Prepare database structures and API contracts before implementation.
 
 ## Agents
 
@@ -287,7 +485,7 @@ Prepare the database and API contracts before implementation.
 
 ## Inputs
 
-Approved specifications.
+Approved OpenSpec package.
 
 ## Activities
 
@@ -336,9 +534,10 @@ Implement approved functionality.
 
 ## Inputs
 
-* Tasks
-* Migrations
-* Schemas
+* tasks.md
+* EARS.md
+* Approved migrations
+* Approved schemas
 
 ## Activities
 
@@ -367,10 +566,11 @@ backend/app/models/
 * Audit generation
 * Stock adjustment workflows
 * Catalog isolation
+* Inventory isolation
 
 ## Exit Criteria
 
-All tasks completed without deviations from specifications.
+All approved tasks completed with no specification deviations.
 
 ---
 
@@ -378,7 +578,7 @@ All tasks completed without deviations from specifications.
 
 ## Purpose
 
-Remove obsolete artifacts without mixing cleanup and feature development.
+Remove obsolete artifacts separately from feature implementation.
 
 ## Agent
 
@@ -394,11 +594,13 @@ Remove obsolete artifacts without mixing cleanup and feature development.
 
 ## Deliverable
 
+```text
 Refactoring Report
+```
 
 ## Exit Criteria
 
-No unused implementation remains related to replaced behavior.
+No obsolete implementation remains related to replaced behavior.
 
 ---
 
@@ -417,6 +619,7 @@ Verify compliance with specifications.
 
 * Implemented code
 * EARS requirements
+* tasks.md
 
 ## Activities
 
@@ -475,10 +678,10 @@ Final compliance validation.
 
 ### OpenSpec Closure
 
-Move completed change:
+Move:
 
 ```text
-openspec/changes/<change-name>
+openspec/changes/<change-name>/
 ```
 
 to:
@@ -504,8 +707,9 @@ main
 ## Deliverables
 
 * Architecture Sign-Off
-* Archived Specification
+* Archived Specification Package
 * Merged Branch
+* Final Traceability Record
 
 ## Exit Criteria
 
@@ -513,20 +717,47 @@ Change fully integrated and archived.
 
 ---
 
-# 5. Agent Responsibility Matrix
+# 9. Agent Responsibility Matrix
 
-| Domain      | Agents                | Responsibility                                    |
-| ----------- | --------------------- | ------------------------------------------------- |
-| Governance  | arq-reviewer, auditor | Domain validation, specification review, sign-off |
-| Database    | dba-guard             | DDL, migrations, schema integrity                 |
-| Security    | sec-ops               | Authorization, RBAC, payload validation           |
-| Backend     | coder                 | FastAPI, SQLAlchemy, services, APIs               |
-| Refactoring | auditor               | Cleanup and technical debt control                |
-| Testing     | tester, qa-agent      | Verification and traceability                     |
+| Domain                  | Agents                                      | Responsibility                                    |
+| ----------------------- | ------------------------------------------- | ------------------------------------------------- |
+| Governance              | arq-reviewer, auditor                       | Domain validation, specification review, sign-off |
+| Database                | dba-guard                                   | DDL, migrations, schema integrity                 |
+| Security                | sec-ops                                     | Authorization, RBAC, payload validation           |
+| Backend                 | coder                                       | FastAPI, SQLAlchemy, services, APIs               |
+| Refactoring             | auditor                                     | Cleanup and technical debt control                |
+| Testing                 | tester, qa-agent                            | Verification and traceability                     |
+| Frontend (Future Phase) | ui-agent, ux-agent, form-agent, state-agent | UI adaptation after backend approval              |
 
 ---
 
-# 6. Immediate Next Action
+# 10. Definition of Done (DoD)
+
+A backend change is considered complete only when:
+
+✓ Udoc2 requirements are fully implemented
+
+✓ constitution-impact.md is satisfied
+
+✓ tasks.md is completed
+
+✓ Traceability Matrix is complete
+
+✓ pytest passes
+
+✓ mypy passes
+
+✓ No regression is detected
+
+✓ Architecture Sign-Off is approved
+
+✓ OpenSpec package is archived
+
+✓ Git integration is completed
+
+---
+
+# 11. Immediate Next Action
 
 Execute:
 
@@ -534,12 +765,12 @@ Execute:
 Phase 0 — Domain & Architecture Validation
 ```
 
-Target Issues:
+Target Udoc2 Priorities:
 
 1. Team Inventory Isolation
-2. Fiber Optic Inventory Isolation
-3. Stock Editing Under Immutable Ledger Constraints
+2. Fiber Inventory Isolation
+3. Editable Stock Under Immutable Ledger Constraints
 
 Expected Outcome:
 
-A formal determination of whether these requirements can be implemented within the current logistics model or require a domain evolution before entering specification and implementation phases.
+A formal determination of whether the current logistics model can support these requirements or whether a domain evolution must occur before specification and implementation proceed.
