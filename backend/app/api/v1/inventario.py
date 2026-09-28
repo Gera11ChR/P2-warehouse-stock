@@ -5,7 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.errors import BusinessRuleError
-from app.schemas.inventario import SeccionOut, SeccionStockOut
+from app.schemas.inventario import (
+    SeccionOut,
+    SeccionStockOut,
+    SeccionTransferibleOut,
+)
 from app.security import ActorContext, get_current_actor
 from app.services import inventario
 
@@ -20,6 +24,21 @@ async def list_secciones(
     session: SessionDep, _actor: ActorDep
 ) -> list[SeccionOut]:
     return await inventario.listar_secciones(session)
+
+
+@router.get(
+    "/secciones/transferibles", response_model=list[SeccionTransferibleOut]
+)
+async def secciones_transferibles(
+    session: SessionDep, _actor: ActorDep
+) -> list[SeccionTransferibleOut]:
+    """Secciones válidas como origen/destino de movimientos TEAMS/DEVOL:
+    GENERAL activas + manejadores de ruteo FO (transferibles aunque
+    inactivos). No altera el contrato de GET /secciones."""
+    return [
+        SeccionTransferibleOut(**s)
+        for s in await inventario.listar_secciones_transferibles(session)
+    ]
 
 
 @router.get("/secciones/{almacen_id}", response_model=list[SeccionStockOut])

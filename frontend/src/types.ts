@@ -8,6 +8,13 @@ export interface Categoria {
   is_active: boolean
 }
 
+/** Unidad de medida del catálogo (contrato real /api/v1/catalogo/um). */
+export interface Ums {
+  id: number
+  nombre: string
+  is_active: boolean
+}
+
 export interface Material {
   id_lista: number
   codigo: string | null
@@ -39,6 +46,19 @@ export interface Seccion {
   nombre: string
   tipo: string
   is_active: boolean
+}
+
+/**
+ * Sección candidata a transferencias (contrato real
+ * GET /api/v1/inventario/secciones/transferibles). `transferible=false`
+ * la excluye como extremo en la UI; la autoridad de la validación sigue
+ * siendo el backend.
+ */
+export interface SeccionTransferible {
+  almacen_id: number
+  nombre: string
+  tipo: 'GENERAL' | 'FO_PAQUETE' | 'FO_EN_USO'
+  transferible: boolean
 }
 
 export interface SeccionStockRow {
@@ -77,6 +97,12 @@ export interface Equipo {
  * con stock real originado en movimientos TEAMS/DEVOL auditados
  * (cero fantasmas de stock 0). `ultimo_movimiento_id` traza el movimiento
  * de origen. Equipo nuevo → [] (200); 404 solo si el equipo no existe.
+ *
+ * FASE 7 (configuración local): `*_local` son los valores definidos para
+ * ESTE equipo (PATCH /equipos/{equipo_id}/inventario/{material_id}); los
+ * `*_efectivo` son el valor RESUELTO por el backend (local si existe,
+ * heredado del catálogo en caso contrario). La resolución efectiva es
+ * autoridad del backend: el frontend solo la refleja.
  */
 export interface InventarioEquipoRow {
   equipo_id: number
@@ -88,6 +114,135 @@ export interface InventarioEquipoRow {
   stock_actual: number
   alerta_stock: boolean
   ultimo_movimiento_id: number | null
+  stock_minimo_local: number | null
+  categoria_local_id: number | null
+  um_local_id: number | null
+  stock_minimo_efectivo: number | null
+  categoria_efectiva: string | null
+  um_efectivo: string | null
+}
+
+// ============================================================================
+// CONFIGURACIÓN LOCAL DEL INVENTARIO DE EQUIPO
+// (contrato real PATCH /api/v1/equipos/{equipo_id}/inventario/{material_id})
+// ============================================================================
+
+/**
+ * Payload del PATCH de configuración local. Al menos UNO de los tres
+ * campos (422 si viene vacío). Un campo omitido conserva su valor previo;
+ * enviar `null` para un campo numérico NO es parte del contrato (se usan
+ * campos omitidos). La resolución de efectivos (`*_efectivo`) es backend.
+ */
+export interface EquipoConfigLocalPayload {
+  stock_minimo_local?: number
+  categoria_local_id?: number
+  um_local_id?: number
+}
+
+/** Eco del PATCH de configuración local (EquipoConfigLocalOut). */
+export interface EquipoConfigLocal {
+  equipo_id: number
+  material_id: number
+  stock_minimo_local: number | null
+  categoria_local_id: number | null
+  um_local_id: number | null
+  updated_at: string
+}
+
+// ============================================================================
+// DESPLIEGUES DE EQUIPO (FASE 7 — contrato real
+// /api/v1/equipos/{equipo_id}/despliegues)
+// ============================================================================
+
+export type EstadoDespliegue = 'ABIERTA' | 'CERRADA'
+
+/** Línea de un despliegue. `cantidad_consumida` la calcula el backend
+ *  (tomada − sobrante) al cierre; NUNCA el frontend. */
+export interface DespliegueItem {
+  id: number
+  material_id: number
+  cantidad_tomada: number
+  cantidad_sobrante: number | null
+  cantidad_consumida: number | null
+}
+
+/**
+ * Despliegue (salida de crear/cerrar/detalle). Ciclo de vida
+ * ABIERTA → CERRADA: el backend garantiza a lo sumo UNA abierta por equipo.
+ */
+export interface Despliegue {
+  id: number
+  equipo_id: number
+  fecha: string
+  observaciones: string | null
+  usuario: string
+  estado: EstadoDespliegue
+  created_at: string
+  updated_at: string
+  closed_at: string | null
+  items: DespliegueItem[]
+}
+
+/** Respuesta de GET /equipos/{equipo_id}/despliegues (DespliegueListOut). */
+export interface DespliegueList {
+  despliegues: Despliegue[]
+}
+
+/** POST /equipos/{equipo_id}/despliegues — apertura (201). */
+export interface DespliegueCreatePayload {
+  observaciones?: string
+  items: { material_id: number; cantidad_tomada: number }[]
+}
+
+/** POST /equipos/{equipo_id}/despliegues/{despliegue_id}/cerrar. */
+export interface CerrarDesplieguePayload {
+  sobrantes: { material_id: number; cantidad_sobrante: number }[]
+  observaciones_cierre?: string
+}
+
+// ============================================================================
+// REPORTES DE DESPLIEGUES (contrato real /api/v1/reportes/despliegues)
+// ============================================================================
+
+/** Línea reportable de un despliegue (join catálogo SIN filtro is_active:
+ *  el reporte histórico queda íntegro). */
+export interface ReporteDespliegueItem {
+  material_id: number
+  codigo: string | null
+  descripcion: string
+  categoria: string | null
+  um: string | null
+  cantidad_tomada: number
+  cantidad_sobrante: number | null
+  cantidad_consumida: number | null
+}
+
+/** Despliegue reportable (ReporteDespliegueOut). */
+export interface ReporteDespliegue {
+  despliegue_id: number
+  equipo_id: number
+  equipo_nombre: string
+  fecha: string
+  estado: string
+  usuario: string
+  observaciones: string | null
+  created_at: string
+  closed_at: string | null
+  items: ReporteDespliegueItem[]
+}
+
+/** Respuesta JSON de GET /reportes/despliegues (ReporteDespliegueListOut). */
+export interface ReporteDespliegueList {
+  despliegues: ReporteDespliegue[]
+}
+
+/** Parámetros de GET /reportes/despliegues. `format=csv` devuelve un blob
+ *  text/csv (descarga); `format=json` (default) devuelve JSON. */
+export interface ReporteParams {
+  equipo_id?: number
+  desde?: string
+  hasta?: string
+  format?: 'json' | 'csv'
 }
 
 // ============================================================================

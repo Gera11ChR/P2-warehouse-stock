@@ -103,11 +103,13 @@ async def test_delete_soft_delete_y_no_reutilizacion(
     assert nuevo["id_lista"] > id_lista
 
 
-async def test_patch_modifica_categoria_persiste(client: AsyncClient) -> None:
+async def test_patch_modifica_categoria_persiste(
+    client: AsyncClient, client_admin: AsyncClient
+) -> None:
     """REQ-API-004: la asignación/modificación de Categoría vía PATCH
     persiste en PostgreSQL y se devuelve en el payload del material."""
     material = await crear_material(client, descripcion="Con categoria")
-    resp = await client.post(
+    resp = await client_admin.post(
         "/api/v1/catalogo/categorias", json={"nombre": "Redes"}
     )
     assert resp.status_code == 201
@@ -126,12 +128,12 @@ async def test_patch_modifica_categoria_persiste(client: AsyncClient) -> None:
     assert resp.json()["categoria"] == "Redes"
 
 
-async def test_categoria_duplicada_409(client: AsyncClient) -> None:
-    resp = await client.post(
+async def test_categoria_duplicada_409(client_admin: AsyncClient) -> None:
+    resp = await client_admin.post(
         "/api/v1/catalogo/categorias", json={"nombre": "Activos"}
     )
     assert resp.status_code == 201
-    resp = await client.post(
+    resp = await client_admin.post(
         "/api/v1/catalogo/categorias", json={"nombre": "Activos"}
     )
     assert resp.status_code == 409

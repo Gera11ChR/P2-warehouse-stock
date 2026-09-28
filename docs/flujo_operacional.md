@@ -1,776 +1,937 @@
-# DMS-TELECOM Backend Development Operating Model
+# P2 → DMS-TELECOM
 
-## Specification-Driven Development (SDD) with OpenSpec
+# Operational Flow: Spec-Driven Development (SDD)
 
-**Effective Date:** September 2026
-
-**Project Context:** P2 → DMS-TELECOM Transition
-
-**Repository Structure:** Consolidated Monorepo (`~/P2`)
-
-**Primary Objective:** Deliver backend changes required by the current Issue Breakdown while preserving architectural integrity, constitutional invariants, traceability, and long-term maintainability.
+**Repository:** `P2/`
+**Methodology:** OpenSpec + Specification-Driven Development
+**Backend Authority:** FastAPI + PostgreSQL + Alembic
+**Frontend:** React + Vite + Tailwind
+**Active Package:** `openspec/changes/2026-09-28-equipos-despliegue-management/`
 
 ---
 
 # 1. Purpose
 
-This document defines the official backend development workflow for DMS-TELECOM.
+This document defines the mandatory operational workflow for implementing OpenSpec change packages in the P2 → DMS-TELECOM project.
 
-The workflow exists to ensure that:
+The workflow establishes strict traceability between:
 
-* Business requirements are translated into formal specifications before implementation.
-* Domain-level changes are identified before code is written.
-* Constitutional invariants remain protected.
-* Database, API, and security concerns are designed intentionally.
-* Every implemented requirement is verifiable through automated tests.
-* Technical debt is controlled through structured auditing and refactoring.
-* All agents operate under a single authoritative document hierarchy.
+```text
+DApp Operational Context
+        ↓
+OpenSpec Proposal
+        ↓
+EARS Requirements
+        ↓
+Tasks
+        ↓
+Architecture
+        ↓
+Database
+        ↓
+Backend
+        ↓
+API Contract
+        ↓
+Frontend
+        ↓
+Tests
+        ↓
+Evidence
+        ↓
+Human Acceptance
+        ↓
+Archive
+```
+
+The Backend is the authoritative source for transactional state, inventory state, persistence, and business rules.
+
+The Frontend is a consumer of Backend contracts and must not become an independent source of business authority.
 
 ---
 
-# 2. Repository Governance Structure
+# 2. Repository Structure and Authority
+
+The repository is organized as follows:
 
 ```text
-~/P2
-│
-├── .opencode/
-│   └── agents/
-│
+P2/
+├── .agents/
 ├── backend/
 ├── frontend/
-│
 ├── docs/
-│   ├── constitution.md
-│   ├── flujo_operacional.md
-│   └── archive/
-│
-├── openspec/
-│   ├── changes/
-│   │   └── 2026-09-22-frontend-backend-alignment/
-│   │       ├── proposal.md
-│   │       ├── EARS.md
-│   │       ├── issues-breakdown.md
-│   │       ├── constitution-impact.md
-│   │       └── tasks.md
-│   │
-│   └── specs/
-│
-├── .agents.md
-└── README.md
+└── openspec/
+```
+
+## 2.1 `.agents/`
+
+```text
+P2/.agents/
+```
+
+Contains the definitions and operational instructions for OpenCode/Cline sub-agents.
+
+Examples include:
+
+* `@coder`
+* `@dba-guard`
+* `@sec-ops`
+* `@arq-reviewer`
+* `@tester`
+* `@qa-agent`
+* `@auditor`
+* Frontend-specific agents
+
+Agents MUST follow both their individual instructions and this operational workflow.
+
+---
+
+# 3. Governance and Documentation
+
+## 3.1 Constitution
+
+```text
+P2/docs/constitution.md
+```
+
+This document defines the project's constitutional invariants.
+
+It is a governance authority and MUST be read before implementation.
+
+The Constitution MUST NOT be modified as part of an ordinary OpenSpec change unless an explicitly authorized constitutional change is being processed.
+
+The active change package must conform to the Constitution.
+
+---
+
+## 3.2 Operational Workflow
+
+```text
+P2/docs/flujo_operacional.md
+```
+
+This document defines the execution process for OpenSpec implementation.
+
+It does not replace the Constitution.
+
+The hierarchy is:
+
+```text
+Constitution
+    ↓
+OpenSpec Specifications
+    ↓
+OpenSpec Change Package
+    ↓
+Implementation
+    ↓
+Tests / Evidence
 ```
 
 ---
 
-# 3. Document Authority Hierarchy
+# 4. OpenSpec Change Package
 
-All agents MUST follow the document hierarchy below.
-
-## Level 1 — Supreme Authority
+The active package is:
 
 ```text
-docs/constitution.md
+P2/openspec/changes/2026-09-28-equipos-despliegue-management/
 ```
 
-Defines:
-
-* Business invariants
-* Security invariants
-* Architectural invariants
-* Non-negotiable rules
-
----
-
-## Level 2 — Operational Governance
+Its mandatory artifacts are:
 
 ```text
-docs/flujo_operacional.md
-.agents.md
-```
-
-Defines:
-
-* Workflow execution
-* Agent responsibilities
-* Approval flow
-* Development governance
-
----
-
-## Level 3 — Active Change Package (Udoc2)
-
-```text
-openspec/changes/2026-09-22-frontend-backend-alignment/
-
 proposal.md
 EARS.md
-issues-breakdown.md
-```
-
-These three documents collectively form:
-
-```text
-Udoc2
-```
-
-Udoc2 is the operational source of truth for the active initiative.
-
----
-
-## Level 4 — Derived Execution Documents
-
-```text
-constitution-impact.md
+dapp-context.md
 tasks.md
 ```
 
-These documents translate Udoc2 into executable implementation work.
+## 4.1 `proposal.md`
 
----
+Defines:
 
-## Level 5 — Implementation Artifacts
+* change scope
+* architectural intent
+* affected domain
+* expected behavior
+* implementation boundaries
 
-```text
-backend/
-frontend/
-tests/
-```
-
-Code must conform to all higher-level documents.
-
----
-
-# 4. Current Development Priority
-
-The active initiative is:
-
-## Frontend-Backend Contract Alignment & Domain Adjustments
-
-Based on Udoc2, the highest-priority backend concerns are:
-
-### Priority A — Inventory Domain Alignment
-
-1. Team Inventory Isolation
-2. Fiber Optic Inventory Isolation
-3. Elimination of Global Catalog Coupling
-
-### Priority B — Data Integrity
-
-4. Category Persistence
-5. Ghost Record Elimination
-6. Active Inventory Filtering
-
-### Priority C — Administrative Operations
-
-7. Editable SKU
-8. Editable Stock Through Audited Adjustments
-9. Human-Readable Audit Records
-
-No work outside these priorities may be introduced without a new OpenSpec change package.
-
----
-
-# 5. Core Operating Principles
-
-## Principle 1 — Specification Before Implementation
-
-No backend code shall be created or modified before:
-
-* Proposal approval
-* Requirement definition
-* Task decomposition
-
-Workflow:
+Location:
 
 ```text
-Issue
- ↓
-Proposal
- ↓
-EARS Requirements
- ↓
-Tasks
- ↓
-Implementation
- ↓
-Testing
- ↓
-Integration
+P2/openspec/changes/2026-09-28-equipos-despliegue-management/proposal.md
 ```
 
 ---
 
-## Principle 2 — Domain Change Is Not a Bug
+## 4.2 `EARS.md`
 
-The following changes must be treated as potential domain modifications:
+Defines the formal requirements.
 
-* Inventory isolation
-* Catalog ownership changes
-* Inventory lifecycle changes
-* Warehouse model changes
-* Material identity changes
-
-These changes require architectural validation before implementation.
-
----
-
-## Principle 3 — Constitution Supremacy
-
-The Constitution remains the highest authority.
-
-Allowed:
+Location:
 
 ```text
-Adjustment Event
-      +
-Audit Record
-      +
-Ledger Entry
+P2/openspec/changes/2026-09-28-equipos-despliegue-management/EARS.md
 ```
 
-Forbidden:
+Every implementation requirement MUST be traceable to an EARS identifier.
+
+---
+
+## 4.3 `dapp-context.md`
+
+Defines the operational context derived from the DApp.
+
+Location:
 
 ```text
-Direct Inventory Mutation
-      Without
-Audit
-Ledger
-Authorization
-Transaction Boundaries
+P2/openspec/changes/2026-09-28-equipos-despliegue-management/dapp-context.md
 ```
 
----
+This document establishes the operational behavior that the software must represent.
 
-## Principle 4 — Backend Is the Source of Truth
-
-The frontend may:
-
-* Validate inputs
-* Improve usability
-* Format information
-
-The backend remains responsible for:
-
-* Inventory calculations
-* Business rules
-* State transitions
-* Authorization decisions
-* Audit generation
+It MUST be used to validate that the implementation corresponds to the real operational model rather than merely satisfying isolated technical requirements.
 
 ---
 
-## Principle 5 — Requirement-Based Verification
+## 4.4 `tasks.md`
 
-Tests verify requirements.
+Defines the implementation tasks.
 
-Not implementation details.
-
-Example:
+Location:
 
 ```text
-REQ-CAT-001
-      ↓
-test_category_persistence()
-
-REQ-STOCK-004
-      ↓
-test_stock_adjustment_generates_audit_event()
+P2/openspec/changes/2026-09-28-equipos-despliegue-management/tasks.md
 ```
 
----
-
-## Principle 6 — Backend-First Rule
-
-For the current initiative:
-
-Frontend implementation is blocked until:
-
-1. Domain validation is completed.
-2. Backend specifications are approved.
-3. Database design is approved.
-4. API contracts are finalized.
-
-Frontend may only consume approved backend contracts.
-
-Frontend SHALL NOT redefine backend behavior.
+Every implementation task MUST map to one or more EARS requirements or explicitly documented architectural work.
 
 ---
 
-# 6. Pre-Phase Validation Gate (Udoc2)
+# 5. Mandatory Reading Order
 
-Before any implementation work begins, the following documents MUST exist:
+Before starting implementation, agents MUST establish the following context:
 
 ```text
-proposal.md
-EARS.md
-issues-breakdown.md
+1. P2/docs/constitution.md
+2. P2/docs/flujo_operacional.md
+3. Active proposal.md
+4. Active EARS.md
+5. Active dapp-context.md
+6. Active tasks.md
+7. Relevant OpenSpec specifications
+8. Relevant existing backend/frontend implementation
 ```
 
-These documents collectively form:
+Relevant specifications are located under the applicable OpenSpec specification paths defined by the repository.
 
-```text
-Udoc2
-```
-
-Agents MUST verify:
-
-1. Every Issue appears in the Proposal.
-2. Every Proposal item maps to one or more EARS requirements.
-3. Every EARS requirement traces back to an originating Issue.
-
-Implementation is blocked if traceability is incomplete.
+Agents MUST NOT assume that the active package alone describes the entire system.
 
 ---
 
-# 7. Traceability Matrix Requirement
+# PHASE 0 — PACKAGE VALIDATION AND IMPACT ANALYSIS
 
-The following chain MUST exist before coding:
+## Objective
 
-```text
-Issue
- ↓
-Proposal Item
- ↓
-EARS Requirement
- ↓
-Task
- ↓
-Implementation
- ↓
-Test
-```
-
-Missing links invalidate the change package.
-
----
-
-# 8. SDD Execution Pipeline
-
----
-
-# Phase 0 — Domain & Architecture Validation
-
-## Purpose
-
-Determine whether requested changes fit the current domain model or require domain evolution.
+Determine whether the active OpenSpec package is internally consistent and identify the existing implementation affected by the change.
 
 ## Agents
 
-* arq-reviewer
-* auditor
+* `@arq-reviewer`
+* `@auditor`
+* `@sec-ops`
 
-## Inputs
-
-### Governance
-
-```text
-docs/constitution.md
-docs/flujo_operacional.md
-.agents.md
-```
-
-### Udoc2
+## Read
 
 ```text
-proposal.md
-EARS.md
-issues-breakdown.md
+P2/docs/constitution.md
+
+P2/openspec/changes/2026-09-28-equipos-despliegue-management/
+├── proposal.md
+├── EARS.md
+├── dapp-context.md
+└── tasks.md
 ```
 
-### Existing Architecture
+Also inspect relevant:
 
 ```text
-openspec/specs/
-backend/
+P2/backend/
+P2/frontend/
+P2/openspec/
 ```
 
-## Activities
-
-Classify each issue as:
-
-* Bug Fix
-* Functional Enhancement
-* Domain Change
+## Actions
 
 Identify:
 
-* New entities
-* New relationships
-* Deprecated assumptions
-* Inventory ownership impacts
-* Catalog ownership impacts
+* requirements affected
+* existing specifications affected
+* existing database tables
+* existing Stored Functions
+* existing API endpoints
+* existing frontend pages/components/services
+* obsolete implementation
+* migration requirements
+* regression risks
+* security implications
 
-## Deliverable
+## Required Output
+
+Impact analysis covering:
 
 ```text
-Domain Validation Report
+Requirement
+→ Existing implementation
+→ Required change
+→ Legacy implementation
+→ Affected files
+→ Affected database objects
+→ Affected tests
 ```
 
-## Exit Criteria
-
-Every issue classified and architectural direction approved.
+No Build work may begin during this phase.
 
 ---
 
-# Phase 1 — Specification & Constitutional Impact Review
+# PHASE 1 — ARCHITECTURAL PLAN
 
-## Purpose
+## Objective
 
-Create the formal implementation contract.
+Define the target architecture before modifying implementation.
 
 ## Agents
 
-* arq-reviewer
-* auditor
+* `@arq-reviewer`
+* `@dba-guard`
+* `@coder`
+* `@sec-ops`
 
-## Inputs
+## Actions
 
-Approved Domain Validation Report
+Determine:
 
-## Deliverables
+* domain entities
+* ownership of data
+* inventory boundaries
+* database relationships
+* transactional boundaries
+* audit behavior
+* editable fields
+* immutable fields
+* category relationships
+* unit-of-measure behavior
+* minimum-stock behavior
+* legacy structures to remove
+* API responsibilities
+* security boundaries
 
-Inside:
+The plan MUST explicitly preserve the approved operational separation of inventories.
 
-```text
-openspec/changes/<change-name>/
-```
+## Output
 
-### proposal.md
-
-Business justification and scope.
-
-### EARS.md
-
-Formal requirements.
-
-### tasks.md
-
-Implementation breakdown.
-
-### constitution-impact.md
-
-Mandatory analysis documenting:
-
-* Immutable Ledger
-* Non-Negative Inventory
-* Transaction Atomicity
-* Audit Preservation
-* Authorization Boundaries
-
-## Constitutional Review Gate
-
-Phase 2 is blocked until:
+Architecture plan containing:
 
 ```text
-constitution-impact.md
+Database objects
+Stored Functions
+API endpoints
+DTOs
+Frontend contracts
+Affected files
+Legacy removal
+Tests
+Security considerations
 ```
 
-is approved.
-
-## Exit Criteria
-
-OpenSpec package approved and internally consistent.
+Human approval is required before Build.
 
 ---
 
-# Phase 2 — Data, Schemas & Security Design
+# PHASE 2 — DATABASE AND TRANSACTIONAL DESIGN
 
-## Purpose
+## Backend Authority
 
-Prepare database structures and API contracts before implementation.
+All database work is restricted to:
+
+```text
+P2/backend/alembic/
+P2/backend/app/models/
+```
+
+and the PostgreSQL structures managed by the backend.
 
 ## Agents
 
-* dba-guard
-* sec-ops
+* `@dba-guard`
+* `@arq-reviewer`
+* `@auditor`
 
-## Inputs
+## Actions
 
-Approved OpenSpec package.
+Design:
 
-## Activities
+* tables
+* columns
+* primary keys
+* foreign keys
+* constraints
+* indexes
+* audit structures
+* Alembic migrations
+* Stored Functions
+* transaction boundaries
+* row-locking strategy
+* migration/data cleanup strategy
 
-### Database
-
-* Schema review
-* DDL changes
-* Migration strategy
-* Index validation
-
-### API Contracts
-
-* Pydantic models
-* DTO validation
-* Error contracts
-
-### Security
-
-* RBAC review
-* Authorization boundaries
-* Payload validation
-
-## Deliverables
+Migration files are created under:
 
 ```text
-backend/alembic/versions/
-backend/db/ddl.sql
-backend/app/schemas/
+P2/backend/alembic/versions/
 ```
 
-## Exit Criteria
+SQLAlchemy mappings are maintained under:
 
-Schema, contracts, and security model approved.
+```text
+P2/backend/app/models/
+```
+
+## Mandatory Rule
+
+Business-critical inventory mutations MUST remain transactionally authoritative in PostgreSQL.
+
+Python MUST NOT become an alternative transactional authority.
 
 ---
 
-# Phase 3 — Backend Implementation
+# PHASE 3 — BACKEND IMPLEMENTATION
 
-## Purpose
+## Objective
 
-Implement approved functionality.
-
-## Agent
-
-* coder
-
-## Inputs
-
-* tasks.md
-* EARS.md
-* Approved migrations
-* Approved schemas
-
-## Activities
-
-### API
-
-```text
-backend/app/api/v1/
-```
-
-### Services
-
-```text
-backend/app/services/
-```
-
-### Models
-
-```text
-backend/app/models/
-```
-
-### Business Rules
-
-* Inventory filtering
-* Category persistence
-* Audit generation
-* Stock adjustment workflows
-* Catalog isolation
-* Inventory isolation
-
-## Exit Criteria
-
-All approved tasks completed with no specification deviations.
-
----
-
-# Phase 3.5 — Refactor & Dead Code Audit
-
-## Purpose
-
-Remove obsolete artifacts separately from feature implementation.
-
-## Agent
-
-* auditor
-
-## Activities
-
-* Remove deprecated endpoints
-* Remove dead services
-* Remove unused imports
-* Simplify redundant modules
-* Identify legacy code paths
-
-## Deliverable
-
-```text
-Refactoring Report
-```
-
-## Exit Criteria
-
-No obsolete implementation remains related to replaced behavior.
-
----
-
-# Phase 4 — Requirement-Based Testing & QA
-
-## Purpose
-
-Verify compliance with specifications.
+Implement the authoritative transactional system and API contract.
 
 ## Agents
 
-* tester
-* qa-agent
+* `@dba-guard`
+* `@coder`
+* `@sec-ops`
 
-## Inputs
+---
 
-* Implemented code
-* EARS requirements
-* tasks.md
+## 3.1 Database Implementation
 
-## Activities
-
-### Automated Tests
+Modify:
 
 ```text
-backend/tests/
+P2/backend/alembic/versions/
+P2/backend/app/models/
 ```
 
-### Traceability Matrix
+Implement:
 
-Generate:
+* migrations
+* database structures
+* constraints
+* indexes
+* Stored Functions
+* audit mechanisms
+* required data transformations
+* obsolete database structures
+
+---
+
+## 3.2 API Implementation
+
+Modify:
 
 ```text
-REQ-ID
+P2/backend/app/api/
+P2/backend/app/schemas/
+```
+
+Implement:
+
+* FastAPI routers
+* endpoints
+* Pydantic V2 DTOs
+* request validation
+* response contracts
+* authorization boundaries
+* error handling
+
+The API MUST expose PostgreSQL-backed business operations rather than duplicating their authoritative logic.
+
+---
+
+# PHASE 4 — BACKEND TESTING
+
+## Test Location
+
+```text
+P2/backend/tests/
+```
+
+## Agents
+
+* `@tester`
+* `@qa-agent`
+* `@dba-guard`
+* `@auditor`
+
+## Tests MUST validate, where applicable:
+
+* inventory non-negativity
+* atomicity
+* rollback
+* concurrency
+* row locking
+* inventory isolation
+* team inventory separation
+* fiber inventory separation
+* stock adjustments
+* transfers
+* returns
+* audit preservation
+* immutable fields
+* editable fields
+* category validity
+* unit-of-measure validity
+* minimum stock
+* active/inactive behavior
+* obsolete record elimination
+* Stored Function behavior
+* API behavior
+
+Every requirement-specific test MUST reference its corresponding EARS identifier.
+
+---
+
+# PHASE 5 — BACKEND VERIFICATION AND CONTRACT FREEZE
+
+## Agents
+
+* `@arq-reviewer`
+* `@auditor`
+* `@tester`
+
+Before Frontend development begins, verify:
+
+```text
+Database
    ↓
-Test Artifact
+Stored Functions
+   ↓
+SQLAlchemy
+   ↓
+Pydantic
+   ↓
+FastAPI
+   ↓
+OpenAPI
 ```
 
-### Validation
+The Backend contract is considered frozen only after:
 
-* pytest
-* mypy
-* regression testing
+* backend tests pass
+* API contract is reviewed
+* EARS coverage is verified
+* security checks pass
+* architectural review passes
 
-## Deliverables
-
-* New automated tests
-* Traceability Matrix
-* QA Report
-
-## Exit Criteria
-
-* All tests pass
-* No regressions detected
-* Every requirement mapped to verification
+The resulting API contract becomes the authoritative contract for Frontend development.
 
 ---
 
-# Phase 5 — Integration, Archive & Sign-Off
+# PHASE 6 — FRONTEND PLAN
 
-## Purpose
+## Frontend Authority
 
-Finalize and formally close the change.
+Frontend implementation is restricted to:
+
+```text
+P2/frontend/src/
+```
 
 ## Agents
 
-* arq-reviewer
-* auditor
+* `@state-agent`
+* `@ui-agent`
+* `@ux-agent`
+* `@form-agent`
 
-## Activities
+## Read
 
-### Architecture Review
+The frozen Backend API contract.
 
-Final compliance validation.
+## Actions
 
-### OpenSpec Closure
-
-Move:
+Design:
 
 ```text
-openspec/changes/<change-name>/
+frontend/src/services/
+frontend/src/hooks/
+frontend/src/components/
+frontend/src/pages/
+```
+
+as applicable.
+
+Define:
+
+* TypeScript interfaces
+* API services
+* TanStack Query hooks
+* routes
+* components
+* forms
+* Zod schemas
+* loading states
+* empty states
+* error states
+* confirmation flows
+* operational feedback
+
+The Frontend design MUST correspond to the DApp operational model.
+
+---
+
+# PHASE 7 — FRONTEND IMPLEMENTATION
+
+## Agents
+
+* `@ui-agent`
+* `@state-agent`
+* `@form-agent`
+
+Implement under:
+
+```text
+P2/frontend/src/
+```
+
+including:
+
+```text
+components/
+pages/
+services/
+hooks/
+```
+
+as applicable.
+
+The Frontend MUST consume the frozen Backend contract.
+
+It MUST NOT:
+
+* calculate authoritative inventory
+* persist inventory directly
+* bypass API contracts
+* reproduce PostgreSQL transactional logic
+* create alternative sources of truth
+* rely on stale local state as authoritative inventory state
+
+Frontend validation is limited to input/presentation concerns.
+
+---
+
+# PHASE 8 — INTEGRATION AND ZERO-DRIFT QA
+
+## Agents
+
+* `@qa-agent`
+* `@tester`
+* `@auditor`
+
+## Environment
+
+Frontend MUST be tested against the actual local Backend/API environment.
+
+Backend:
+
+```text
+P2/backend/
+```
+
+Frontend:
+
+```text
+P2/frontend/
+```
+
+## Validate
+
+* API compatibility
+* TypeScript compatibility
+* real database behavior
+* inventory isolation
+* team operations
+* fiber operations
+* stock adjustments
+* transfers
+* returns
+* category behavior
+* unit-of-measure behavior
+* minimum-stock behavior
+* audit visibility
+* active/inactive filtering
+* error handling
+
+The QA objective is **Zero-Drift** between:
+
+```text
+DApp
+↕
+Backend
+↕
+API Contract
+↕
+Frontend
+```
+
+---
+
+# PHASE 9 — DApp OPERATIONAL ACCEPTANCE
+
+## Objective
+
+Verify that the implementation actually represents the operational behavior documented by the DApp.
+
+## Agents
+
+* `@qa-agent`
+* `@auditor`
+* `@arq-reviewer`
+
+For every DApp-derived requirement:
+
+```text
+DApp Requirement
+        ↓
+EARS ID
+        ↓
+Task
+        ↓
+Backend Implementation
+        ↓
+Frontend Implementation
+        ↓
+Automated Test
+        ↓
+Evidence
+```
+
+The implementation is not accepted merely because:
+
+* the code compiles
+* migrations execute
+* API endpoints respond
+* frontend builds
+
+It must also reproduce the intended operational workflow.
+
+---
+
+# PHASE 10 — SECURITY AND ARCHITECTURE AUDIT
+
+## Agents
+
+* `@sec-ops`
+* `@auditor`
+* `@arq-reviewer`
+
+Inspect:
+
+```text
+P2/backend/
+P2/frontend/
+P2/openspec/
+P2/docs/
+```
+
+Validate:
+
+* authorization
+* input validation
+* direct-write risks
+* unauthorized mutation paths
+* transaction boundaries
+* audit integrity
+* legacy paths
+* architectural consistency
+* Constitution compliance
+* OpenSpec compliance
+
+---
+
+# PHASE 11 — FINAL EVIDENCE
+
+Evidence MUST establish:
+
+```text
+EARS requirement
+        ↓
+Implementation
+        ↓
+Test
+        ↓
+Result
+```
+
+Evidence must cover, as applicable:
+
+* database tests
+* API tests
+* frontend tests
+* integration tests
+* E2E tests
+* DApp acceptance
+* security checks
+* migration validation
+* regression validation
+* architecture validation
+
+---
+
+# PHASE 12 — HUMAN ACCEPTANCE
+
+The active package cannot be considered complete until:
+
+* all required EARS requirements have evidence
+* backend tests pass
+* frontend tests pass
+* integration tests pass
+* DApp operational acceptance passes
+* security review passes
+* architecture review passes
+* regression validation passes
+* no critical unresolved finding remains
+* no unauthorized legacy path remains
+
+Human approval is required before final consolidation.
+
+---
+
+# PHASE 13 — GIT AND OPENSPEC CONSOLIDATION
+
+## Agent
+
+* `@auditor`
+
+## Actions
+
+Review the final repository state:
+
+```text
+P2/
+├── backend/
+├── frontend/
+├── docs/
+└── openspec/
+```
+
+Verify that:
+
+* only authorized files changed
+* implementation matches the approved package
+* all EARS requirements have evidence
+* no unauthorized code remains
+* backend/frontend contracts remain aligned
+* tests pass
+* audit is complete
+
+After final approval:
+
+1. Commit the completed implementation.
+2. Merge according to repository governance.
+3. Preserve the final commit as implementation evidence.
+4. Move the completed package:
+
+```text
+P2/openspec/changes/2026-09-28-equipos-despliegue-management/
 ```
 
 to:
 
 ```text
-openspec/changes/archive/
+P2/openspec/changes/archive/2026-09-28-equipos-despliegue-management/
 ```
 
-### Git Integration
-
-Merge:
-
-```text
-feat/backend-logistics-fixes
-```
-
-into:
-
-```text
-main
-```
-
-## Deliverables
-
-* Architecture Sign-Off
-* Archived Specification Package
-* Merged Branch
-* Final Traceability Record
-
-## Exit Criteria
-
-Change fully integrated and archived.
+The package MUST NOT be archived before final acceptance.
 
 ---
 
-# 9. Agent Responsibility Matrix
+# 14. Active Package Boundary
 
-| Domain                  | Agents                                      | Responsibility                                    |
-| ----------------------- | ------------------------------------------- | ------------------------------------------------- |
-| Governance              | arq-reviewer, auditor                       | Domain validation, specification review, sign-off |
-| Database                | dba-guard                                   | DDL, migrations, schema integrity                 |
-| Security                | sec-ops                                     | Authorization, RBAC, payload validation           |
-| Backend                 | coder                                       | FastAPI, SQLAlchemy, services, APIs               |
-| Refactoring             | auditor                                     | Cleanup and technical debt control                |
-| Testing                 | tester, qa-agent                            | Verification and traceability                     |
-| Frontend (Future Phase) | ui-agent, ux-agent, form-agent, state-agent | UI adaptation after backend approval              |
-
----
-
-# 10. Definition of Done (DoD)
-
-A backend change is considered complete only when:
-
-✓ Udoc2 requirements are fully implemented
-
-✓ constitution-impact.md is satisfied
-
-✓ tasks.md is completed
-
-✓ Traceability Matrix is complete
-
-✓ pytest passes
-
-✓ mypy passes
-
-✓ No regression is detected
-
-✓ Architecture Sign-Off is approved
-
-✓ OpenSpec package is archived
-
-✓ Git integration is completed
-
----
-
-# 11. Immediate Next Action
-
-Execute:
+During implementation of the current change, the primary working package is:
 
 ```text
-Phase 0 — Domain & Architecture Validation
+P2/openspec/changes/2026-09-28-equipos-despliegue-management/
 ```
 
-Target Udoc2 Priorities:
+Agents MUST NOT arbitrarily modify archived packages:
 
-1. Team Inventory Isolation
-2. Fiber Inventory Isolation
-3. Editable Stock Under Immutable Ledger Constraints
+```text
+P2/openspec/changes/archive/
+```
 
-Expected Outcome:
+Archived packages are historical implementation records unless the current change explicitly requires historical analysis.
 
-A formal determination of whether the current logistics model can support these requirements or whether a domain evolution must occur before specification and implementation proceed.
+---
+
+# 15. Mandatory Traceability Matrix
+
+The implementation MUST maintain the following conceptual traceability:
+
+| Layer               | Location                                                                       |
+| ------------------- | ------------------------------------------------------------------------------ |
+| Constitution        | `P2/docs/constitution.md`                                                      |
+| Operational Flow    | `P2/docs/flujo_operacional.md`                                                 |
+| Proposal            | `P2/openspec/changes/2026-09-28-equipos-despliegue-management/proposal.md`     |
+| Requirements        | `P2/openspec/changes/2026-09-28-equipos-despliegue-management/EARS.md`         |
+| DApp Context        | `P2/openspec/changes/2026-09-28-equipos-despliegue-management/dapp-context.md` |
+| Tasks               | `P2/openspec/changes/2026-09-28-equipos-despliegue-management/tasks.md`        |
+| DB migrations       | `P2/backend/alembic/versions/`                                                 |
+| DB models           | `P2/backend/app/models/`                                                       |
+| API                 | `P2/backend/app/api/`                                                          |
+| DTOs                | `P2/backend/app/schemas/`                                                      |
+| Backend tests       | `P2/backend/tests/`                                                            |
+| Frontend components | `P2/frontend/src/components/`                                                  |
+| Frontend pages      | `P2/frontend/src/pages/`                                                       |
+| Frontend services   | `P2/frontend/src/services/`                                                    |
+| Frontend hooks      | `P2/frontend/src/hooks/`                                                       |
+| Completed package   | `P2/openspec/changes/archive/`                                                 |
+
+---
+
+# 16. Completion Gate
+
+The package is COMPLETE only when:
+
+```text
+[ ] Constitution reviewed
+[ ] OpenSpec package validated
+[ ] DApp context validated
+[ ] Issues/requirements traced
+[ ] Architecture approved
+[ ] Database design approved
+[ ] Stored Functions implemented
+[ ] Alembic migrations implemented
+[ ] Backend implemented
+[ ] Backend tests pass
+[ ] API contract verified
+[ ] API contract frozen
+[ ] Frontend planned from contract
+[ ] Frontend implemented
+[ ] Zero-Drift QA passes
+[ ] DApp operational acceptance passes
+[ ] Security audit passes
+[ ] Regression validation passes
+[ ] Evidence complete
+[ ] Human acceptance obtained
+[ ] Git consolidation completed
+[ ] OpenSpec package archived
+```
+
+Only after all applicable gates are satisfied is the OpenSpec change considered successfully implemented.

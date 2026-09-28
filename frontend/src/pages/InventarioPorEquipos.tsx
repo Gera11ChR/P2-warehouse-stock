@@ -7,18 +7,23 @@ import {
   createEquipo,
   updateEquipo,
   deleteEquipo,
-  inventarioEquipo,
 } from '../services/equipos'
 import type {
   EquipoCreatePayload,
   EquipoUpdatePayload,
 } from '../services/equipos'
+import { useEquipoInventario } from '../hooks/useEquipoInventario'
+import { useCategorias } from '../hooks/useCategorias'
+import { useUms } from '../hooks/useUms'
+import { usePatchConfigLocal } from '../hooks/usePatchConfigLocal'
 import EquipoInventoryTable from '../components/EquipoInventoryTable'
 import EquipoForm from '../components/EquipoForm'
+import ConfigLocalForm from '../components/ConfigLocalForm'
+import DesplieguePanel from '../components/DesplieguePanel'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../hooks/useToasts'
-import type { Equipo } from '../types'
+import type { Equipo, InventarioEquipoRow } from '../types'
 
 function errorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
@@ -32,6 +37,14 @@ function errorMessage(error: unknown): string {
   return 'Ocurrió un error'
 }
 
+const TABS = [
+  { value: 'consulta', label: 'Consulta' },
+  { value: 'configuracion', label: 'Configuración' },
+  { value: 'despliegue', label: 'DESPLIEGUE' },
+] as const
+
+type TabValue = (typeof TABS)[number]['value']
+
 export default function InventarioPorEquipos() {
   const { pushToast, pushError } = useToast()
   const queryClient = useQueryClient()
@@ -41,6 +54,12 @@ export default function InventarioPorEquipos() {
   const [equipoToEdit, setEquipoToEdit] = useState<Equipo | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [equipoToDelete, setEquipoToDelete] = useState<Equipo | null>(null)
+
+  // Pestañas del área de inventario (FASE 7): consulta / configuración /
+  // despliegue.
+  const [tab, setTab] = useState<TabValue>('consulta')
+  const [configMaterial, setConfigMaterial] =
+    useState<InventarioEquipoRow | null>(null)
 
   // ============================================================================
   // QUERIES
@@ -69,11 +88,11 @@ export default function InventarioPorEquipos() {
     isLoading: inventarioLoading,
     isError: inventarioError,
     error: inventarioErrorObj,
-  } = useQuery({
-    queryKey: ['equipo', effectiveEquipoId],
-    queryFn: () => inventarioEquipo(effectiveEquipoId!),
-    enabled: effectiveEquipoId !== null,
-  })
+  } = useEquipoInventario(effectiveEquipoId)
+
+  // Catálogos para el formulario de configuración local (FASE 7).
+  const { data: categorias = [] } = useCategorias()
+  const { data: ums = [] } = useUms()
 
   // ============================================================================
   // MUTATIONS
@@ -121,6 +140,8 @@ export default function InventarioPorEquipos() {
     },
     onError: (error) => pushError(errorMessage(error)),
   })
+
+  const patchConfigLocalMut = usePatchConfigLocal(effectiveEquipoId ?? 0)
 
   const handleSubmitEquipo = async (
     payload: EquipoCreatePayload | EquipoUpdatePayload,
@@ -236,47 +257,88 @@ export default function InventarioPorEquipos() {
         </div>
       </div>
 
-      {/* Tabla de inventario autónomo */}
-      <div>
-        {effectiveEquipoId === null && (
-          <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
-            <p className="text-slate-500">
-              Seleccione un equipo para ver su inventario
-            </p>
-          </div>
-        )}
-
-        {effectiveEquipoId !== null && inventarioLoading && (
-          <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
-            <p className="text-slate-500">Cargando inventario...</p>
-          </div>
-        )}
-
-        {effectiveEquipoId !== null && inventarioError && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
-            <p className="text-red-700">
-              No se pudo obtener el inventario del equipo
-            </p>
-            <p className="mt-1 text-sm text-red-600">
-              {errorMessage(inventarioErrorObj)}
-            </p>
-          </div>
-        )}
-
-        {effectiveEquipoId !== null &&
-          !inventarioLoading &&
-          !inventarioError && (
-            <>
-              <EquipoInventoryTable rows={inventarioRows} />
-              <p className="mt-2 text-xs text-slate-500">
-                Mostrando {inventarioRows.length} materiales (inventario
-                autónomo: solo materiales con stock real)
-              </p>
-            </>
-          )}
+      {/* Tabs del área de inventario */}
+      <div className="flex flex-wrap gap-2">
+        {TABS.map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setTab(value)}
+            className={`rounded-md px-4 py-2 text-sm font-medium ${
+              tab === value
+                ? 'bg-blue-600 text-white'
+                : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Modal CRUD */}
+      {/* Consulta (solo lectura) / Configuración (acciones) */}
+      {(tab === 'consulta' || tab === 'configuracion') && (
+        <div>
+          {effectiveEquipoId === null && (
+            <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
+              <p className="text-slate-500">
+                Seleccione un equipo para ver su inventario
+              </p>
+            </div>
+          )}
+
+          {effectiveEquipoId !== null && inventarioLoading && (
+            <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
+              <p className="text-slate-500">Cargando inventario...</p>
+            </div>
+          )}
+
+          {effectiveEquipoId !== null && inventarioError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+              <p className="text-red-700">
+                No se pudo obtener el inventario del equipo
+              </p>
+              <p className="mt-1 text-sm text-red-600">
+                {errorMessage(inventarioErrorObj)}
+              </p>
+            </div>
+          )}
+
+          {effectiveEquipoId !== null &&
+            !inventarioLoading &&
+            !inventarioError &&
+            tab === 'consulta' && (
+              <>
+                <EquipoInventoryTable rows={inventarioRows} />
+                <p className="mt-2 text-xs text-slate-500">
+                  Mostrando {inventarioRows.length} materiales (inventario
+                  autónomo: solo materiales con stock real)
+                </p>
+              </>
+            )}
+
+          {effectiveEquipoId !== null &&
+            !inventarioLoading &&
+            !inventarioError &&
+            tab === 'configuracion' && (
+              <EquipoInventoryTable
+                rows={inventarioRows}
+                onConfigurar={setConfigMaterial}
+              />
+            )}
+        </div>
+      )}
+
+      {/* Despliegue (FASE 7) */}
+      {tab === 'despliegue' &&
+        (effectiveEquipoId === null ? (
+          <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
+            <p className="text-slate-500">Seleccione un equipo</p>
+          </div>
+        ) : (
+          <DesplieguePanel equipoId={effectiveEquipoId} />
+        ))}
+
+      {/* Modal CRUD de equipos */}
       <Modal
         open={formMode !== null}
         title={formMode === 'create' ? 'Crear Equipo' : 'Modificar Equipo'}
@@ -307,6 +369,34 @@ export default function InventarioPorEquipos() {
           setEquipoToDelete(null)
         }}
       />
+
+      {/* Modal de configuración local del material (FASE 7) */}
+      <Modal
+        open={configMaterial !== null}
+        title="Configuración local del material"
+        onClose={() => setConfigMaterial(null)}
+      >
+        {configMaterial && (
+          <ConfigLocalForm
+            material={configMaterial}
+            categorias={categorias}
+            ums={ums}
+            onSubmit={(payload) =>
+              patchConfigLocalMut.mutate(
+                { materialId: configMaterial.material_id, payload },
+                {
+                  onSuccess: () => {
+                    pushToast('Configuración local actualizada')
+                    setConfigMaterial(null)
+                  },
+                  onError: (err) => pushError(errorMessage(err)),
+                },
+              )
+            }
+            onCancel={() => setConfigMaterial(null)}
+          />
+        )}
+      </Modal>
     </div>
   )
 }

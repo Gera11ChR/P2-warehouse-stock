@@ -4,7 +4,8 @@ import axios from 'axios'
 import { Check, Plus, Search, Trash2, Undo2, X } from 'lucide-react'
 import Modal from '../components/Modal'
 import { listEquipos, inventarioEquipo } from '../services/equipos'
-import { listSecciones, stockSeccion } from '../services/inventory'
+import { stockSeccion } from '../services/inventory'
+import { useSeccionesTransferibles } from '../hooks/useSeccionesTransferibles'
 import {
   cancelarMovimiento,
   crearBorrador,
@@ -140,10 +141,11 @@ export default function Transferencias() {
   // QUERIES
   // ============================================================================
 
-  const { data: secciones = [], isError: seccionesError } = useQuery({
-    queryKey: ['secciones'],
-    queryFn: listSecciones,
-  })
+  // Secciones candidatas a ser extremo de una transferencia (FASE 7):
+  // incluye FO_PAQUETE / FO_EN_USO con etiqueta propia; las no transferibles
+  // se excluyen como extremo en la UI (la validación final es del backend).
+  const { data: secciones = [], isError: seccionesError } =
+    useSeccionesTransferibles()
 
   const { data: equipos = [], isError: equiposError } = useQuery({
     queryKey: ['equipos'],
@@ -417,8 +419,18 @@ export default function Transferencias() {
 
   const movimientos: Movimiento[] = movimientosQuery.data ?? []
 
-  const nombreSeccion = (id: number | null): string =>
-    secciones.find((s) => s.almacen_id === id)?.nombre ?? `Sección ${id}`
+  /** Etiqueta de sección transferible (FASE 7): FO con nombre propio,
+   *  GENERAL con el nombre del almacén. */
+  const labelSeccion = (s: { tipo: string; nombre: string }): string => {
+    if (s.tipo === 'FO_PAQUETE') return 'Fibra Óptica - Paquete'
+    if (s.tipo === 'FO_EN_USO') return 'Fibra Óptica - En Uso'
+    return s.nombre
+  }
+
+  const nombreSeccion = (id: number | null): string => {
+    const seccion = secciones.find((s) => s.almacen_id === id)
+    return seccion ? labelSeccion(seccion) : `Sección ${id}`
+  }
   const nombreEquipo = (id: number | null): string =>
     equipos.find((e) => e.equipo_id === id)?.nombre ?? `Equipo ${id}`
 
@@ -482,10 +494,10 @@ export default function Transferencias() {
               >
                 <option value="">— Seleccione sección —</option>
                 {secciones
-                  .filter((s) => s.is_active)
+                  .filter((s) => s.transferible)
                   .map((s) => (
                     <option key={s.almacen_id} value={s.almacen_id}>
-                      {s.nombre}
+                      {labelSeccion(s)}
                     </option>
                   ))}
               </select>
@@ -554,10 +566,10 @@ export default function Transferencias() {
               >
                 <option value="">— Seleccione sección —</option>
                 {secciones
-                  .filter((s) => s.is_active)
+                  .filter((s) => s.transferible)
                   .map((s) => (
                     <option key={s.almacen_id} value={s.almacen_id}>
-                      {s.nombre}
+                      {labelSeccion(s)}
                     </option>
                   ))}
               </select>

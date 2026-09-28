@@ -53,9 +53,13 @@ async def crear_equipo(
     integrantes: list[str] | None = None,
     expect: int = 201,
 ) -> dict:
+    """Crea un equipo por API pública. Por defecto incluye al actor `qa`
+    como integrante: los flujos con aislamiento por equipo (0014, SEC-003 /
+    V1/V3) exigen que el actor operador sea integrante del equipo."""
     payload: dict = {"nombre": nombre}
-    if integrantes is not None:
-        payload["integrantes"] = integrantes
+    if integrantes is None:
+        integrantes = ["qa"]
+    payload["integrantes"] = integrantes
     resp = await client.post("/api/v1/equipos", json=payload)
     assert resp.status_code == expect, resp.text
     return resp.json()

@@ -3,10 +3,11 @@ from typing import Annotated
 
 from fastapi import Header
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import SessionLocal
 from app.errors import AuthorizationError
-from app.models import ActorAlmacenScope
+from app.models import ActorAlmacenScope, EquipoIntegrante
 
 ActorHeader = Annotated[str, Header(alias="X-Actor")]
 
@@ -85,3 +86,59 @@ def assert_authenticated(actor_ctx: ActorContext) -> None:
             "Actor sin alcance de sección asignado",
             actor=actor_ctx.actor_id,
         )
+
+
+def require_admin(actor_ctx: ActorContext) -> None:
+    """Operaciones administrativas (renombrado/eliminación de categorías y
+    U.M.): exige `es_admin=True`; en caso contrario 403 AUTHORIZATION_FAILED
+    con mensaje canónico 'Se requiere rol administrador'."""
+    if not actor_ctx.es_admin:
+        raise AuthorizationError(
+            "Se requiere rol administrador",
+            actor=actor_ctx.actor_id,
+        )
+
+
+async def assert_equipo_access(
+    actor_ctx: ActorContext,
+    session: AsyncSession,
+    equipo_id: int,
+) -> None:
+    """Aislamiento por equipo (flujo DESPLIEGUE y configuración local): el
+    administrador pasa directo; el actor regular debe ser integrante del
+    equipo (`equipos_integrantes`). En caso contrario 403."""
+    if actor_ctx.es_admin:
+        return
+    es_integrante = (
+        await session.execute(
+            select(EquipoIntegrante.id)
+            .where(
+                EquipoIntegrante.equipo_id == equipo_id,
+                EquipoIntegrante.usuario == actor_ctx.actor_id,
+            )
+            .limit(1)
+        )
+    ).scalar()
+    if not es_integrante:
+        raise AuthorizationError(
+            "El actor no tiene acceso a este equipo",
+            actor=actor_ctx.actor_id,
+        )
+
+
+async def equipos_visibles(
+    actor_ctx: ActorContext, session: AsyncSession
+) -> set[int] | None:
+    """Equipos visibles para lecturas aisladas (reportes): None = todos
+    (administrador); para el actor regular, los equipos donde es
+    integrante (puede ser un conjunto vacío)."""
+    if actor_ctx.es_admin:
+        return None
+    rows = (
+        await session.execute(
+            select(EquipoIntegrante.equipo_id).where(
+                EquipoIntegrante.usuario == actor_ctx.actor_id
+            )
+        )
+    ).scalars()
+    return set(rows)

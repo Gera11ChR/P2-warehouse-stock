@@ -1,5 +1,5 @@
 import api from './api'
-import type { Seccion, SeccionStockRow } from '../types'
+import type { Seccion, SeccionStockRow, SeccionTransferible } from '../types'
 
 /**
  * SECCIONES (almacenes/inventarios) — contrato real /api/v1/inventario
@@ -22,6 +22,20 @@ export async function listSecciones(): Promise<Seccion[]> {
 export async function stockSeccion(almacen_id: number): Promise<SeccionStockRow[]> {
   const { data } = await api.get<SeccionStockRow[]>(
     `/inventario/secciones/${almacen_id}`,
+  )
+  return data
+}
+
+/**
+ * GET /inventario/secciones/transferibles — secciones candidatas a ser
+ * extremo de una transferencia. `transferible=false` las excluye en la UI;
+ * la validación final sigue siendo del backend (RBAC/dominio).
+ */
+export async function listSeccionesTransferibles(): Promise<
+  SeccionTransferible[]
+> {
+  const { data } = await api.get<SeccionTransferible[]>(
+    '/inventario/secciones/transferibles',
   )
   return data
 }

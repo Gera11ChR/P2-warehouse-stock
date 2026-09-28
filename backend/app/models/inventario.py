@@ -74,8 +74,11 @@ class InventarioEquipo(Base):
     deprecados: `inventario_equipos` es la fuente física autónoma del stock
     de cada equipo, inicializada VACÍA al crear el equipo (cero herencia del
     catálogo global) y poblada EXCLUSIVAMENTE por movimientos TEAMS/DEVOL
-    auditados (`fn_procesar_movimiento`). LECTURA ESTRICTA: las mutaciones
-    ocurren únicamente dentro de las Stored Functions."""
+    auditados (`fn_procesar_movimiento`). Extensión 0014: `fn_cerrar_despliegue`
+    descuenta el consumido del despliegue en la MISMA transacción atómica.
+    LECTURA ESTRICTA: las mutaciones ocurren únicamente dentro de las Stored
+    Functions (`fn_procesar_movimiento`, `fn_cancelar_movimiento`,
+    `fn_cerrar_despliegue`)."""
 
     __tablename__ = "inventario_equipos"
     __table_args__ = (

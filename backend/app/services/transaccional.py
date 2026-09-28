@@ -7,6 +7,8 @@ Prohibiciones estructurales que este módulo garantiza:
     (solo las funciones PostgreSQL mutan esas tablas).
 """
 
+import json
+
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +18,7 @@ from app.errors import (
     MovimientoNotFoundError,
     MovimientoStateError,
 )
-from app.models import CatalogoMaterial, MovimientoCabecera, Seccion
+from app.models import CatalogoMaterial, Despliegue, Equipo, MovimientoCabecera, Seccion
 
 _SQL_PROCESS_MOVEMENT = text("SELECT fn_procesar_movimiento(:movimiento_id)")
 _SQL_CANCEL_MOVEMENT = text(
@@ -36,6 +38,14 @@ _SQL_AJUSTAR_STOCK_FIBRA = text(
 )
 _SQL_AJUSTAR_STOCK_GENERAL = text(
     "SELECT fn_ajustar_stock_general(:material_id, :nuevo_stock, :motivo)"
+)
+_SQL_CREAR_DESPLIEGUE = text(
+    "SELECT fn_crear_despliegue("
+    ":equipo_id, :observaciones, CAST(:items AS JSONB), :usuario)"
+)
+_SQL_CERRAR_DESPLIEGUE = text(
+    "SELECT fn_cerrar_despliegue("
+    ":despliegue_id, CAST(:sobrantes AS JSONB), :usuario, :observaciones_cierre)"
 )
 
 
@@ -63,6 +73,7 @@ async def _mapear_raise_exception(exc: DBAPIError) -> Exception:
     validación autoritativa permanece en PostgreSQL."""
     mensaje = _mensaje_pg(exc)
 
+    # ── Mapeos preexistentes (fn_procesar/cancelar/ajustes) ──────────────
     if "Stock insuficiente" in mensaje:
         return BusinessRuleError(mensaje, status_code=400)
 
@@ -93,6 +104,43 @@ async def _mapear_raise_exception(exc: DBAPIError) -> Exception:
 
     if "motivo" in mensaje.lower():
         return BusinessRuleError(mensaje, status_code=422)
+
+    # ── Mapeos del flujo DESPLIEGUE (fn_crear/fn_cerrar_despliegue) ──────
+    if "no se encuentra en estado ABIERTA" in mensaje:
+        return BusinessRuleError(mensaje, status_code=409)
+
+    if "ya posee un despliegue abierto" in mensaje:
+        return BusinessRuleError(mensaje, status_code=409)
+
+    if "Despliegue ID" in mensaje and "no encontrado" in mensaje:
+        return BusinessRuleError(mensaje, status_code=404)
+
+    if "no existe o se encuentra inactivo" in mensaje:
+        return BusinessRuleError(mensaje, status_code=404)
+
+    if "no existe o está inactivo" in mensaje:
+        return BusinessRuleError(mensaje, status_code=404)
+
+    if "duplicado" in mensaje:
+        return BusinessRuleError(mensaje, status_code=400)
+
+    if "no pertenece a este despliegue" in mensaje:
+        return BusinessRuleError(mensaje, status_code=400)
+
+    if "Sobrante inválido" in mensaje:
+        return BusinessRuleError(mensaje, status_code=400)
+
+    if "Stock insuficiente en el Equipo" in mensaje:
+        return BusinessRuleError(mensaje, status_code=400)
+
+    if "debe contener al menos un material" in mensaje:
+        return BusinessRuleError(mensaje, status_code=400)
+
+    if "debe ser un arreglo JSON" in mensaje:
+        return BusinessRuleError(mensaje, status_code=400)
+
+    if "Cantidad tomada inválida" in mensaje:
+        return BusinessRuleError(mensaje, status_code=400)
 
     return BusinessRuleError(mensaje, status_code=422)
 
@@ -138,14 +186,75 @@ async def _prechequear_material(
         )
 
 
-async def _ejecutar(
-    session: AsyncSession, stmt, params: dict
+async def _prechequear_equipo(
+    session: AsyncSession, *, equipo_id: int
 ) -> None:
+    """Pre-chequeo del flujo DESPLIEGUE: el equipo debe existir y estar
+    activo (clasificación temprana 404 antes de invocar la función)."""
+    equipo = await session.get(Equipo, equipo_id)
+    if equipo is None or not equipo.is_active:
+        raise BusinessRuleError(
+            "Equipo no encontrado",
+            coordinates=[{"equipo_id": equipo_id}],
+            status_code=404,
+        )
+
+
+async def prechequear_equipo(
+    session: AsyncSession, *, equipo_id: int
+) -> None:
+    """Alias público del pre-chequeo de equipo para los routers del flujo
+    DESPLIEGUE (evita accesos privados entre módulos)."""
+    await _prechequear_equipo(session, equipo_id=equipo_id)
+
+
+async def _prechequear_despliegue(
+    session: AsyncSession, *, despliegue_id: int
+) -> None:
+    """Clasificación temprana 404/409 del cierre de despliegue: el
+    despliegue debe existir (404) y estar ABIERTA (409 en otro caso). La
+    validación autoritativa permanece en fn_cerrar_despliegue."""
+    despliegue = await session.get(Despliegue, despliegue_id)
+    if despliegue is None:
+        raise BusinessRuleError(
+            "Despliegue no encontrado",
+            coordinates=[{"despliegue_id": despliegue_id}],
+            status_code=404,
+        )
+    if despliegue.estado != "ABIERTA":
+        raise BusinessRuleError(
+            f"El despliegue ID {despliegue_id} no se encuentra en estado "
+            "ABIERTA.",
+            coordinates=[
+                {"despliegue_id": despliegue_id, "estado": despliegue.estado}
+            ],
+            status_code=409,
+        )
+
+
+async def _ejecutar(
+    session: AsyncSession, stmt, params: dict, *, scalar: bool = False
+):
+    """Ejecuta una Stored Function del contrato mapeando errores SQLSTATE:
+
+      * P0001 (RAISE EXCEPTION) → _mapear_raise_exception (400/404/409/422).
+      * 23503/23505 (FK/unicidad, SEC-012) → 409 conflicto de integridad.
+
+    Con `scalar=True` devuelve el valor escalar de la función (p.ej. el id
+    generado por fn_crear_despliegue)."""
     try:
-        await session.execute(stmt, params)
+        result = await session.execute(stmt, params)
+        return result.scalar_one() if scalar else None
     except DBAPIError as exc:
-        if _sqlstate(exc) == "P0001":
+        sqlstate = _sqlstate(exc)
+        if sqlstate == "P0001":
             raise await _mapear_raise_exception(exc) from exc
+        if sqlstate in ("23503", "23505"):
+            raise BusinessRuleError(
+                "Conflicto de integridad referencial o de unicidad en la "
+                "base de datos (SEC-012)",
+                status_code=409,
+            ) from exc
         raise
 
 
@@ -293,5 +402,61 @@ async def ajustar_stock_general(
             "material_id": material_id,
             "nuevo_stock": nuevo_stock,
             "motivo": motivo,
+        },
+    )
+
+
+async def crear_despliegue(
+    session: AsyncSession,
+    *,
+    equipo_id: int,
+    observaciones: str | None,
+    items: list[dict],
+    usuario: str,
+) -> int:
+    """fn_crear_despliegue: apertura de despliegue (ABIERTA) 100 % en
+    PostgreSQL. `items` es una lista de {"material_id", "cantidad_tomada"}
+    serializada a JSON. Devuelve el id generado por la función.
+
+    CERO aritmética de stock en Python: validación de materiales, unicidad
+    de despliegue abierto por equipo y auditoría ('DESPLIEGUE_CREADO') viven
+    íntegros en la stored function."""
+    await _prechequear_equipo(session, equipo_id=equipo_id)
+    return await _ejecutar(
+        session,
+        _SQL_CREAR_DESPLIEGUE,
+        {
+            "equipo_id": equipo_id,
+            "observaciones": observaciones,
+            "items": json.dumps(items),
+            "usuario": usuario,
+        },
+        scalar=True,
+    )
+
+
+async def cerrar_despliegue(
+    session: AsyncSession,
+    *,
+    despliegue_id: int,
+    sobrantes: list[dict],
+    usuario: str,
+    observaciones_cierre: str | None,
+) -> None:
+    """fn_cerrar_despliegue: cierre con sobrantes 100 % en PostgreSQL.
+    `sobrantes` es una lista de {"material_id", "cantidad_sobrante"}
+    serializada a JSON (vacía si no hay sobrantes: las líneas omitidas se
+    cierran con sobrante 0). El descuento del inventario del equipo y la
+    auditoría ('DESPLIEGUE_CERRADO' por línea) ocurren dentro de la
+    función bajo FOR UPDATE."""
+    await _prechequear_despliegue(session, despliegue_id=despliegue_id)
+    await _ejecutar(
+        session,
+        _SQL_CERRAR_DESPLIEGUE,
+        {
+            "despliegue_id": despliegue_id,
+            "sobrantes": json.dumps(sobrantes),
+            "usuario": usuario,
+            "observaciones_cierre": observaciones_cierre,
         },
     )

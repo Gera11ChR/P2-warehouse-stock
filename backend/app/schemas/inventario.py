@@ -12,6 +12,17 @@ class SeccionOut(BaseModel):
     is_active: bool
 
 
+class SeccionTransferibleOut(BaseModel):
+    """Sección válida como origen/destino de movimientos TEAMS/DEVOL
+    (0014): GENERAL activas + manejadores de ruteo FO_PAQUETE/FO_EN_USO
+    (transferibles aunque is_active=False)."""
+
+    almacen_id: int
+    nombre: str
+    tipo: Literal["GENERAL", "FO_PAQUETE", "FO_EN_USO"]
+    transferible: bool = True
+
+
 class SeccionStockOut(BaseModel):
     """Fila de stock de una sección (JOIN catálogo, solo lectura)."""
 
@@ -44,6 +55,15 @@ class InventarioEquipoOut(BaseModel):
     stock_actual: int
     alerta_stock: bool
     ultimo_movimiento_id: int | None
+    # Configuración operativa LOCAL del equipo (0014) y sus valores
+    # EFECTIVOS (COALESCE local → maestro). Sin configuración local, los
+    # efectivos replican exactamente el comportamiento previo.
+    stock_minimo_local: int | None = None
+    categoria_local_id: int | None = None
+    um_local_id: int | None = None
+    stock_minimo_efectivo: int | None = None
+    categoria_efectiva: str | None = None
+    um_efectivo: str | None = None
 
 
 # ── Fibra Óptica: inventarios independientes con esquema estándar ──────
