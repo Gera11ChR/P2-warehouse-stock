@@ -15,7 +15,7 @@ de `inventario_equipos` vía `api/v1/equipos.py`, y el de Fibra Óptica de
 las lecturas del inventario central.
 """
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import CatalogoMaterial, InventarioAlmacen, Seccion
@@ -28,6 +28,37 @@ async def listar_secciones(session: AsyncSession) -> list[SeccionOut]:
     )
     secciones = (await session.execute(stmt)).scalars().all()
     return [SeccionOut.model_validate(s) for s in secciones]
+
+
+async def listar_secciones_transferibles(
+    session: AsyncSession,
+) -> list[dict]:
+    """Secciones válidas como origen/destino de movimientos TEAMS/DEVOL
+    (0014, enrutamiento aditivo FO): las secciones GENERAL activas MÁS los
+    manejadores de ruteo FO_PAQUETE/FO_EN_USO (transferibles aunque
+    is_active=FALSE, pues su stock vive en inventario_fibra). Las secciones
+    GENERAL inactivas quedan excluidas. NO altera GET /inventario/secciones
+    (contrato existente: solo GENERAL activa)."""
+    stmt = (
+        select(Seccion)
+        .where(
+            or_(
+                Seccion.is_active == True,  # noqa: E712
+                Seccion.tipo.in_(("FO_PAQUETE", "FO_EN_USO")),
+            )
+        )
+        .order_by(Seccion.almacen_id.asc())
+    )
+    secciones = (await session.execute(stmt)).scalars().all()
+    return [
+        {
+            "almacen_id": s.almacen_id,
+            "nombre": s.nombre,
+            "tipo": s.tipo,
+            "transferible": True,
+        }
+        for s in secciones
+    ]
 
 
 async def obtener_seccion(

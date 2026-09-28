@@ -10,6 +10,8 @@ import BulkSearch from '../components/BulkSearch'
 import Modal from '../components/Modal'
 import MaterialForm from '../components/MaterialForm'
 import ConfirmDialog from '../components/ConfirmDialog'
+import CatalogManagementPanel from '../components/CatalogManagementPanel'
+import { useUms } from '../hooks/useUms'
 import {
   listCategorias,
   listCatalog,
@@ -68,6 +70,10 @@ export default function SeccionGeneral({
     queryKey: ['categorias'],
     queryFn: listCategorias,
   })
+
+  // Unidades de medida del catálogo (FASE 7): alimentan el select U.M. del
+  // MaterialForm y la gestión de catálogo (CatalogManagementPanel).
+  const { data: ums = [] } = useUms()
 
   // REQ-UI-005: join de PRESENTACIÓN material_id → categoría desde el
   // contrato oficial /catalogo. La fila de stock por sección no incluye
@@ -379,6 +385,7 @@ export default function SeccionGeneral({
           alertaStock={selected?.alerta_stock ?? false}
           categorias={categorias}
           secciones={secciones}
+          ums={ums}
           onSubmit={handleSubmitMaterial}
           onCancel={() => setFormMode(null)}
         />
@@ -391,6 +398,20 @@ export default function SeccionGeneral({
         onConfirm={handleDelete}
         onCancel={() => setDeleteOpen(false)}
       />
+
+      {/* Gestión de catálogo (FASE 7) — categorías y unidades de medida */}
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <h3 className="text-lg font-semibold text-slate-800">
+          Gestión de catálogo — Categorías y Unidades de Medida
+        </h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Cree, renombre o desactive (soft-delete) categorías y unidades de
+          medida. La autoridad de validación y RBAC es del backend.
+        </p>
+        <div className="mt-4">
+          <CatalogManagementPanel />
+        </div>
+      </section>
     </div>
   )
 }

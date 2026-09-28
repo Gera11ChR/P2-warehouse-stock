@@ -1,5 +1,10 @@
 import api from './api'
-import type { Equipo, InventarioEquipoRow } from '../types'
+import type {
+  Equipo,
+  EquipoConfigLocal,
+  EquipoConfigLocalPayload,
+  InventarioEquipoRow,
+} from '../types'
 
 // ============================================================================
 // PAYLOADS — contrato real /api/v1/equipos
@@ -71,6 +76,29 @@ export async function inventarioEquipo(
 ): Promise<InventarioEquipoRow[]> {
   const { data } = await api.get<InventarioEquipoRow[]>(
     `/equipos/${equipo_id}/inventario`,
+  )
+  return data
+}
+
+// ============================================================================
+// CONFIGURACIÓN LOCAL DEL INVENTARIO DE EQUIPO (FASE 7)
+// ============================================================================
+
+/**
+ * PATCH /equipos/{equipo_id}/inventario/{material_id} — configuración local
+ * (stock mínimo local / categoría local / U.M. local). Requiere AL MENOS un
+ * campo (422 si vacío). Los campos omitidos conservan su valor previo; la
+ * resolución de valores EFECTIVOS (local o heredado del catálogo) es del
+ * backend. El frontend solo refleja el eco del contrato.
+ */
+export async function patchInventarioLocal(
+  equipo_id: number,
+  material_id: number,
+  payload: EquipoConfigLocalPayload,
+): Promise<EquipoConfigLocal> {
+  const { data } = await api.patch<EquipoConfigLocal>(
+    `/equipos/${equipo_id}/inventario/${material_id}`,
+    payload,
   )
   return data
 }

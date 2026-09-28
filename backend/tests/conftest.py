@@ -3,7 +3,7 @@
 Estrategia de aislamiento (FASE 5, decisión D3): TRUNCATE + resiembra.
 La suite opera EXCLUSIVAMENTE sobre la base de datos `p2_test`; la BD de
 desarrollo `p2` jamás es tocada. El esquema se migra con `alembic upgrade
-head` (cadena completa 0001 -> 0013, idéntica a producción).
+head` (cadena completa 0001 -> 0014, idéntica a producción).
 
 Regla crítica: P2_DATABASE_URL se fija ANTES de importar `app.*`
 (app.config lee la variable en tiempo de importación).
@@ -37,7 +37,27 @@ SECCIONES_SEMILLA = [
     ("Inventario General", "GENERAL"),
 ]
 
+# Siembra de U.M. maestras (0014): idéntica al seed de la migración. Tras el
+# TRUNCATE del fixture, las 10 unidades deben restaurarse para que cualquier
+# alta/modificación de material siga validando contra SUPPORTED_UNITS.
+UMS_SEMILLA = [
+    "PZ",
+    "LT",
+    "CARRETE (1 KM)",
+    "METRO (M)",
+    "CARRETE (5 KM)",
+    "BOLSA (500 PZ)",
+    "PAQUETE (100 PZ)",
+    "ROLLO",
+    "EQUIPO",
+    "UNIDAD",
+]
+
 TABLAS_DOMINIO = [
+    "despliegue_items",
+    "despliegues",
+    "equipo_material_config",
+    "ums",
     "inventario_equipos",
     "inventario_almacen",
     "inventario_fibra",
@@ -111,6 +131,14 @@ async def clean_db():
                     ),
                     {"n": nombre, "t": tipo},
                 )
+            for nombre in UMS_SEMILLA:
+                await session.execute(
+                    text(
+                        "INSERT INTO ums (nombre) VALUES (:n) "
+                        "ON CONFLICT (nombre) DO NOTHING"
+                    ),
+                    {"n": nombre},
+                )
             await session.execute(
                 text(
                     "INSERT INTO actor_almacen_scopes (actor_id, almacen_id) "
@@ -161,6 +189,26 @@ async def client_sin_scope():
         headers={"X-Actor": ACTOR_SIN_SCOPE},
     ) as c:
         yield c
+
+
+@pytest.fixture
+async def client_admin(session, client_factory):
+    """Cliente autenticado como administrador (tabla `administradores`):
+    pase directo en operaciones administrativas del catálogo (SEC-001)."""
+    from sqlalchemy import text
+
+    await session.execute(
+        text(
+            "INSERT INTO administradores (actor_id) VALUES ('admin-qa') "
+            "ON CONFLICT (actor_id) DO NOTHING"
+        )
+    )
+    await session.commit()
+    admin = client_factory("admin-qa")
+    try:
+        yield admin
+    finally:
+        await admin.aclose()
 
 
 @pytest.fixture

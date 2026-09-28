@@ -1,5 +1,5 @@
 import api from './api'
-import type { Categoria, Material, MaterialList } from '../types'
+import type { Categoria, Material, MaterialList, Ums } from '../types'
 
 // ============================================================================
 // FILTROS Y PAYLOADS
@@ -65,6 +65,21 @@ export interface CategoriaCreatePayload {
   nombre: string
 }
 
+/** PUT /catalogo/categorias/{categoria_id} — renombrar (admin-only). */
+export interface CategoriaUpdatePayload {
+  nombre: string
+}
+
+/** POST /catalogo/um — alta de unidad de medida (admin-only). */
+export interface UmCreatePayload {
+  nombre: string
+}
+
+/** PUT /catalogo/um/{um_id} — renombrar unidad de medida (admin-only). */
+export interface UmUpdatePayload {
+  nombre: string
+}
+
 // ============================================================================
 // CATÁLOGO DE MATERIALES
 // ============================================================================
@@ -116,4 +131,55 @@ export async function createCategoria(
 ): Promise<Categoria> {
   const { data } = await api.post<Categoria>('/catalogo/categorias', payload)
   return data
+}
+
+/**
+ * PUT /catalogo/categorias/{categoria_id} — renombrar categoría.
+ * Admin-only: 403 `{error:{code,message,actor}}` para no-admin
+ * (el frontend solo representa el estado; RBAC es backend).
+ */
+export async function updateCategoria(
+  categoria_id: number,
+  payload: CategoriaUpdatePayload,
+): Promise<Categoria> {
+  const { data } = await api.put<Categoria>(
+    `/catalogo/categorias/${categoria_id}`,
+    payload,
+  )
+  return data
+}
+
+/** DELETE /catalogo/categorias/{categoria_id} — 204 (admin-only). */
+export async function deleteCategoria(categoria_id: number): Promise<void> {
+  await api.delete(`/catalogo/categorias/${categoria_id}`)
+}
+
+// ============================================================================
+// UNIDADES DE MEDIDA (U.M.) — contrato real /api/v1/catalogo/um
+// ============================================================================
+
+/** GET /catalogo/um — unidades de medida activas/inactivas. */
+export async function listUms(): Promise<Ums[]> {
+  const { data } = await api.get<Ums[]>('/catalogo/um')
+  return data
+}
+
+/** POST /catalogo/um — alta (201, admin-only). */
+export async function createUm(payload: UmCreatePayload): Promise<Ums> {
+  const { data } = await api.post<Ums>('/catalogo/um', payload)
+  return data
+}
+
+/** PUT /catalogo/um/{um_id} — renombrar (admin-only). */
+export async function updateUm(
+  um_id: number,
+  payload: UmUpdatePayload,
+): Promise<Ums> {
+  const { data } = await api.put<Ums>(`/catalogo/um/${um_id}`, payload)
+  return data
+}
+
+/** DELETE /catalogo/um/{um_id} — 204 (admin-only). */
+export async function deleteUm(um_id: number): Promise<void> {
+  await api.delete(`/catalogo/um/${um_id}`)
 }

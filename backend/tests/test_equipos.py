@@ -101,3 +101,33 @@ async def test_inventario_tras_teams_con_trazabilidad(
 async def test_inventario_equipo_inexistente_404(client: AsyncClient) -> None:
     resp = await client.get("/api/v1/equipos/9999/inventario")
     assert resp.status_code == 404
+
+
+async def test_REQ_VIEW_001_consulta_inventario_solo_lectura_aislada(
+    client: AsyncClient, client_factory
+) -> None:
+    """REQ-VIEW-001: vista dedicada de consulta segura del inventario del
+    equipo — GET puro (sin flujo de edición) y aislada por integrante
+    (SEC-003): un actor que no es integrante ni administrador recibe 403."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    equipo = await crear_equipo(client, nombre="Equipo Consulta Segura")
+
+    resp = await client.get(f"/api/v1/equipos/{equipo['equipo_id']}/inventario")
+    assert resp.status_code == 200
+
+    extrano = AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"X-Actor": "extrano"},
+    )
+    try:
+        resp = await extrano.get(
+            f"/api/v1/equipos/{equipo['equipo_id']}/inventario"
+        )
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "AUTHORIZATION_FAILED"
+    finally:
+        await extrano.aclose()

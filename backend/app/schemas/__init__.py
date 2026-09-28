@@ -1,7 +1,22 @@
 from app.schemas.ajuste import AjusteOut, AjusteStockAlmacenRequest, CargaInicialRequest
 from app.schemas.auditoria import AuditoriaListOut, AuditoriaOut
 from app.schemas.cancelacion import CanceladoOut, CancelarMovimientoRequest
-from app.schemas.equipo import EquipoCreate, EquipoOut, EquipoUpdate
+from app.schemas.despliegue import (
+    CerrarDespliegueRequest,
+    DespliegueCreate,
+    DespliegueItemIn,
+    DespliegueItemOut,
+    DespliegueListOut,
+    DespliegueOut,
+    SobranteLine,
+)
+from app.schemas.equipo import (
+    EquipoConfigLocalOut,
+    EquipoConfigLocalUpdate,
+    EquipoCreate,
+    EquipoOut,
+    EquipoUpdate,
+)
 from app.schemas.inventario import (
     FibraAjusteRequest,
     FibraCargaInicialRequest,
@@ -16,10 +31,14 @@ from app.schemas.material import (
     BusquedaGranelParams,
     CategoriaCreate,
     CategoriaOut,
+    CategoriaUpdate,
     MaterialCreate,
     MaterialListOut,
     MaterialOut,
     MaterialUpdate,
+    UmsCreate,
+    UmsOut,
+    UmsUpdate,
 )
 from app.schemas.movimiento import (
     DetalleLine,
@@ -30,6 +49,11 @@ from app.schemas.movimiento import (
     MovimientoOut,
     ProcesadoOut,
     ProcesarRequest,
+)
+from app.schemas.reporte import (
+    ReporteDespliegueItemOut,
+    ReporteDespliegueListOut,
+    ReporteDespliegueOut,
 )
 
 __all__ = [
@@ -43,8 +67,17 @@ __all__ = [
     "BusquedaGranelParams",
     "CategoriaCreate",
     "CategoriaOut",
+    "CategoriaUpdate",
+    "CerrarDespliegueRequest",
     "DetalleLine",
     "DetalleOut",
+    "DespliegueCreate",
+    "DespliegueItemIn",
+    "DespliegueItemOut",
+    "DespliegueListOut",
+    "DespliegueOut",
+    "EquipoConfigLocalOut",
+    "EquipoConfigLocalUpdate",
     "EquipoCreate",
     "EquipoOut",
     "EquipoUpdate",
@@ -64,6 +97,13 @@ __all__ = [
     "MovimientoOut",
     "ProcesadoOut",
     "ProcesarRequest",
+    "ReporteDespliegueItemOut",
+    "ReporteDespliegueListOut",
+    "ReporteDespliegueOut",
     "SeccionOut",
     "SeccionStockOut",
+    "SobranteLine",
+    "UmsCreate",
+    "UmsOut",
+    "UmsUpdate",
 ]

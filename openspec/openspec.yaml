@@ -18,6 +18,8 @@ domain_rules:
       - "fn_cancelar_movimiento"
       - "fn_cargar_stock_inicial"
       - "fn_ajustar_stock_almacen"
+      - "fn_crear_despliegue"
+      - "fn_cerrar_despliegue"
     prohibition: "Cálculos matemáticos de stock prohibidos en Python/FastAPI."
   classification_schema:
     legacy_removed: "TIPO"
@@ -46,7 +48,7 @@ paths:
           description: "Movimiento procesado exitosamente vía fn_procesar_movimiento"
         "400":
           description: "Stock insuficiente o movimiento en estado no válido"
-  /api/v1/movimientos/{id}/cancelar:
+  /api/v1/movimientos/{movimiento_id}/cancelar:
     post:
       summary: "Cancelar y revertir un movimiento CONFIRMADO"
       operationId: "cancelarMovimiento"
@@ -125,3 +127,128 @@ paths:
           description: "Stock final negativo o motivo vacío"
         "404":
           description: "Sin registro de inventario previo (requiere carga inicial)"
+  /api/v1/catalogo/categorias/{categoria_id}:
+    put:
+      summary: "Modificar una categoría existente"
+      operationId: "modificarCategoria"
+      responses:
+        "200":
+          description: "Categoría modificada (evento CATEGORIA_MODIFICADA)"
+        "409":
+          description: "Nombre de categoría duplicado"
+    delete:
+      summary: "Eliminar (soft-delete) una categoría"
+      operationId: "eliminarCategoria"
+      responses:
+        "204":
+          description: "Categoría desactivada (is_active=false, evento CATEGORIA_ELIMINADA)"
+  /api/v1/catalogo/um/{um_id}:
+    put:
+      summary: "Modificar una unidad de medida existente"
+      operationId: "modificarUM"
+      responses:
+        "200":
+          description: "U.M. modificada (evento UM_MODIFICADA)"
+        "409":
+          description: "Nombre de U.M. duplicado"
+    delete:
+      summary: "Eliminar (soft-delete) una unidad de medida"
+      operationId: "eliminarUM"
+      responses:
+        "204":
+          description: "U.M. desactivada (is_active=false, evento UM_ELIMINADA)"
+  /api/v1/equipos/{equipo_id}/inventario/{material_id}:
+    patch:
+      summary: "Configurar parámetros locales de inventario de equipo"
+      operationId: "configurarInventarioEquipo"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stock_minimo_local:
+                  type: integer
+                categoria_local_id:
+                  type: integer
+                um_local_id:
+                  type: integer
+      responses:
+        "200":
+          description: "Configuración local actualizada (evento CONFIG_EQUIPO_MODIFICADA)"
+        "422":
+          description: "Campos no permitidos (stock_actual, codigo, descripcion) o valores inválidos"
+  /api/v1/equipos/{equipo_id}/despliegues:
+    post:
+      summary: "Crear lista de despliegue para un equipo"
+      operationId: "crearDespliegue"
+      responses:
+        "201":
+          description: "Despliegue creado en estado ABIERTA vía fn_crear_despliegue"
+        "409":
+          description: "El equipo ya posee un despliegue abierto"
+    get:
+      summary: "Listar despliegues de un equipo"
+      operationId: "listarDesplieguesEquipo"
+      responses:
+        "200":
+          description: "Lista de despliegues del equipo"
+  /api/v1/equipos/{equipo_id}/despliegues/{despliegue_id}:
+    get:
+      summary: "Obtener un despliegue del equipo (verifica pertenencia)"
+      operationId: "obtenerDespliegue"
+      responses:
+        "200":
+          description: "Despliegue del equipo"
+        "404":
+          description: "Despliegue no encontrado o no pertenece al equipo"
+  /api/v1/equipos/{equipo_id}/despliegues/{despliegue_id}/cerrar:
+    post:
+      summary: "Cerrar despliegue registrando sobrantes y ajustando stock del equipo"
+      operationId: "cerrarDespliegue"
+      responses:
+        "200":
+          description: "Despliegue cerrado vía fn_cerrar_despliegue (auditoría por línea)"
+        "400":
+          description: "Sobrante mayor a tomada, negativo o stock de equipo insuficiente"
+        "404":
+          description: "Despliegue no encontrado"
+        "409":
+          description: "Despliegue no se encuentra en estado ABIERTA (doble cierre)"
+  /api/v1/inventario/secciones/transferibles:
+    get:
+      summary: "Secciones válidas como origen/destino de transferencias (GENERAL activas + manejadores FO)"
+      operationId: "seccionesTransferibles"
+      responses:
+        "200":
+          description: "Lista de secciones transferibles"
+  /api/v1/reportes/despliegues:
+    get:
+      summary: "Reporte de actividad de despliegues (JSON o CSV)"
+      operationId: "reporteDespliegues"
+      parameters:
+        - name: equipo_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: desde
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: hasta
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, csv]
+      responses:
+        "200":
+          description: "Reporte de despliegues; format=csv devuelve text/csv streamed"

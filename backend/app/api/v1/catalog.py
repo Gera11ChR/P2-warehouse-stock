@@ -11,12 +11,21 @@ from app.schemas.material import (
     BusquedaGranelParams,
     CategoriaCreate,
     CategoriaOut,
+    CategoriaUpdate,
     MaterialCreate,
     MaterialListOut,
     MaterialOut,
     MaterialUpdate,
+    UmsCreate,
+    UmsOut,
+    UmsUpdate,
 )
-from app.security import ActorContext, assert_authenticated, get_current_actor
+from app.security import (
+    ActorContext,
+    assert_authenticated,
+    get_current_actor,
+    require_admin,
+)
 from app.services import catalogo as catalogo_svc
 from app.services import transaccional
 from app.models import Categoria
@@ -129,7 +138,10 @@ async def crear_categoria(
     session: SessionDep,
     actor_ctx: ActorDep,
 ) -> CategoriaOut:
-    assert_authenticated(actor_ctx)
+    """Alta de categoría (solo administradores, coherente con el alta de
+    U.M.). El alta incidental vía `nueva_categoria` dentro de la edición de
+    material sigue disponible para actores regulares."""
+    require_admin(actor_ctx)
     async with session.begin():
         existente = (
             await session.execute(
@@ -146,6 +158,94 @@ async def crear_categoria(
         session.add(categoria)
         await session.flush()
         return CategoriaOut.model_validate(categoria)
+
+
+@router.put("/categorias/{categoria_id}", response_model=CategoriaOut)
+async def actualizar_categoria(
+    categoria_id: int,
+    payload: CategoriaUpdate,
+    session: SessionDep,
+    actor_ctx: ActorDep,
+) -> CategoriaOut:
+    """Renombrado administrativo de categoría (solo administradores).
+
+    El trigger tg_auditar_categoria registra CATEGORIA_MODIFICADA
+    atribuyendo el actor vía `app.actor` (Constitution 6.2)."""
+    require_admin(actor_ctx)
+    async with session.begin():
+        return await catalogo_svc.actualizar_categoria(
+            session, categoria_id, payload.nombre, actor=actor_ctx.actor_id
+        )
+
+
+@router.delete("/categorias/{categoria_id}", status_code=204)
+async def eliminar_categoria(
+    categoria_id: int,
+    session: SessionDep,
+    actor_ctx: ActorDep,
+    response: Response,
+) -> Response:
+    """Eliminación lógica de categoría (is_active=FALSE), solo
+    administradores. Auditada como CATEGORIA_ELIMINADA."""
+    require_admin(actor_ctx)
+    async with session.begin():
+        await catalogo_svc.eliminar_categoria(
+            session, categoria_id, actor=actor_ctx.actor_id
+        )
+    response.status_code = 204
+    return response
+
+
+@router.get("/um", response_model=list[UmsOut])
+async def list_ums(session: SessionDep, _actor: ActorDep) -> list[UmsOut]:
+    """Maestro activo de Unidades de Medida (lectura pública del selector)."""
+    return await catalogo_svc.listar_ums(session)
+
+
+@router.post("/um", response_model=UmsOut, status_code=201)
+async def crear_um(
+    payload: UmsCreate,
+    session: SessionDep,
+    actor_ctx: ActorDep,
+) -> UmsOut:
+    """Alta de Unidad de Medida (solo administradores)."""
+    require_admin(actor_ctx)
+    async with session.begin():
+        return await catalogo_svc.crear_um(
+            session, payload.nombre, actor=actor_ctx.actor_id
+        )
+
+
+@router.put("/um/{um_id}", response_model=UmsOut)
+async def actualizar_um(
+    um_id: int,
+    payload: UmsUpdate,
+    session: SessionDep,
+    actor_ctx: ActorDep,
+) -> UmsOut:
+    """Renombrado administrativo de U.M. (solo administradores), auditado
+    como UM_MODIFICADA vía tg_auditar_um."""
+    require_admin(actor_ctx)
+    async with session.begin():
+        return await catalogo_svc.actualizar_um(
+            session, um_id, payload.nombre, actor=actor_ctx.actor_id
+        )
+
+
+@router.delete("/um/{um_id}", status_code=204)
+async def eliminar_um(
+    um_id: int,
+    session: SessionDep,
+    actor_ctx: ActorDep,
+    response: Response,
+) -> Response:
+    """Eliminación lógica de U.M. (is_active=FALSE), solo administradores.
+    Auditada como UM_ELIMINADA."""
+    require_admin(actor_ctx)
+    async with session.begin():
+        await catalogo_svc.eliminar_um(session, um_id, actor=actor_ctx.actor_id)
+    response.status_code = 204
+    return response
 
 
 @router.get("/{id_lista}", response_model=MaterialOut)

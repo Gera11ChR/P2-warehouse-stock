@@ -49,3 +49,22 @@ class CatalogoMaterial(Base):
     )
 
     categoria: Mapped[Categoria | None] = relationship(back_populates="materiales")
+
+
+class Ums(Base):
+    """Unidad de Medida (U.M.) maestra del catálogo (tabla `ums`, 0014).
+
+    Fuente única del selector de U.M. para el alta/modificación de
+    materiales y para la configuración local de equipos
+    (`equipo_material_config.um_local_id`). La eliminación es lógica
+    (is_active = FALSE) y queda auditada por el trigger
+    `tg_auditar_um` (Constitution 6.2); no existen caminos de DELETE
+    físico desde el backend."""
+
+    __tablename__ = "ums"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    nombre: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )

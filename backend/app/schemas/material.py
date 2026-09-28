@@ -26,12 +26,45 @@ class CategoriaCreate(BaseModel):
     nombre: str = Field(min_length=1, max_length=100)
 
 
+class CategoriaUpdate(BaseModel):
+    """Renombrado administrativo de categoría (solo administradores)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nombre: str = Field(min_length=1, max_length=100)
+
+
 class CategoriaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     nombre: str
     is_active: bool
+
+
+class UmsOut(BaseModel):
+    """Unidad de Medida maestra (tabla `ums`, 0014): fuente única del
+    selector de U.M. del catálogo y de la configuración local de equipos."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    nombre: str
+    is_active: bool
+
+
+class UmsCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nombre: str = Field(min_length=1, max_length=50)
+
+
+class UmsUpdate(BaseModel):
+    """Renombrado administrativo de U.M. (solo administradores)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nombre: str = Field(min_length=1, max_length=50)
 
 
 class MaterialCreate(BaseModel):

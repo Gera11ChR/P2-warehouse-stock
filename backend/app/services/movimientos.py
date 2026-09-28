@@ -23,10 +23,14 @@ from app.schemas.movimiento import (
     MovimientoBorradorUpdate,
     MovimientoOut,
 )
+from app.security import ActorContext, assert_equipo_access, assert_scope
 
 
 async def _validar_referencias(
-    session: AsyncSession, payload: MovimientoBorradorCreate
+    session: AsyncSession,
+    payload: MovimientoBorradorCreate,
+    *,
+    actor_ctx: ActorContext | None = None,
 ) -> None:
     material_ids = {line.material_id for line in payload.detalle}
     activos = set(
@@ -48,9 +52,16 @@ async def _validar_referencias(
             ],
         )
 
+    # Enrutamiento aditivo FO (0014, REQ aprobado): las secciones
+    # FO_PAQUETE/FO_EN_USO son manejadores de ruteo hacia inventario_fibra;
+    # se aceptan aunque is_active=FALSE. Solo las secciones GENERAL exigen
+    # is_active=TRUE. Los mensajes de sección inexistente permanecen
+    # idénticos al contrato previo.
     if payload.tipo_movimiento == "TEAMS":
         seccion = await session.get(Seccion, payload.origen_almacen_id)
-        if seccion is None:
+        if seccion is None or (
+            seccion.tipo == "GENERAL" and not seccion.is_active
+        ):
             raise BusinessRuleError(
                 "Sección origen inexistente",
                 coordinates=[{"origen_almacen_id": payload.origen_almacen_id}],
@@ -69,11 +80,38 @@ async def _validar_referencias(
                 coordinates=[{"origen_equipo_id": payload.origen_equipo_id}],
             )
         seccion = await session.get(Seccion, payload.destino_almacen_id)
-        if seccion is None:
+        if seccion is None or (
+            seccion.tipo == "GENERAL" and not seccion.is_active
+        ):
             raise BusinessRuleError(
                 "Sección destino inexistente",
                 coordinates=[{"destino_almacen_id": payload.destino_almacen_id}],
             )
+
+    # SEC-002 (opcional): default-deny sobre la sección de almacén
+    # involucrada (origen en TEAMS, destino en DEVOL). Se aplica DESPUÉS de
+    # la validación de existencia para preservar la clasificación 422 de
+    # referencias inexistentes. El administrador recibe pase directo.
+    if actor_ctx is not None and not actor_ctx.es_admin:
+        requerida = (
+            payload.origen_almacen_id
+            if payload.tipo_movimiento == "TEAMS"
+            else payload.destino_almacen_id
+        )
+        if requerida is not None:
+            assert_scope(actor_ctx, {requerida})
+
+        # V3 (sec-ops): aislamiento por equipo en el extremo de equipo del
+        # movimiento — el actor regular solo puede TEAMS hacia equipos donde
+        # es integrante y DEVOL desde equipos donde es integrante. Cierra el
+        # drenaje cruzado entre equipos del mismo almacén.
+        equipo_requerido = (
+            payload.destino_equipo_id
+            if payload.tipo_movimiento == "TEAMS"
+            else payload.origen_equipo_id
+        )
+        if equipo_requerido is not None:
+            await assert_equipo_access(actor_ctx, session, equipo_requerido)
 
 
 def _aplicar_campos(
@@ -114,9 +152,13 @@ async def _obtener(
 
 
 async def crear_borrador(
-    session: AsyncSession, payload: MovimientoBorradorCreate, *, actor: str
+    session: AsyncSession,
+    payload: MovimientoBorradorCreate,
+    *,
+    actor: str,
+    actor_ctx: ActorContext | None = None,
 ) -> MovimientoOut:
-    await _validar_referencias(session, payload)
+    await _validar_referencias(session, payload, actor_ctx=actor_ctx)
     cabecera = MovimientoCabecera(usuario=actor, estado="BORRADOR")
     _aplicar_campos(cabecera, payload)
     session.add(cabecera)

@@ -28,10 +28,13 @@ async def crear_borrador(
     session: SessionDep,
     actor_ctx: ActorDep,
 ) -> MovimientoOut:
+    """Creación de borrador TEAMS/DEVOL (SEC-002: default-deny sobre la
+    sección de almacén involucrada, aplicada tras la validación de
+    referencias para preservar la clasificación 422 de inexistentes)."""
     assert_authenticated(actor_ctx)
     async with session.begin():
         return await movimientos_svc.crear_borrador(
-            session, payload, actor=actor_ctx.actor_id
+            session, payload, actor=actor_ctx.actor_id, actor_ctx=actor_ctx
         )
 
 

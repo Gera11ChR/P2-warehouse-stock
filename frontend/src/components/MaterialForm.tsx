@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import type { Categoria, Material, Seccion } from '../types'
+import type { Categoria, Material, Seccion, Ums } from '../types'
 import { UNIDADES } from '../types'
 import type {
   MaterialCreatePayload,
@@ -15,6 +15,12 @@ interface MaterialFormProps {
   alertaStock?: boolean
   categorias: Categoria[]
   secciones?: Seccion[]
+  /**
+   * Unidades de medida del catálogo (GET /api/v1/catalogo/um). El select
+   * U.M. usa SOLO las activas ordenadas por nombre; si el arreglo llega
+   * vacío se conserva el fallback `UNIDADES` (constante del dominio).
+   */
+  ums?: Ums[]
   onSubmit: (
     payload: MaterialCreatePayload | MaterialUpdatePayload,
   ) => void | Promise<void>
@@ -28,6 +34,7 @@ export default function MaterialForm({
   alertaStock = false,
   categorias,
   secciones = [],
+  ums = [],
   onSubmit,
   onCancel,
 }: MaterialFormProps) {
@@ -72,6 +79,16 @@ export default function MaterialForm({
     stockEditadoNum >= 0 &&
     stockEditadoNum !== stockActual
   const diferencial = stockModificado ? stockEditadoNum - stockActual : null
+
+  // U.M.: catálogo activo ordenado por nombre; fallback a la constante del
+  // dominio si la página no provee el catálogo de unidades (ums = []).
+  const unidadesDisponibles = (() => {
+    const activas = ums
+      .filter((u) => u.is_active)
+      .map((u) => u.nombre)
+      .sort((a, b) => a.localeCompare(b, 'es'))
+    return activas.length > 0 ? activas : [...UNIDADES]
+  })()
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -273,7 +290,7 @@ export default function MaterialForm({
           className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         >
           <option value="">—</option>
-          {UNIDADES.map((u) => (
+          {unidadesDisponibles.map((u) => (
             <option key={u} value={u}>
               {u}
             </option>

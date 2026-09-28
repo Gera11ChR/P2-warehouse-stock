@@ -5,16 +5,47 @@ se delega a fn_cargar_stock_inicial vía services.transaccional. El trigger
 fn_auditar_modificacion_material registra la auditoría en PostgreSQL.
 """
 
-from sqlalchemy import String, or_, select
+from sqlalchemy import String, or_, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import BusinessRuleError
-from app.models import CatalogoMaterial, Categoria
+from app.models import CatalogoMaterial, Categoria, Ums
 from app.schemas.material import (
+    CategoriaOut,
     MaterialCreate,
     MaterialOut,
     MaterialUpdate,
+    UmsOut,
 )
+
+
+async def _set_actor(session: AsyncSession, actor: str) -> None:
+    """Atribuye el actor X-Actor a la transacción actual para que los
+    triggers de auditoría de catálogo (tg_auditar_categoria, tg_auditar_um)
+    registren `app.actor` en vez de CURRENT_USER (Constitution 6.2)."""
+    await session.execute(
+        text("SELECT set_config('app.actor', :actor, true)"), {"actor": actor}
+    )
+
+
+async def _validar_um(session: AsyncSession, u_m: str | None) -> None:
+    """REQ 0014: la U.M. debe existir en el maestro `ums` y estar activa.
+    SUPPORTED_UNITS (schemas/material.py) queda como fuente del seed; la
+    fuente autoritativa del selector es la tabla `ums`."""
+    if u_m is None:
+        return
+    um = (
+        await session.execute(
+            select(Ums).where(Ums.nombre == u_m, Ums.is_active == True)  # noqa: E712
+        )
+    ).scalar_one_or_none()
+    if um is None:
+        raise BusinessRuleError(
+            "Unidad de medida no válida",
+            coordinates=[{"u_m": u_m}],
+            status_code=422,
+        )
 
 
 async def _resolver_categoria(
@@ -147,6 +178,8 @@ async def crear(
     if payload.categoria_id is not None:
         await _validar_categoria(session, payload.categoria_id)
 
+    await _validar_um(session, payload.u_m)
+
     categoria_id = await _resolver_categoria(
         session,
         categoria_id=payload.categoria_id,
@@ -161,6 +194,7 @@ async def crear(
         stock_minimo=payload.stock_minimo,
     )
     session.add(material)
+    await _set_actor(session, actor)
     await session.flush()
     return await _to_out(session, material)
 
@@ -178,6 +212,9 @@ async def actualizar(
 
     if payload.categoria_id is not None:
         await _validar_categoria(session, payload.categoria_id)
+
+    if payload.u_m is not None:
+        await _validar_um(session, payload.u_m)
 
     categoria_id: int | None = None
     if payload.nueva_categoria:
@@ -199,6 +236,7 @@ async def actualizar(
     if categoria_id is not None:
         material.categoria_id = categoria_id
 
+    await _set_actor(session, actor)
     await session.flush()
     return await _to_out(session, material)
 
@@ -210,6 +248,121 @@ async def eliminar(
     material = await session.get(CatalogoMaterial, id_lista)
     if material is None or not material.is_active:
         return False
+    await _set_actor(session, actor)
     material.is_active = False
+    await session.flush()
+    return True
+
+
+# ── Categorías: renombrado y eliminación lógica (solo administradores) ──
+# El trigger tg_auditar_categoria (Constitution 6.2) audita UPDATE/DELETE
+# atribuyendo `app.actor` (seteado vía _set_actor en la misma transacción).
+
+async def actualizar_categoria(
+    session: AsyncSession, categoria_id: int, nombre: str, *, actor: str
+) -> CategoriaOut:
+    categoria = await session.get(Categoria, categoria_id)
+    if categoria is None:
+        raise BusinessRuleError(
+            "Categoría no encontrada",
+            coordinates=[{"categoria_id": categoria_id}],
+            status_code=404,
+        )
+    await _set_actor(session, actor)
+    categoria.nombre = nombre.strip()
+    try:
+        await session.flush()
+    except IntegrityError:
+        raise BusinessRuleError(
+            "Ya existe una categoría con ese nombre",
+            coordinates=[{"nombre": nombre}],
+            status_code=409,
+        ) from None
+    return CategoriaOut.model_validate(categoria)
+
+
+async def eliminar_categoria(
+    session: AsyncSession, categoria_id: int, *, actor: str
+) -> bool:
+    """Eliminación lógica (is_active=FALSE). Idempotente: una categoría ya
+    inactiva devuelve True (204) sin nuevo evento de auditoría."""
+    categoria = await session.get(Categoria, categoria_id)
+    if categoria is None:
+        raise BusinessRuleError(
+            "Categoría no encontrada",
+            coordinates=[{"categoria_id": categoria_id}],
+            status_code=404,
+        )
+    await _set_actor(session, actor)
+    categoria.is_active = False
+    await session.flush()
+    return True
+
+
+# ── Unidades de Medida maestras (`ums`, 0014) ────────────────────────────
+# El trigger tg_auditar_um audita UPDATE/DELETE con `app.actor`.
+
+async def listar_ums(session: AsyncSession) -> list[UmsOut]:
+    """Maestro activo de U.M. (lectura pública del selector, como las
+    categorías)."""
+    stmt = select(Ums).where(Ums.is_active == True).order_by(  # noqa: E712
+        Ums.nombre.asc()
+    )
+    ums = (await session.execute(stmt)).scalars().all()
+    return [UmsOut.model_validate(u) for u in ums]
+
+
+async def crear_um(
+    session: AsyncSession, nombre: str, *, actor: str
+) -> UmsOut:
+    um = Ums(nombre=nombre.strip())
+    session.add(um)
+    try:
+        await session.flush()
+    except IntegrityError:
+        raise BusinessRuleError(
+            "Ya existe una unidad de medida con ese nombre",
+            coordinates=[{"nombre": nombre}],
+            status_code=409,
+        ) from None
+    return UmsOut.model_validate(um)
+
+
+async def actualizar_um(
+    session: AsyncSession, um_id: int, nombre: str, *, actor: str
+) -> UmsOut:
+    um = await session.get(Ums, um_id)
+    if um is None:
+        raise BusinessRuleError(
+            "Unidad de medida no encontrada",
+            coordinates=[{"um_id": um_id}],
+            status_code=404,
+        )
+    await _set_actor(session, actor)
+    um.nombre = nombre.strip()
+    try:
+        await session.flush()
+    except IntegrityError:
+        raise BusinessRuleError(
+            "Ya existe una unidad de medida con ese nombre",
+            coordinates=[{"nombre": nombre}],
+            status_code=409,
+        ) from None
+    return UmsOut.model_validate(um)
+
+
+async def eliminar_um(
+    session: AsyncSession, um_id: int, *, actor: str
+) -> bool:
+    """Eliminación lógica (is_active=FALSE) auditada por tg_auditar_um."""
+    um = await session.get(Ums, um_id)
+    if um is None:
+        raise BusinessRuleError(
+            "Unidad de medida no encontrada",
+            coordinates=[{"um_id": um_id}],
+            status_code=404,
+        )
+    await _set_actor(session, actor)
+    um.is_active = False
     await session.flush()
     return True
