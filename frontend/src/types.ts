@@ -290,6 +290,59 @@ export interface FibraOperacionOut {
   material_id: number
 }
 
+/**
+ * PATCH /api/v1/fibra/{modulo}/materiales/{material_id} — edición FO
+ * (REQ-CATFO-001/002, REQ-STOCK-001/002/003). Espejo de
+ * `FibraMaterialUpdateRequest` del backend: `stock_actual` SOLO si el
+ * operador cambió el valor registrado, y en ese caso `motivo` es
+ * OBLIGATORIO y no vacío (el backend responde 422 si falta). El frontend
+ * NUNCA envía el diferencial: el delta, el bloqueo FOR UPDATE y la
+ * auditoría 'AJUSTE_INVENTARIO_FO' los calcula PostgreSQL.
+ */
+export interface FibraMaterialUpdatePayload {
+  descripcion?: string | null
+  codigo?: string | null
+  categoria_id?: number | null
+  nueva_categoria?: string | null
+  u_m?: string | null
+  stock_minimo?: number | null
+  stock_actual?: number
+  motivo?: string
+}
+
+/**
+ * Respuesta del PATCH FO (FibraMaterialOut): material materializado tras
+ * la edición — join catálogo maestro + `inventario_fibra` con esquema
+ * estándar + categoría resuelta.
+ */
+export interface FibraMaterialOut {
+  modulo: FibraModulo
+  material_id: number
+  codigo: string | null
+  descripcion: string
+  u_m: string | null
+  stock_minimo: number | null
+  stock_actual: number
+  alerta_stock: boolean
+  categoria: string | null
+  categoria_id: number | null
+}
+
+/**
+ * Fila editable inicial del FibraMaterialForm (REQ-CATFO-001): campos de
+ * catálogo de la fila FO seleccionada + categoría resuelta con el join de
+ * presentación `['catalogo']` (patrón SeccionGeneral).
+ */
+export interface FibraMaterialRowEditable {
+  material_id: number
+  codigo: string | null
+  descripcion: string
+  u_m: string | null
+  stock_minimo: number | null
+  categoria_id: number | null
+  categoria: string | null
+}
+
 // ============================================================================
 // KPIs (sin endpoint /kpis — agregación visual en FASE 1)
 // ============================================================================
@@ -384,6 +437,7 @@ export const TIPOS_ACCION_AUDITORIA: Record<string, string> = {
   STOCK_INICIAL_FO: 'Carga inicial FO',
   AJUSTE_INVENTARIO_FO: 'Ajuste de inventario FO',
   MIGRACION_FO: 'Migración FO',
+  ELIMINACION_FO: 'Eliminación de inventario FO',
 }
 
 // ============================================================================

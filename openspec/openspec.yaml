@@ -18,6 +18,8 @@ domain_rules:
       - "fn_cancelar_movimiento"
       - "fn_cargar_stock_inicial"
       - "fn_ajustar_stock_almacen"
+      - "fn_ajustar_stock_fibra"
+      - "fn_eliminar_inventario_fibra"
       - "fn_crear_despliegue"
       - "fn_cerrar_despliegue"
     prohibition: "Cálculos matemáticos de stock prohibidos en Python/FastAPI."
@@ -252,3 +254,53 @@ paths:
       responses:
         "200":
           description: "Reporte de despliegues; format=csv devuelve text/csv streamed"
+  /api/v1/fibra/{modulo}/materiales/{material_id}:
+    patch:
+      summary: "Modificar material del inventario FO (catálogo + stock ajustado y auditado)"
+      operationId: "actualizarMaterialFibra"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                descripcion:
+                  type: string
+                codigo:
+                  type: string
+                categoria_id:
+                  type: integer
+                nueva_categoria:
+                  type: string
+                u_m:
+                  type: string
+                stock_minimo:
+                  type: integer
+                stock_actual:
+                  type: integer
+                motivo:
+                  type: string
+      responses:
+        "200":
+          description: "Material FO actualizado: edición de catálogo auditada (trigger) y ajuste AJUSTE_INVENTARIO_FO vía fn_ajustar_stock_fibra en una única transacción atómica"
+        "404":
+          description: "Material no encontrado (catálogo inexistente/inactivo) o sin fila en el módulo FO"
+        "422":
+          description: "U.M. inexistente en el maestro ums, selector dual de categoría inválido o stock_actual sin motivo no vacío"
+    delete:
+      summary: "Eliminar fila de inventario FO del módulo (auditada ELIMINACION_FO)"
+      operationId: "eliminarMaterialFibra"
+      parameters:
+        - name: motivo
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "204":
+          description: "Fila de inventario FO eliminada vía fn_eliminar_inventario_fibra (evento ELIMINACION_FO con snapshot completo jsonb)"
+        "404":
+          description: "Material inexistente/inactivo en el catálogo o sin fila en el módulo FO"
+        "422":
+          description: "Motivo vacío con stock_actual > 0 (REQ-DEL-004)"

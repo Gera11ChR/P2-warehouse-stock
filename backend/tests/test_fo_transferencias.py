@@ -374,3 +374,75 @@ async def test_REQ_FO_002_cancelacion_revertir_sin_stock_equipo_400(
 
     detalle = await client.get(f"/api/v1/movimientos/{b1['id']}")
     assert detalle.json()["estado"] == "CONFIRMADO"
+
+
+@pytest.mark.critical
+async def test_REQ_TRF_INV_003_devol_post_eliminacion_recrea_fila_upsert(
+    client: AsyncClient, session
+) -> None:
+    """REQ-TRF-INV-003: tras eliminar la fila FO (DELETE con motivo), una
+    devolución DEVOL posterior hacia la raíz FO recrea la fila vía el UPSERT
+    preexistente de fn_procesar_movimiento — traza auditable
+    ELIMINACION_FO → DEVOL_DEVOLUCION sin corrupción de stock."""
+    material, equipo = await _setup_fo(client, session, modulo=MODULO_PAQUETE)
+
+    b1 = await borrador_teams(
+        client,
+        almacen_id=ALMACEN_PAQUETE,
+        equipo_id=equipo["equipo_id"],
+        material_id=material["id_lista"],
+        cantidad=30,
+    )
+    await procesar(client, b1["id"])
+
+    # Eliminación FÍSICA de la fila FO del módulo PAQUETE (REQ-DEL-001):
+    # el stock eliminado (20) queda registrado en el ledger.
+    resp = await client.delete(
+        f"/api/v1/fibra/{MODULO_PAQUETE}/materiales/{material['id_lista']}",
+        params={"motivo": "Depuración previa a devolución"},
+    )
+    assert resp.status_code == 204
+    filas = await _stock_fibra(client, MODULO_PAQUETE)
+    assert material["id_lista"] not in filas
+
+    # DEVOL desde el equipo hacia la raíz FO: el UPSERT
+    # INSERT ... ON CONFLICT (modulo, material_id) DO UPDATE recrea la fila.
+    b2 = await borrador_devol(
+        client,
+        equipo_id=equipo["equipo_id"],
+        almacen_id=ALMACEN_PAQUETE,
+        material_id=material["id_lista"],
+        cantidad=10,
+    )
+    await procesar(client, b2["id"])
+
+    filas = await _stock_fibra(client, MODULO_PAQUETE)
+    assert filas[material["id_lista"]]["stock_actual"] == 10
+    equipo_filas = await inventario_equipo(client, equipo["equipo_id"])
+    assert equipo_filas[material["id_lista"]]["stock_actual"] == 20
+
+    # Traza auditable ELIMINACION_FO → DEVOL_DEVOLUCION, en ese orden exacto.
+    eventos = (
+        await session.execute(
+            select(AuditoriaEvento)
+            .where(
+                AuditoriaEvento.material_id == material["id_lista"],
+                AuditoriaEvento.tipo_accion.in_(
+                    ["ELIMINACION_FO", "DEVOL_DEVOLUCION"]
+                ),
+            )
+            .order_by(AuditoriaEvento.id.asc())
+        )
+    ).scalars().all()
+    assert [e.tipo_accion for e in eventos] == [
+        "ELIMINACION_FO",
+        "DEVOL_DEVOLUCION",
+    ]
+
+    eliminacion = eventos[0]
+    assert (eliminacion.detalles or {})["modulo"] == MODULO_PAQUETE
+    assert (eliminacion.detalles or {})["stock_eliminado"] == 20
+
+    devolucion = eventos[1]
+    assert (devolucion.detalles or {})["modulo_fo"] == MODULO_PAQUETE
+    assert devolucion.cantidad == 10

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SeccionOut(BaseModel):
@@ -120,3 +120,69 @@ class FibraOperacionOut(BaseModel):
 
     modulo: FibraModulo
     material_id: int
+
+
+class FibraMaterialUpdateRequest(BaseModel):
+    """Edición de material desde una sección FO (REQ-CATFO-001/002,
+    REQ-STOCK-001/002/003).
+
+    Espejo de `MaterialUpdate` (schemas/material.py) adaptado a Fibra
+    Óptica: sin `is_active` y sin el campo legacy `tipo`. El stock NO se
+    actualiza por ORM: si `stock_actual` viene en el payload, el servicio
+    enruta el ajuste a `fn_ajustar_stock_fibra` con `motivo` obligatorio y
+    no vacío (el diferencial, el bloqueo FOR UPDATE y la auditoría
+    'AJUSTE_INVENTARIO_FO' viven en PostgreSQL — Constitution 2.4, jamás
+    UPDATE directo de stock). Selector dual de categorías: `categoria_id`
+    (rama A) o `nueva_categoria` (rama B), mutuamente excluyentes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    descripcion: str | None = Field(default=None, min_length=1, max_length=255)
+    codigo: str | None = Field(default=None, max_length=50)
+    categoria_id: int | None = None
+    nueva_categoria: str | None = Field(default=None, max_length=100)
+    u_m: str | None = None
+    stock_minimo: int | None = Field(default=None, ge=0)
+    stock_actual: int | None = Field(default=None, ge=0)
+    motivo: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _check_categoria_dual(self) -> "FibraMaterialUpdateRequest":
+        if self.categoria_id is not None and self.nueva_categoria:
+            raise ValueError(
+                "Use solo una rama del selector dual: categoria_id o nueva_categoria."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_stock_motivo(self) -> "FibraMaterialUpdateRequest":
+        """REQ-STOCK-001: si se envía `stock_actual`, el `motivo` es
+        obligatorio y no vacío; todo ajuste de stock debe quedar trazado en
+        el ledger de Auditoría (espejo de `_check_stock_motivo` de
+        MaterialUpdate)."""
+        if self.stock_actual is not None:
+            if self.motivo is None or not self.motivo.strip():
+                raise ValueError(
+                    "motivo es obligatorio y no puede estar vacío cuando se "
+                    "modifica stock_actual: todo ajuste de stock debe quedar "
+                    "trazado en el ledger de Auditoría."
+                )
+        return self
+
+
+class FibraMaterialOut(BaseModel):
+    """Material materializado de un inventario FO tras PATCH (join catálogo
+    maestro + `inventario_fibra`): esquema estándar + categoría. Se
+    construye con query directa (from_attributes=False); `alerta_stock`
+    respeta la misma semántica de `FibraStockOut`."""
+
+    modulo: FibraModulo
+    material_id: int
+    codigo: str | None
+    descripcion: str
+    u_m: str | None
+    stock_minimo: int | None
+    stock_actual: int
+    alerta_stock: bool
+    categoria: str | None
+    categoria_id: int | None

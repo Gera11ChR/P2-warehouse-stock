@@ -619,6 +619,74 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- 0015 (Fase 2, paquete 2026-09-29-fo-crud-management): eliminación FÍSICA
+-- de la fila (modulo, material_id) de inventario_fibra, auditada como
+-- 'ELIMINACION_FO' con snapshot completo jsonb (REQ-DEL-001/002/003/004).
+-- Solo se elimina la fila del módulo indicado: catalogo_materiales, el
+-- inventario del otro módulo FO y el Inventario General permanecen intactos
+-- (aislamiento por módulo). Con stock_actual > 0 el motivo es obligatorio y
+-- no vacío (RAISE -> 422). Atribución del actor vía set_config('app.actor'),
+-- patrón _set_actor de services/catalogo.py (Constitution 6.2), con
+-- fallback a CURRENT_USER.
+
+CREATE OR REPLACE FUNCTION fn_eliminar_inventario_fibra (
+    p_modulo TEXT,
+    p_material_id INT,
+    p_motivo TEXT DEFAULT NULL
+)
+RETURNS VOID AS $$
+DECLARE
+    v_stock_anterior INT;
+BEGIN
+    IF p_modulo IS NULL OR p_modulo NOT IN ('PAQUETE','EN_USO') THEN
+        RAISE EXCEPTION 'El módulo de Fibra Óptica debe ser PAQUETE o EN_USO (recibido: %).', p_modulo;
+    END IF;
+
+    -- Bloqueo FOR UPDATE: cero condiciones de carrera sobre inventario_fibra.
+    SELECT stock_actual INTO v_stock_anterior
+    FROM inventario_fibra
+    WHERE modulo = p_modulo AND material_id = p_material_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'No se encuentra registro de inventario para el material ID % en el módulo FO %. Realice primero la carga inicial con fn_cargar_stock_inicial_fibra.',
+            p_material_id, p_modulo;
+    END IF;
+
+    -- REQ-DEL-004: con existencias, el motivo es obligatorio y no vacío
+    -- (RAISE -> 422 vía el mapeo "motivo" de services/transaccional.py).
+    IF v_stock_anterior > 0 AND (p_motivo IS NULL OR TRIM(p_motivo) = '') THEN
+        RAISE EXCEPTION 'Es obligatorio proporcionar un motivo para eliminar inventario FO con existencias (material ID %, módulo %, stock %).',
+            p_material_id, p_modulo, v_stock_anterior;
+    END IF;
+
+    -- Eliminación física SOLO de la fila del módulo indicado
+    -- (REQ-DEL-003: aislamiento por módulo).
+    DELETE FROM inventario_fibra
+    WHERE modulo = p_modulo AND material_id = p_material_id;
+
+    -- Auditoría forense con snapshot completo (Constitution 6.2):
+    -- el stock eliminado queda reconstruible en el ledger inmutable.
+    INSERT INTO auditoria_eventos (
+        usuario, tipo_accion, material_id, cantidad, resultado, detalles
+    ) VALUES (
+        COALESCE(NULLIF(current_setting('app.actor', true), ''), CURRENT_USER),
+        'ELIMINACION_FO',
+        p_material_id,
+        v_stock_anterior,
+        'EXITO',
+        jsonb_build_object(
+            'modulo', p_modulo,
+            'material_id', p_material_id,
+            'stock_eliminado', v_stock_anterior,
+            'motivo', p_motivo,
+            'usuario', COALESCE(NULLIF(current_setting('app.actor', true), ''), CURRENT_USER),
+            'fecha', CURRENT_TIMESTAMP
+        )
+    );
+END;
+$$ LANGUAGE plpgsql;
+
 -- =========================================================================
 -- 8. HELPER DE AJUSTE DE STOCK DESDE INVENTARIO GENERAL (REQ-API-002/003)
 -- =========================================================================

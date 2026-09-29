@@ -36,6 +36,9 @@ _SQL_CARGAR_STOCK_INICIAL_FIBRA = text(
 _SQL_AJUSTAR_STOCK_FIBRA = text(
     "SELECT fn_ajustar_stock_fibra(:modulo, :material_id, :nuevo_stock, :motivo)"
 )
+_SQL_ELIMINAR_INVENTARIO_FIBRA = text(
+    "SELECT fn_eliminar_inventario_fibra(:modulo, :material_id, :motivo)"
+)
 _SQL_AJUSTAR_STOCK_GENERAL = text(
     "SELECT fn_ajustar_stock_general(:material_id, :nuevo_stock, :motivo)"
 )
@@ -446,6 +449,48 @@ async def ajustar_stock_fibra(
             "modulo": modulo,
             "material_id": material_id,
             "nuevo_stock": nuevo_stock,
+            "motivo": motivo,
+        },
+    )
+
+
+async def eliminar_inventario_fibra(
+    session: AsyncSession,
+    *,
+    modulo: str,
+    material_id: int,
+    motivo: str | None,
+    actor: str,
+) -> None:
+    """fn_eliminar_inventario_fibra: eliminación física de la fila
+    (modulo, material_id) de `inventario_fibra` (REQ-DEL-001/002/003/004).
+
+    Solo se elimina la fila del módulo indicado: `catalogo_materiales`, el
+    inventario del otro módulo FO y el Inventario General permanecen
+    intactos (aislamiento por módulo). El evento 'ELIMINACION_FO' con
+    snapshot completo jsonb (modulo, material_id, stock_eliminado, motivo,
+    usuario, fecha) lo inserta la función en PostgreSQL.
+
+    Atribución del actor vía `set_config('app.actor', ...)` dentro de la
+    MISMA transacción, espejo del patrón `_set_actor` de
+    services/catalogo.py (Constitution 6.2).
+
+    REQ-DEL-004: `motivo` solo es obligatorio si la fila tiene
+    stock_actual > 0 — la validación autoritativa vive en PostgreSQL y su
+    RAISE se traduce a 422 vía el mapeo "motivo" de _mapear_raise_exception;
+    la fila inexistente se traduce a 404 vía el mapeo "No se encuentra
+    registro de inventario". El pre-chequeo de material clasifica 404
+    temprano cuando el material no existe o está inactivo en el catálogo."""
+    await _prechequear_material(session, material_id=material_id)
+    await session.execute(
+        text("SELECT set_config('app.actor', :actor, true)"), {"actor": actor}
+    )
+    await _ejecutar(
+        session,
+        _SQL_ELIMINAR_INVENTARIO_FIBRA,
+        {
+            "modulo": modulo,
+            "material_id": material_id,
             "motivo": motivo,
         },
     )

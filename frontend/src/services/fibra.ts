@@ -2,6 +2,8 @@ import api from './api'
 import type {
   FibraAjustePayload,
   FibraCargaInicialPayload,
+  FibraMaterialOut,
+  FibraMaterialUpdatePayload,
   FibraModulo,
   FibraOperacionOut,
   FibraStockRow,
@@ -50,4 +52,38 @@ export async function ajustarStockFibra(
 ): Promise<FibraOperacionOut> {
   const { data } = await api.post<FibraOperacionOut>('/fibra/ajuste', payload)
   return data
+}
+
+/** PATCH /fibra/{modulo}/materiales/{id} — edición de material desde una
+ *  sección FO (REQ-CATFO-001). Si `stock_actual` viene en el payload, el
+ *  backend exige `motivo` no vacío (422) y enruta el ajuste a
+ *  `fn_ajustar_stock_fibra` dentro del MISMO session.begin() con auditoría
+ *  'AJUSTE_INVENTARIO_FO' (REQ-STOCK-002/003): el frontend envía SOLO
+ *  stock_actual + motivo, NUNCA el diferencial. */
+export async function updateFibraMaterial(
+  modulo: FibraModulo,
+  id: number,
+  payload: FibraMaterialUpdatePayload,
+): Promise<FibraMaterialOut> {
+  const { data } = await api.patch<FibraMaterialOut>(
+    `/fibra/${modulo}/materiales/${id}`,
+    payload,
+  )
+  return data
+}
+
+/** DELETE /fibra/{modulo}/materiales/{id} — eliminación FÍSICA de la fila
+ *  (modulo, material_id) de `inventario_fibra` (REQ-DEL-001/002/003).
+ *  `motivo` viaja como query param SOLO si viene (204 sin body); es
+ *  OBLIGATORIO si la fila tiene stock_actual > 0 — la validación
+ *  autoritativa vive en PostgreSQL (RAISE → 422, REQ-DEL-004). Audita
+ *  'ELIMINACION_FO' con snapshot jsonb completo en la stored function. */
+export async function eliminarFibraMaterial(
+  modulo: FibraModulo,
+  id: number,
+  motivo?: string,
+): Promise<void> {
+  await api.delete(`/fibra/${modulo}/materiales/${id}`, {
+    params: motivo ? { motivo } : undefined,
+  })
 }
