@@ -454,6 +454,50 @@ async def ajustar_stock_fibra(
     )
 
 
+async def mapear_error_delete_fibra(
+    exc: DBAPIError, *, modulo: str, material_id: int
+) -> Exception:
+    """Mapea errores de base de datos del flujo DELETE FO a respuestas
+    controladas — NUNCA un HTTP 500 (REQ-DEL-FIX-002/007, fo_report_1.md):
+
+      * 23503 / 23001 (violación de FK): el material posee historial de
+        movimientos/transferencias que impide la eliminación → 409 con
+        mensaje de dominio claro. 23503 es la violación clásica de
+        INSERT/UPDATE; 23001 (restrict_violation) es la que PostgreSQL
+        reporta cuando un DELETE viola una FK ON DELETE RESTRICT desde
+        dentro de una stored function (fo_report_1.md).
+      * 42883 (función inexistente): la migración 0015
+        (`fn_eliminar_inventario_fibra`) no fue aplicada en el despliegue
+        → 409 con mensaje operativo.
+      * Cualquier otro error de BD → 409 controlado con el mensaje de
+        PostgreSQL (fallback fail-closed, jamás 500)."""
+    sqlstate = _sqlstate(exc)
+    coordinates = [{"modulo": modulo, "material_id": material_id}]
+    if sqlstate in ("23503", "23001"):
+        return BusinessRuleError(
+            "No se puede eliminar porque existen movimientos o "
+            "transferencias asociadas",
+            code="FO_DELETE_INTEGRITY_CONFLICT",
+            coordinates=coordinates,
+            status_code=409,
+        )
+    if sqlstate == "42883":
+        return BusinessRuleError(
+            "La eliminación de inventario FO no está disponible en este "
+            "despliegue (función de base de datos no aplicada); contacte "
+            "al administrador del sistema",
+            code="FO_DELETE_UNAVAILABLE",
+            coordinates=coordinates,
+            status_code=409,
+        )
+    return BusinessRuleError(
+        f"Error de base de datos al eliminar inventario FO: {_mensaje_pg(exc)}",
+        code="FO_DELETE_DB_ERROR",
+        coordinates=coordinates,
+        status_code=409,
+    )
+
+
 async def eliminar_inventario_fibra(
     session: AsyncSession,
     *,
@@ -480,20 +524,35 @@ async def eliminar_inventario_fibra(
     RAISE se traduce a 422 vía el mapeo "motivo" de _mapear_raise_exception;
     la fila inexistente se traduce a 404 vía el mapeo "No se encuentra
     registro de inventario". El pre-chequeo de material clasifica 404
-    temprano cuando el material no existe o está inactivo en el catálogo."""
+    temprano cuando el material no existe o está inactivo en el catálogo.
+
+    REQ-DEL-FIX-002 (fo_report_1.md): todo error de base de datos fuera de
+    las validaciones P0001 se traduce a un 409 controlado vía
+    `mapear_error_delete_fibra` — el flujo DELETE FO jamás propaga un 500.
+    Se ejecuta el statement directamente (sin `_ejecutar`) para aplicar el
+    mapeo de dominio específico de este flujo; el mapeo genérico SEC-012
+    de `_ejecutar` permanece intacto para el resto de los flujos."""
     await _prechequear_material(session, material_id=material_id)
     await session.execute(
         text("SELECT set_config('app.actor', :actor, true)"), {"actor": actor}
     )
-    await _ejecutar(
-        session,
-        _SQL_ELIMINAR_INVENTARIO_FIBRA,
-        {
-            "modulo": modulo,
-            "material_id": material_id,
-            "motivo": motivo,
-        },
-    )
+    try:
+        await session.execute(
+            _SQL_ELIMINAR_INVENTARIO_FIBRA,
+            {
+                "modulo": modulo,
+                "material_id": material_id,
+                "motivo": motivo,
+            },
+        )
+    except DBAPIError as exc:
+        if _sqlstate(exc) == "P0001":
+            # Validaciones de dominio de fn_eliminar_inventario_fibra:
+            # 404 fila inexistente / 422 motivo obligatorio (REQ-DEL-002/004).
+            raise await _mapear_raise_exception(exc) from exc
+        raise await mapear_error_delete_fibra(
+            exc, modulo=modulo, material_id=material_id
+        ) from exc
 
 
 async def ajustar_stock_general(

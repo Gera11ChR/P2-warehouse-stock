@@ -8,9 +8,12 @@ y cero fantasmas de materiales inactivos.
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 
+from app.errors import BusinessRuleError
 from app.models import AuditoriaEvento
+from app.services import transaccional
 from tests.helpers.fabrica import (
     crear_material,
     fibra_ajuste,
@@ -632,3 +635,164 @@ async def test_REQ_CATFO_001_patch_fila_inexistente_404(
     assert "Material no encontrado en el módulo FO" in resp.json()["error"][
         "message"
     ]
+
+
+# ============================================================================
+# Paquete 2026-09-29-fo-delete-fix (fo_report_1.md): cero HTTP 500 en DELETE FO
+# ============================================================================
+
+
+class _FakeDiag:
+    message_primary = "mensaje de prueba del motor"
+
+
+class _FakeOrig(Exception):
+    def __init__(self, sqlstate: str) -> None:
+        super().__init__("error simulado")
+        self.sqlstate = sqlstate
+        self.diag = _FakeDiag()
+
+
+def _fake_dbapi_error(sqlstate: str) -> DBAPIError:
+    return DBAPIError.instance("DELETE", {}, _FakeOrig(sqlstate), Exception)
+
+
+async def test_REQ_DEL_FIX_002_mapeo_fk_23503_409_mensaje_claro() -> None:
+    """REQ-DEL-FIX-002: una violación de FK (SQLSTATE 23503 — historial de
+    movimientos/transferencias) se traduce a 409 con el mensaje de dominio
+    claro y las coordenadas {modulo, material_id} — jamás un 500."""
+    error = await transaccional.mapear_error_delete_fibra(
+        _fake_dbapi_error("23503"), modulo=MODULO_PAQUETE, material_id=7
+    )
+    assert isinstance(error, BusinessRuleError)
+    assert error.status_code == 409
+    assert error.code == "FO_DELETE_INTEGRITY_CONFLICT"
+    assert "movimientos o transferencias" in error.message
+    assert error.coordinates == [{"modulo": MODULO_PAQUETE, "material_id": 7}]
+
+
+async def test_REQ_DEL_FIX_002_mapeo_fk_restrict_23001_409_mensaje_claro() -> None:
+    """REQ-DEL-FIX-002: la violación RESTRICT que PostgreSQL reporta cuando
+    un DELETE viola una FK ON DELETE RESTRICT desde dentro de una stored
+    function (SQLSTATE 23001) recibe el mismo 409 de dominio."""
+    error = await transaccional.mapear_error_delete_fibra(
+        _fake_dbapi_error("23001"), modulo=MODULO_PAQUETE, material_id=7
+    )
+    assert isinstance(error, BusinessRuleError)
+    assert error.status_code == 409
+    assert error.code == "FO_DELETE_INTEGRITY_CONFLICT"
+    assert "movimientos o transferencias" in error.message
+
+
+async def test_REQ_DEL_FIX_002_mapeo_funcion_inexistente_42883_409() -> None:
+    """REQ-DEL-FIX-002/007: la falta de `fn_eliminar_inventario_fibra` en el
+    despliegue (SQLSTATE 42883 — causa raíz de fo_report_1.md) se traduce a
+    409 controlado con mensaje operativo, sin propagar un 500."""
+    error = await transaccional.mapear_error_delete_fibra(
+        _fake_dbapi_error("42883"), modulo=MODULO_EN_USO, material_id=33
+    )
+    assert isinstance(error, BusinessRuleError)
+    assert error.status_code == 409
+    assert error.code == "FO_DELETE_UNAVAILABLE"
+    assert "no está disponible" in error.message
+    assert error.coordinates == [{"modulo": MODULO_EN_USO, "material_id": 33}]
+
+
+async def test_REQ_DEL_FIX_002_delete_con_historial_fk_409_fila_intacta(
+    client: AsyncClient, session
+) -> None:
+    """REQ-DEL-FIX-002/003: si PostgreSQL rechaza la eliminación por
+    integridad referencial (material con historial que impide el borrado),
+    el endpoint retorna HTTP 409 con el mensaje claro y coordenadas — la
+    fila de `inventario_fibra` permanece intacta y cero eventos
+    ELIMINACION_FO (jamás un 500)."""
+    material = await _material_fo(client, descripcion="Cable FK", u_m="METRO (M)")
+    mid = material["id_lista"]
+    await fibra_carga_inicial(
+        client, modulo=MODULO_PAQUETE, material_id=mid, cantidad=4300
+    )
+
+    # Guarda referencial transitoria que simula el historial de movimientos
+    # asociados: bloquea el DELETE con SQLSTATE 23503 (ON DELETE RESTRICT).
+    await session.execute(
+        text(
+            "CREATE TABLE fo_delete_guard ("
+            " modulo VARCHAR(20) NOT NULL,"
+            " material_id INT NOT NULL,"
+            " FOREIGN KEY (modulo, material_id)"
+            "   REFERENCES inventario_fibra(modulo, material_id)"
+            "   ON DELETE RESTRICT)"
+        )
+    )
+    await session.commit()
+    try:
+        await session.execute(
+            text(
+                "INSERT INTO fo_delete_guard (modulo, material_id) "
+                "VALUES (:modulo, :material_id)"
+            ),
+            {"modulo": MODULO_PAQUETE, "material_id": mid},
+        )
+        await session.commit()
+
+        resp = await client.delete(
+            f"/api/v1/fibra/{MODULO_PAQUETE}/materiales/{mid}",
+            params={"motivo": "Intento de baja con historial"},
+        )
+        assert resp.status_code == 409, resp.text
+        body = resp.json()["error"]
+        assert body["code"] == "FO_DELETE_INTEGRITY_CONFLICT"
+        assert "movimientos o transferencias" in body["message"]
+        assert body["coordinates"] == [
+            {"modulo": MODULO_PAQUETE, "material_id": mid}
+        ]
+
+        filas = await _stock_fibra(client, MODULO_PAQUETE)
+        assert filas[mid]["stock_actual"] == 4300
+
+        eliminaciones = (
+            await session.execute(
+                select(AuditoriaEvento).where(
+                    AuditoriaEvento.tipo_accion == "ELIMINACION_FO"
+                )
+            )
+        ).scalars().all()
+        assert eliminaciones == []
+    finally:
+        await session.execute(text("DROP TABLE IF EXISTS fo_delete_guard"))
+        await session.commit()
+
+
+async def test_REQ_DEL_FIX_001_path_y_query_params_resueltos(
+    client: AsyncClient, session
+) -> None:
+    """REQ-DEL-FIX-001: el endpoint desempaqueta correctamente el path
+    parameter (material_id) y el query parameter (motivo) y los entrega a
+    PostgreSQL con los tipos exactos: DELETE de EN_USO con motivo → 204 y
+    el snapshot ELIMINACION_FO conserva modulo, material_id y motivo."""
+    material = await _material_fo(
+        client, descripcion="Cable Params", u_m="METRO (M)"
+    )
+    mid = material["id_lista"]
+    await fibra_carga_inicial(
+        client, modulo=MODULO_EN_USO, material_id=mid, cantidad=20
+    )
+
+    resp = await client.delete(
+        f"/api/v1/fibra/{MODULO_EN_USO}/materiales/{mid}",
+        params={"motivo": "Baja por prueba de parámetros"},
+    )
+    assert resp.status_code == 204, resp.text
+
+    evento = (
+        await session.execute(
+            select(AuditoriaEvento).where(
+                AuditoriaEvento.tipo_accion == "ELIMINACION_FO"
+            )
+        )
+    ).scalars().one()
+    detalles = evento.detalles or {}
+    assert detalles["modulo"] == MODULO_EN_USO
+    assert detalles["material_id"] == mid
+    assert detalles["motivo"] == "Baja por prueba de parámetros"
+    assert evento.material_id == mid

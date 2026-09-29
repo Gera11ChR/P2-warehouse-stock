@@ -12,6 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -254,15 +255,25 @@ async def eliminar_material_fibra(
     `motivo` viaja como QUERY PARAM (204 sin body): obligatorio y no vacío
     SOLO si la fila tiene stock_actual > 0 — la validación autoritativa
     vive en PostgreSQL (RAISE → 422, REQ-DEL-004); con stock 0 es opcional
-    (REQ-DEL-001). El cliente fibra.ts lo envía como query string."""
+    (REQ-DEL-001). El cliente fibra.ts lo envía como query string.
+
+    REQ-DEL-FIX-002 (fo_report_1.md): los errores de integridad que
+    emergen en el COMMIT de `session.begin()` (p.ej. un IntegrityError por
+    restricción de clave foránea diferida a commit) se traducen al mismo
+    409 controlado con mensaje de dominio — jamás un 500."""
     assert_authenticated(actor_ctx)
-    async with session.begin():
-        await transaccional.eliminar_inventario_fibra(
-            session,
-            modulo=modulo,
-            material_id=material_id,
-            motivo=motivo,
-            actor=actor_ctx.actor_id,
-        )
+    try:
+        async with session.begin():
+            await transaccional.eliminar_inventario_fibra(
+                session,
+                modulo=modulo,
+                material_id=material_id,
+                motivo=motivo,
+                actor=actor_ctx.actor_id,
+            )
+    except DBAPIError as exc:
+        raise await transaccional.mapear_error_delete_fibra(
+            exc, modulo=modulo, material_id=material_id
+        ) from exc
     response.status_code = 204
     return response
