@@ -113,7 +113,7 @@ async def crear_material(
         )
         if payload.stock_inicial is not None:
             assert payload.seccion_id is not None
-            await transaccional.cargar_stock_inicial(
+            await transaccional.cargar_stock_inicial_ruteada(
                 session,
                 almacen_id=payload.seccion_id,
                 material_id=material.id_lista,

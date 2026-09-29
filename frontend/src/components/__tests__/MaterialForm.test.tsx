@@ -277,3 +277,33 @@ describe('MaterialForm SIN CAMPO TIPO', () => {
     expect(screen.queryByText('Fibra Óptica')).not.toBeInTheDocument()
   })
 })
+
+describe('MaterialForm SECCIÓN DESTINO (fix NIS, REQ-CARGA-001)', () => {
+  const seccionesDestino = [
+    { almacen_id: 1, nombre: 'Inventario General', tipo: 'GENERAL', transferible: true },
+    { almacen_id: 2, nombre: 'Fibra Optica - Paquete', tipo: 'FO_PAQUETE', transferible: true },
+    { almacen_id: 3, nombre: 'Fibra Optica - En Uso', tipo: 'FO_EN_USO', transferible: true },
+  ] as import('../../types').SeccionTransferible[]
+
+  it('lista las raíces FO como destino de Carga Inicial', async () => {
+    const user = userEvent.setup()
+    render(
+      <MaterialForm
+        mode="create"
+        categorias={mockCategorias}
+        seccionesDestino={seccionesDestino}
+        onSubmit={() => undefined}
+        onCancel={() => undefined}
+      />,
+    )
+
+    // La sección destino solo aparece cuando hay stock inicial > 0
+    // (spinbutton[1] = Stock Inicial; spinbutton[0] = Stock Mínimo).
+    const stockInicialInput = screen.getAllByRole('spinbutton')[1]
+    await user.type(stockInicialInput, '10')
+
+    expect(screen.getByText('Fibra Óptica - Paquete')).toBeInTheDocument()
+    expect(screen.getByText('Fibra Óptica - En Uso')).toBeInTheDocument()
+    expect(screen.getByText('Inventario General')).toBeInTheDocument()
+  })
+})

@@ -5,6 +5,7 @@ import { Check, Plus, Search, Trash2, Undo2, X } from 'lucide-react'
 import Modal from '../components/Modal'
 import { listEquipos, inventarioEquipo } from '../services/equipos'
 import { stockSeccion } from '../services/inventory'
+import { listFibraStock } from '../services/fibra'
 import { useSeccionesTransferibles } from '../hooks/useSeccionesTransferibles'
 import {
   cancelarMovimiento,
@@ -152,10 +153,34 @@ export default function Transferencias() {
     queryFn: listEquipos,
   })
 
+  // REQ-TRF-001: módulo FO de una sección transferible (raíz FO) o null si
+  // la sección no es una raíz FO. El stock de las raíces FO vive en
+  // inventario_fibra (módulo PAQUETE/EN_USO), nunca en inventario_almacen.
+  const moduloDeSeccion = (id: number | null): 'PAQUETE' | 'EN_USO' | null => {
+    const tipo = secciones.find((s) => s.almacen_id === id)?.tipo
+    if (tipo === 'FO_PAQUETE') return 'PAQUETE'
+    if (tipo === 'FO_EN_USO') return 'EN_USO'
+    return null
+  }
+
+  const origenModulo = moduloDeSeccion(seccionOrigen)
+
+  // REQ-TRF-001: si el origen TEAMS es una raíz FO, la consulta de origen se
+  // direcciona a /fibra/{modulo} (inventario_fibra); en caso contrario se
+  // conserva la consulta por sección (inventario_almacen). Ambas filas
+  // comparten el mismo esquema de presentación (material_id/codigo/
+  // descripcion/u_m/stock_actual), por lo que `filasDisponibles` no cambia.
   const stockOrigenQuery = useQuery({
-    queryKey: ['stock', seccionOrigen],
-    queryFn: () => stockSeccion(seccionOrigen!),
-    enabled: tab === 'TEAMS' && seccionOrigen !== null,
+    queryKey:
+      origenModulo !== null
+        ? ['fibra', origenModulo]
+        : ['stock', seccionOrigen],
+    queryFn: () =>
+      origenModulo !== null
+        ? listFibraStock(origenModulo)
+        : stockSeccion(seccionOrigen!),
+    enabled:
+      tab === 'TEAMS' && (origenModulo !== null || seccionOrigen !== null),
   })
 
   const inventarioEquipoQuery = useQuery({
@@ -313,11 +338,25 @@ export default function Transferencias() {
     queryClient.invalidateQueries({ queryKey: ['movimientos'] })
     queryClient.invalidateQueries({ queryKey: ['secciones'] })
     if (tab === 'TEAMS') {
-      queryClient.invalidateQueries({ queryKey: ['stock', seccionOrigen] })
+      // REQ-TRF-002: si el origen es una raíz FO, el stock movido vive en
+      // inventario_fibra — invalidar ['fibra', modulo]; en caso contrario,
+      // la invalidación por sección existente.
+      if (origenModulo !== null) {
+        queryClient.invalidateQueries({ queryKey: ['fibra', origenModulo] })
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['stock', seccionOrigen] })
+      }
       queryClient.invalidateQueries({ queryKey: ['equipo', equipoDestino] })
     } else {
       queryClient.invalidateQueries({ queryKey: ['equipo', equipoOrigen] })
-      queryClient.invalidateQueries({ queryKey: ['stock', seccionDestino] })
+      // REQ-TRF-002 (DEVOL): si el destino es una raíz FO, el stock se
+      // acredita en inventario_fibra — invalidar su módulo.
+      const destinoModulo = moduloDeSeccion(seccionDestino)
+      if (destinoModulo !== null) {
+        queryClient.invalidateQueries({ queryKey: ['fibra', destinoModulo] })
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['stock', seccionDestino] })
+      }
     }
   }
 
@@ -367,15 +406,30 @@ export default function Transferencias() {
       queryClient.invalidateQueries({ queryKey: ['secciones'] })
       const m = movimientos.find((mov) => mov.id === variables.id)
       if (m) {
+        // REQ-TRF-002: cuando un extremo de sección es una raíz FO, el stock
+        // restaurado vive en inventario_fibra — invalidar ['fibra', modulo]
+        // además de la invalidación por sección existente.
         if (m.origen_almacen_id != null) {
           queryClient.invalidateQueries({
             queryKey: ['stock', m.origen_almacen_id],
           })
+          const origenModuloMov = moduloDeSeccion(m.origen_almacen_id)
+          if (origenModuloMov !== null) {
+            queryClient.invalidateQueries({
+              queryKey: ['fibra', origenModuloMov],
+            })
+          }
         }
         if (m.destino_almacen_id != null) {
           queryClient.invalidateQueries({
             queryKey: ['stock', m.destino_almacen_id],
           })
+          const destinoModuloMov = moduloDeSeccion(m.destino_almacen_id)
+          if (destinoModuloMov !== null) {
+            queryClient.invalidateQueries({
+              queryKey: ['fibra', destinoModuloMov],
+            })
+          }
         }
         if (m.origen_equipo_id != null) {
           queryClient.invalidateQueries({

@@ -12,6 +12,7 @@ import MaterialForm from '../components/MaterialForm'
 import ConfirmDialog from '../components/ConfirmDialog'
 import CatalogManagementPanel from '../components/CatalogManagementPanel'
 import { useUms } from '../hooks/useUms'
+import { useSeccionesTransferibles } from '../hooks/useSeccionesTransferibles'
 import {
   listCategorias,
   listCatalog,
@@ -111,6 +112,11 @@ export default function SeccionGeneral({
     queryFn: listSecciones,
   })
 
+  // REQ-CARGA-001: secciones destino de la Carga Inicial
+  // (GET /api/v1/inventario/secciones/transferibles) — incluye las raíces
+  // FO con etiquetas operativas; alimenta el select "Sección destino".
+  const { data: seccionesDestino = [] } = useSeccionesTransferibles()
+
   // Compute effective almacen_id: use selected or default to first active
   const effectiveAlmacenId = useMemo(() => {
     if (selectedAlmacenId !== null) {
@@ -186,10 +192,23 @@ export default function SeccionGeneral({
 
   const createMut = useMutation({
     mutationFn: createMaterial,
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['stock', effectiveAlmacenId] })
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
       queryClient.invalidateQueries({ queryKey: ['catalogo'] })
+      // REQ-CARGA-001/002: si la carga inicial aterrizó en una raíz FO, el
+      // stock vive en inventario_fibra — invalidar el módulo correspondiente
+      // para reflejarlo sin stock obsoleto en la UI.
+      if (variables.seccion_id != null && variables.stock_inicial != null) {
+        const seccionDestinoObj = seccionesDestino.find(
+          (s) => s.almacen_id === variables.seccion_id,
+        )
+        if (seccionDestinoObj?.tipo === 'FO_PAQUETE') {
+          queryClient.invalidateQueries({ queryKey: ['fibra', 'PAQUETE'] })
+        } else if (seccionDestinoObj?.tipo === 'FO_EN_USO') {
+          queryClient.invalidateQueries({ queryKey: ['fibra', 'EN_USO'] })
+        }
+      }
       pushToast('Material creado')
       setFormMode(null)
     },
@@ -384,7 +403,7 @@ export default function SeccionGeneral({
           stockActual={selected?.stock_actual ?? 0}
           alertaStock={selected?.alerta_stock ?? false}
           categorias={categorias}
-          secciones={secciones}
+          seccionesDestino={seccionesDestino}
           ums={ums}
           onSubmit={handleSubmitMaterial}
           onCancel={() => setFormMode(null)}

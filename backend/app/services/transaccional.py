@@ -359,6 +359,74 @@ async def cargar_stock_inicial_fibra(
     )
 
 
+async def cargar_stock_inicial_ruteada(
+    session: AsyncSession,
+    *,
+    almacen_id: int,
+    material_id: int,
+    cantidad: int,
+    motivo: str | None,
+) -> None:
+    """Carga inicial ruteada por tipo de sección (REQ-CARGA-002/003).
+
+    Resuelve `seccion.tipo` y despacha a la función del contrato correcta:
+
+      * GENERAL      → `fn_cargar_stock_inicial` (inventario_almacen), con
+                       el pre-chequeo de sección activa de `cargar_stock_inicial`.
+      * FO_PAQUETE   → `fn_cargar_stock_inicial_fibra(modulo='PAQUETE')`
+      * FO_EN_USO    → `fn_cargar_stock_inicial_fibra(modulo='EN_USO')`
+
+    EXCEPCIÓN DEL `is_active`: las raíces FO son manijas de ruteo
+    soft-inactivas (no albergan stock propio: su inventario vive en
+    `inventario_fibra`), por lo que NO se les exige `is_active` — solo se
+    valida su existencia (404). Para GENERAL la exigencia de sección activa
+    permanece íntegra dentro de `cargar_stock_inicial`.
+
+    CERO aritmética de stock en Python: toda la lógica (unicidad, auditoría
+    'STOCK_INICIAL'/'STOCK_INICIAL_FO') vive en PostgreSQL; esta función
+    solo enruta."""
+    seccion = await session.get(Seccion, almacen_id)
+    if seccion is None:
+        raise BusinessRuleError(
+            "Sección no encontrada",
+            coordinates=[{"almacen_id": almacen_id}],
+            status_code=404,
+        )
+
+    if seccion.tipo == "GENERAL":
+        if not seccion.is_active:
+            raise BusinessRuleError(
+                "Sección no encontrada",
+                coordinates=[{"almacen_id": almacen_id}],
+                status_code=404,
+            )
+        await cargar_stock_inicial(
+            session,
+            almacen_id=almacen_id,
+            material_id=material_id,
+            cantidad=cantidad,
+            motivo=motivo,
+        )
+        return
+
+    if seccion.tipo in ("FO_PAQUETE", "FO_EN_USO"):
+        modulo = "PAQUETE" if seccion.tipo == "FO_PAQUETE" else "EN_USO"
+        await cargar_stock_inicial_fibra(
+            session,
+            modulo=modulo,
+            material_id=material_id,
+            cantidad=cantidad,
+            motivo=motivo,
+        )
+        return
+
+    raise BusinessRuleError(
+        "La sección no es un destino válido para carga inicial",
+        coordinates=[{"almacen_id": almacen_id, "tipo": seccion.tipo}],
+        status_code=400,
+    )
+
+
 async def ajustar_stock_fibra(
     session: AsyncSession,
     *,

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SUPPORTED_UNITS = (
     "PZ",
@@ -12,12 +12,6 @@ SUPPORTED_UNITS = (
     "EQUIPO",
     "UNIDAD",
 )
-
-
-def _validate_um(value: str | None) -> str | None:
-    if value is not None and value not in SUPPORTED_UNITS:
-        raise ValueError(f"u_m debe ser una unidad soportada: {SUPPORTED_UNITS}")
-    return value
 
 
 class CategoriaCreate(BaseModel):
@@ -83,8 +77,6 @@ class MaterialCreate(BaseModel):
     stock_inicial: int | None = Field(default=None, ge=0)
     seccion_id: int | None = None
 
-    _check_um = field_validator("u_m")(_validate_um)
-
     @model_validator(mode="after")
     def _check_categoria_dual(self) -> "MaterialCreate":
         if self.categoria_id is not None and self.nueva_categoria:
@@ -127,8 +119,6 @@ class MaterialUpdate(BaseModel):
     stock_actual: int | None = Field(default=None, ge=0)
     motivo: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
-
-    _check_um = field_validator("u_m")(_validate_um)
 
     @model_validator(mode="after")
     def _check_categoria_dual(self) -> "MaterialUpdate":

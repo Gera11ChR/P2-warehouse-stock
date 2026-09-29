@@ -269,3 +269,73 @@ async def test_REQ_CATALOG_002_eliminar_categoria_inexistente_404(
     """REQ-CATALOG-002: eliminar una categoría inexistente clasifica 404."""
     resp = await client_admin.delete("/api/v1/catalogo/categorias/99999")
     assert resp.status_code == 404
+
+
+async def test_fix_nis_um_dinamica_aceptada_en_alta(
+    client: AsyncClient, client_admin: AsyncClient
+) -> None:
+    """REQ-UM-001/002 (fix NIS): una U.M. creada dinámicamente por el
+    administrador — fuera del Enum estático SUPPORTED_UNITS — es aceptada
+    en el alta de material (201), sin error 422/400. La validación
+    autoritativa es dinámica contra la tabla `ums`."""
+    resp = await client_admin.post(
+        "/api/v1/catalogo/um", json={"nombre": "METRO CUADRADO"}
+    )
+    assert resp.status_code == 201
+
+    resp = await client.post(
+        "/api/v1/catalogo",
+        json={"descripcion": "Material U.M. dinámica", "u_m": "METRO CUADRADO"},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["u_m"] == "METRO CUADRADO"
+
+
+async def test_fix_nis_carga_inicial_destino_fo(client: AsyncClient, session) -> None:
+    """REQ-CARGA-002/003 (fix NIS): la SECCIÓN DESTINO de la Carga Inicial
+    admite las raíces FO — el stock inicial se rutea a inventario_fibra
+    (PAQUETE/EN_USO) vía fn_cargar_stock_inicial_fibra, con auditoría
+    inmutable STOCK_INICIAL_FO."""
+    material_paquete = await crear_material(
+        client,
+        descripcion="Material FO Paquete inicial",
+        stock_inicial=50,
+        seccion_id=2,
+    )
+    material_en_uso = await crear_material(
+        client,
+        descripcion="Material FO En Uso inicial",
+        stock_inicial=30,
+        seccion_id=3,
+    )
+
+    resp = await client.get("/api/v1/fibra/PAQUETE")
+    assert resp.status_code == 200, resp.text
+    filas = {f["material_id"]: f for f in resp.json()}
+    assert filas[material_paquete["id_lista"]]["stock_actual"] == 50
+
+    resp = await client.get("/api/v1/fibra/EN_USO")
+    assert resp.status_code == 200, resp.text
+    filas = {f["material_id"]: f for f in resp.json()}
+    assert filas[material_en_uso["id_lista"]]["stock_actual"] == 30
+
+    # REQ-CARGA-003: el camino ruteado de crear_material emite la auditoría
+    # STOCK_INICIAL_FO (una por raíz FO) con el módulo en `detalles`.
+    eventos = (
+        await session.execute(
+            select(AuditoriaEvento).where(
+                AuditoriaEvento.tipo_accion == "STOCK_INICIAL_FO"
+            )
+        )
+    ).scalars().all()
+    por_material = {e.material_id: e for e in eventos}
+    assert material_paquete["id_lista"] in por_material
+    assert (
+        por_material[material_paquete["id_lista"]].detalles.get("modulo")
+        == "PAQUETE"
+    )
+    assert material_en_uso["id_lista"] in por_material
+    assert (
+        por_material[material_en_uso["id_lista"]].detalles.get("modulo")
+        == "EN_USO"
+    )

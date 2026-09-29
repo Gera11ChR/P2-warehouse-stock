@@ -97,9 +97,12 @@ class TestUnidades:
         material = MaterialCreate(descripcion="X", u_m=u_m)
         assert material.u_m == u_m
 
-    def test_unidad_invalida_rechazada(self) -> None:
-        with pytest.raises(ValidationError):
-            MaterialCreate(descripcion="X", u_m="LITRO")
+    def test_unidad_arbitraria_aceptada_por_schema(self) -> None:
+        # REQ-UM-001: el schema ya no valida contra el Enum estático
+        # SUPPORTED_UNITS; la validación autoritativa es dinámica contra la
+        # tabla `ums` en services/catalogo._validar_um (422 determinístico).
+        material = MaterialCreate(descripcion="X", u_m="METRO CUADRADO")
+        assert material.u_m == "METRO CUADRADO"
 
 
 class TestStockInicial:

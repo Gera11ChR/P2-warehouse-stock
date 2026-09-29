@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import type { Categoria, Material, Seccion, Ums } from '../types'
+import type { Categoria, Material, SeccionTransferible, Ums } from '../types'
 import { UNIDADES } from '../types'
 import type {
   MaterialCreatePayload,
@@ -14,7 +14,13 @@ interface MaterialFormProps {
   stockActual?: number
   alertaStock?: boolean
   categorias: Categoria[]
-  secciones?: Seccion[]
+  /**
+   * Secciones destino de la Carga Inicial
+   * (GET /api/v1/inventario/secciones/transferibles): Inventario General
+   * activo + raíces FO con etiquetas operativas. El select NO filtra por
+   * `is_active` (las raíces FO son soft-inactivas por dominio).
+   */
+  seccionesDestino?: SeccionTransferible[]
   /**
    * Unidades de medida del catálogo (GET /api/v1/catalogo/um). El select
    * U.M. usa SOLO las activas ordenadas por nombre; si el arreglo llega
@@ -33,7 +39,7 @@ export default function MaterialForm({
   stockActual = 0,
   alertaStock = false,
   categorias,
-  secciones = [],
+  seccionesDestino = [],
   ums = [],
   onSubmit,
   onCancel,
@@ -89,6 +95,15 @@ export default function MaterialForm({
       .sort((a, b) => a.localeCompare(b, 'es'))
     return activas.length > 0 ? activas : [...UNIDADES]
   })()
+
+  // Etiqueta operativa de una sección destino de Carga Inicial
+  // (REQ-CARGA-001): las raíces FO se muestran con nombre propio;
+  // GENERAL conserva el nombre del almacén.
+  const labelSeccionDestino = (s: SeccionTransferible): string => {
+    if (s.tipo === 'FO_PAQUETE') return 'Fibra Óptica - Paquete'
+    if (s.tipo === 'FO_EN_USO') return 'Fibra Óptica - En Uso'
+    return s.nombre
+  }
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -406,13 +421,11 @@ export default function MaterialForm({
                 required
               >
                 <option value="">— Seleccione sección —</option>
-                {secciones
-                  .filter((s) => s.is_active)
-                  .map((s) => (
-                    <option key={s.almacen_id} value={s.almacen_id}>
-                      {s.nombre}
-                    </option>
-                  ))}
+                {seccionesDestino.map((s) => (
+                  <option key={s.almacen_id} value={s.almacen_id}>
+                    {labelSeccionDestino(s)}
+                  </option>
+                ))}
               </select>
             </div>
           )}
