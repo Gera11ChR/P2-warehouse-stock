@@ -297,7 +297,7 @@ P2/
 │   ├── openspec.yaml          # Canonical architecture/API contract
 │   ├── changes/               # Active packages + archive/ (7 archived)
 │   └── specs/                 # Synced master specs (currently empty — see §10)
-├── docs/                      # Constitution, operational flow, ADRs, NIS/FO reports
+├── docs/                      # Constitution, operational flow, ADRs, NIS/FO reports, economic valuation
 ├── data/                      # Source DMS spreadsheets (catalog lineage)
 ├── .opencode/                 # 11 SDD agents, OpenSpec commands/skills
 ├── .agents.md                 # Agent governance & directives (L2)
@@ -449,6 +449,23 @@ Tracked explicitly so that no document overstates the current state:
 8. **FO audit attribution inconsistency (pre-existing).** `fn_ajustar_stock_fibra` / `fn_cargar_stock_inicial_fibra` attribute events to `CURRENT_USER` while `fn_eliminar_inventario_fibra` uses the correct `app.actor` session setting.
 9. **Scope enforcement on `/fibra/*` (pre-existing).** Warehouse-scope checks (`SEC-002`) are not applied to the fiber-optic routes — recorded as debt in the FO CRUD sign-off.
 10. **`PATCH` with explicit `descripcion: null`** surfaces as an integrity error instead of a `422` (mirrors the general flow; the UI prevents it via `required`).
+
+---
+
+## 11. Project economics
+
+Estimated value of the delivered system, measured 2026-09-30. Full model, assumptions, sensitivity matrix and sources: **[`docs/valoracion-economica.md`](docs/valoracion-economica.md)**.
+
+| Approach | Interpretation | Range (USD) |
+| --- | --- | --- |
+| Cost of production | What it cost to make, AI-leveraged (1–1.5 FTE-months) | **$12k – $30k** |
+| **Replacement / market value** | **What acquiring this scope would cost today** — *headline figure* | **$75k – $200k** |
+| Value in use | 5-year economic benefit versus licensing a commercial WMS | **$50k – $200k** |
+| Product value | 3-year commercial contract if productized (gated on §10.1) | **$92k – $185k** |
+
+Delivered scope is priced against 2026 market bands for a single-site custom WMS of $64k–$150k (Rorix) / $80k–$300k (Stfalcon), adjusted down for the absent ERP, carrier, hardware and mobile integrations and up for the QA and governance evidence (209 + 45 tests, 14 stored functions, immutable audit ledger). Illustrative conversion at 18 MXN/USD: **≈ $1.35M – $3.6M MXN**.
+
+> **These are estimates, not a formal appraisal.** They rest on stated assumptions (single tenant, no ERP/hardware integration, published vendor rate bands) and should be re-validated before any external or contractual use.
 
 ---
 
