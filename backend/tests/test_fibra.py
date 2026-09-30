@@ -654,7 +654,9 @@ class _FakeOrig(Exception):
 
 
 def _fake_dbapi_error(sqlstate: str) -> DBAPIError:
-    return DBAPIError.instance("DELETE", {}, _FakeOrig(sqlstate), Exception)
+    error = DBAPIError.instance("DELETE", {}, _FakeOrig(sqlstate), Exception)
+    assert isinstance(error, DBAPIError)
+    return error
 
 
 async def test_REQ_DEL_FIX_002_mapeo_fk_23503_409_mensaje_claro() -> None:
