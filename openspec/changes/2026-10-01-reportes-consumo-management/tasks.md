@@ -145,15 +145,25 @@ Flujo **Backend First** y **estrictamente secuencial**.
   > descargas, exposición de datos de auditoría. Entrega hallazgos priorizados. NO modifiques
   > código."
 - [ ] **T3.2** Aplicar correcciones de seguridad y re-ejecutar pruebas.
-- [ ] **T3.3 `@tester`** — pytest secuencial: migraciones, SP (atomicidad/rollback),
+- [x] **T3.3 `@tester`** — pytest secuencial: migraciones, SP (atomicidad/rollback),
   endpoints de operadores **con idempotencia**, generación de actas Normal/Extenso, desborde de
   filas **verificando que merges + imagen + estilo permanecen intactos tras `insert_rows` en
   ambas plantillas**, errores 400/404/409/422, sin regresiones del resto de la suite.
-- [ ] **T3.4 `@qa-agent`** — auditoría de contrato (Zero-Drift): implementación vs
+- [x] **T3.4 `@qa-agent`** — auditoría de contrato (Zero-Drift): implementación vs
   `openspec/openspec.yaml` y EARS.md. Lista de drift (si existiera) y dictamen.
-- [ ] **T3.5** **CERTIFICACIÓN DEL CONTRATO BACKEND:** pytest 100% verde + dictamen QA sin
+- [x] **T3.5** **CERTIFICACIÓN DEL CONTRATO BACKEND:** pytest 100% verde + dictamen QA sin
   drift crítico + aprobación del administrador. **No se procede a Fase 4 sin esto.**
-- [ ] **T3.6** Commit.
+- [x] **T3.6** Commit.
+
+### Resultado del GATE (T3.5/T3.6)
+
+- **pytest:** 289 passed (app) + 24 passed (sql_tests), secuenciales, 100 % verde.
+- **@tester:** dictamen VERDE (cobertura de los 6 focos; 3 hallazgos menores corregidos).
+- **@sec-ops:** APROBADO CON CORRECCIONES -> correcciones aplicadas y verificadas.
+- **@qa-agent:** dictamen **APROBADO** (cero drift crítico/alto; 5 hallazgos menores
+  D1-D5: D2/D3 reconciliados en el contrato, D1/D4/D5 documentales aceptados).
+- **CERTIFICACIÓN DEL CONTRATO BACKEND CONCEDIDA.** Commits: `5fff59b`, `c6a6443` (+
+  reconciliación de contrato).
 
 ## Fase 4 — Frontend React 19 (secuencial: `@ui-agent` → `@ux-agent` → `@form-agent` → `@state-agent`)
 

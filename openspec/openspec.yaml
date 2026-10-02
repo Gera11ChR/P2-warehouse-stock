@@ -266,11 +266,13 @@ paths:
         "200":
           description: "Seguimiento cerrado vía fn_cerrar_seguimiento (auditoría SEGUIMIENTO_CERRADO por línea y Acta de Consumo ACTA_CONSUMO_GENERADA con snapshot jsonb en la misma transacción)"
         "400":
-          description: "Sobrante mayor a tomada, negativo o stock de equipo insuficiente"
+          description: "Sobrante mayor a tomada o stock de equipo insuficiente"
         "404":
           description: "Seguimiento no encontrado"
         "409":
           description: "Seguimiento no se encuentra en estado ABIERTA (doble cierre)"
+        "422":
+          description: "Sobrante negativo o payload inválido"
   /api/v1/inventario/secciones/transferibles:
     get:
       summary: "Secciones válidas como origen/destino de transferencias (GENERAL activas + manejadores FO)"
@@ -310,7 +312,7 @@ paths:
         "200":
           description: "Stock incrementado vía fn_sumar_cantidad (evento inmutable SUMA_CANTIDAD, distinto de AJUSTE_*). Reenvío con la misma clave: resultado original con reenvio_idempotente=true"
         "400":
-          description: "Cantidad menor o igual a cero o fuera del rango INT4"
+          description: "Cantidad menor o igual a cero"
         "403":
           description: "Actor sin alcance sobre las secciones GENERAL activas implicadas (default-deny SEC-002)"
         "404":
@@ -318,7 +320,7 @@ paths:
         "409":
           description: "Más de una sección GENERAL activa con el material (destino no determinable) o clave de idempotencia en uso por otro actor"
         "422":
-          description: "Payload inválido (módulo FO ausente o no aplicable)"
+          description: "Payload inválido (módulo FO ausente o no aplicable) o cantidad fuera del rango INT4"
   /api/v1/inventario/mover:
     post:
       summary: "Mover: transferencia directa de cantidad parcial entre Inventario General y módulos FO"
@@ -357,7 +359,7 @@ paths:
         "200":
           description: "Material movido vía fn_mover_material (evento inmutable MOVIMIENTO_INVENTARIO; fila destino creada solo con stock > 0; fila origen en 0 conservada). Reenvío con la misma clave: resultado original con reenvio_idempotente=true"
         "400":
-          description: "Cantidad menor o igual a cero, fuera del rango INT4, o stock insuficiente en el origen (ningún inventario queda modificado)"
+          description: "Cantidad menor o igual a cero o stock insuficiente en el origen (ningún inventario queda modificado)"
         "403":
           description: "Actor sin alcance sobre las secciones GENERAL activas implicadas (default-deny SEC-002)"
         "404":
@@ -365,7 +367,7 @@ paths:
         "409":
           description: "Más de una sección GENERAL activa o ninguna activa (destino/origen no determinable) o clave de idempotencia en uso por otro actor"
         "422":
-          description: "Destino igual al origen o payload inválido (módulo FO ausente o no aplicable)"
+          description: "Destino igual al origen, payload inválido (módulo FO ausente o no aplicable) o cantidad fuera del rango INT4"
   /api/v1/reportes/entrega:
     get:
       summary: "Acta(s) de Entrega (hito A: generadas al confirmar TEAMS) en JSON o XLSX sobre la plantilla corporativa"
