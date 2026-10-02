@@ -493,6 +493,19 @@ export const TIPOS_ACCION_AUDITORIA: Record<string, string> = {
   AJUSTE_INVENTARIO_FO: 'Ajuste de inventario FO',
   MIGRACION_FO: 'Migración FO',
   ELIMINACION_FO: 'Eliminación de inventario FO',
+  // Cambio 2026-10-01-reportes-consumo-management (REQ-P2-INV-006 / CON-001).
+  SUMA_CANTIDAD: '+Cantidad — suma directa',
+  MOVIMIENTO_INVENTARIO: 'Mover — movimiento entre inventarios',
+  AGREGAR_TODO: 'Seguimiento — agregar todo',
+  SEGUIMIENTO_CREADO: 'Seguimiento creado',
+  SEGUIMIENTO_CERRADO: 'Seguimiento cerrado',
+  ACTA_ENTREGA_GENERADA: 'Acta de Entrega generada',
+  ACTA_CONSUMO_GENERADA: 'Acta de Consumo generada',
+  // Eventos HISTÓRICOS del flujo anterior. El ledger es inmutable (no se
+  // actualizan filas): el mapeo se hace SOLO en lectura para que la UI no
+  // muestre la nomenclatura legacy (REQ-P2-CON-001).
+  DESPLIEGUE_CREADO: 'Seguimiento creado (histórico)',
+  DESPLIEGUE_CERRADO: 'Seguimiento cerrado (histórico)',
 }
 
 // ============================================================================

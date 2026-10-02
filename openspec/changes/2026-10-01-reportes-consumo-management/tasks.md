@@ -217,12 +217,51 @@ Flujo **Backend First** y **estrictamente secuencial**.
 
 ## Fase 5 — Cierre y QA final
 
-- [ ] **T5.1 `@qa-agent`** — auditoría final Zero-Drift end-to-end (contrato ↔ backend ↔
+- [x] **T5.1 `@qa-agent`** — auditoría final Zero-Drift end-to-end (contrato ↔ backend ↔
   frontend) y verificación de los dos hitos: Acta de Entrega al confirmar TEAMS y Acta de
   Consumo al cerrar el seguimiento.
-- [ ] **T5.2** pytest + vitest completos, secuenciales, en verde.
-- [ ] **T5.3** Commit final en `feat/reportes-consumo-management`. **Sin merge**: el
+- [x] **T5.2** pytest + vitest completos, secuenciales, en verde.
+- [x] **T5.3** Commit final en `feat/reportes-consumo-management`. **Sin merge**: el
   administrador revisará y fusionará manualmente.
+
+### Resultado de la Fase 5 (cierre)
+
+- **T5.1 — auditoría Zero-Drift end-to-end (`@qa-agent`): CONDICIONADO.** Cero drift
+  crítico. Contrato <-> backend <-> frontend coherentes (rutas, métodos, query params,
+  claves de respuesta y payloads de `+Cantidad`/`Mover`); los dos hitos verificados con
+  evidencia y atomicidad SQL: **(A)** Acta de Entrega por `tg_acta_entrega` en la misma
+  transacción de `fn_procesar_movimiento`; **(B)** Acta de Consumo por `fn_cerrar_seguimiento`
+  con `cantidad_consumida` GENERATED en SQL. Invariantes constitucionales: PASA.
+- **T5.2 — suites (secuenciales, 100 % verde):** backend 289 passed (app) + 24 passed
+  (`sql_tests`); frontend 29 archivos / 328 tests, `tsc -b`, `eslint src` y `npm run build`
+  sin errores.
+- **T5.3 — commit final en la rama, sin merge a `main`.**
+- **Corregido en el cierre (D-3):** `TIPOS_ACCION_AUDITORIA` etiqueta los 7 eventos nuevos y
+  mapea EN LECTURA `DESPLIEGUE_CREADO/CERRADO` históricos como "Seguimiento ... (histórico)"
+  (el ledger no se toca), cumpliendo REQ-P2-CON-001.
+
+#### CONDICIONES PENDIENTES DEL ADMINISTRADOR (la certificación pasa a CERTIFICADO al resolverlas)
+
+1. **D-1 — "Agregar todo":** aceptar la desviación (precarga local; el endpoint
+   `agregar-todo` y su hook existen sin montar) **o** ordenar una pantalla de edición de
+   seguimientos ABIERTA que use el endpoint.
+2. **D-2 — backfill de actas históricas:** en la BD de desarrollo `p2` hay 9 seguimientos
+   CERRADA y 26 movimientos TEAMS (CONFIRMADO/CANCELADO) sin acta. Decidir entre no hacer
+   backfill (comunicarlo) o una migración que reconstruya los snapshots marcándolos
+   `reconstruido`.
+3. **Seguridad (de la Fase 3, fuera del código):** rotar la contraseña de `p2admin` y purgar
+   el historial git (credencial introducida en `c48ff2c`) **antes de cualquier push**.
+
+#### Recomendaciones no bloqueantes (cambio posterior)
+
+- `expose_headers=["Content-Disposition"]` en el `CORSMiddleware` (hoy same-origin vía el
+  proxy de Vite; el frontend tiene nombre de respaldo).
+- Formalizar en `openspec.yaml` el schema 200 de `agregar-todo` (`AgregarTodoOut`) y los
+  `requestBody`/respuestas del resto de rutas (D-5/D-6).
+- Hardening de inmutabilidad en BD sobre `auditoria_eventos` y `actas_reportes`
+  (`REVOKE UPDATE, DELETE` o trigger): hoy es inmutable por convención (D-4).
+- Test de atribución/payload de `ACTA_ENTREGA_GENERADA` y `ACTA_CONSUMO_GENERADA`.
+- Cambiar el homónimo "despliegue" (*deployment*) de `transaccional.py:558`.
 
 ## Definición de Terminado (DoD)
 
