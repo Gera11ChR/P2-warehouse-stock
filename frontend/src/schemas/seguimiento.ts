@@ -1,30 +1,30 @@
 import { z } from 'zod'
 
 // ============================================================================
-// VALIDACIÓN DE FORMULARIOS — DESPLIEGUES DE EQUIPO
-// (contrato real /api/v1/equipos/{equipo_id}/despliegues)
+// VALIDACIÓN DE FORMULARIOS — SEGUIMIENTOS DE EQUIPO (CONSUMO)
+// (contrato real /api/v1/equipos/{equipo_id}/seguimientos)
 //
 // Validación SOLO de forma (feedback UX inmediato). La autoridad del
 // contrato sigue siendo el backend (Pydantic): estos esquemas replican
 // las reglas de negocio, NUNCA las reemplazan.
 // ============================================================================
 
-/** Línea del payload de apertura (POST despliegues). */
-const despliegueItemSchema = z.object({
+/** Línea del payload de apertura (POST seguimientos). */
+const seguimientoItemSchema = z.object({
   material_id: z.number().int().positive(),
   cantidad_tomada: z.number().int().positive(),
 })
 
 /**
- * Payload de apertura de despliegue:
+ * Payload de apertura de seguimiento:
  * - `observaciones` opcional, máx. 2000 caracteres;
  * - `items` con al menos una línea;
  * - `material_id` SIN duplicados (el backend lo exige).
  */
-export const despliegueCreateSchema = z
+export const seguimientoCreateSchema = z
   .object({
     observaciones: z.string().max(2000).optional(),
-    items: z.array(despliegueItemSchema).min(1),
+    items: z.array(seguimientoItemSchema).min(1),
   })
   .superRefine((valor, ctx) => {
     const ids = valor.items.map((i) => i.material_id)
@@ -39,7 +39,7 @@ export const despliegueCreateSchema = z
   })
 
 /** Payload validado de apertura (tipo inferido del schema). */
-export type DespliegueCreateInput = z.infer<typeof despliegueCreateSchema>
+export type SeguimientoCreateInput = z.infer<typeof seguimientoCreateSchema>
 
 /** Línea de sobrantes del payload de cierre (cantidad_sobrante >= 0). */
 const sobranteItemSchema = z.object({
@@ -48,13 +48,13 @@ const sobranteItemSchema = z.object({
 })
 
 /**
- * Payload de cierre de despliegue:
+ * Payload de cierre de seguimiento:
  * - `sobrantes` (solo los materiales devueltos; los omitidos se consideran
  *   consumidos al 100 % — resolución backend);
  * - `observaciones_cierre` opcional;
  * - `material_id` SIN duplicados.
  */
-export const cerrarDespliegueSchema = z
+export const cerrarSeguimientoSchema = z
   .object({
     sobrantes: z.array(sobranteItemSchema),
     observaciones_cierre: z.string().optional(),
@@ -72,4 +72,4 @@ export const cerrarDespliegueSchema = z
   })
 
 /** Payload validado de cierre (tipo inferido del schema). */
-export type CerrarDespliegueInput = z.infer<typeof cerrarDespliegueSchema>
+export type CerrarSeguimientoInput = z.infer<typeof cerrarSeguimientoSchema>

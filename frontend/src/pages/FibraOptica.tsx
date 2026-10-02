@@ -5,6 +5,11 @@ import { Eye, Pencil, Trash2 } from 'lucide-react'
 import MaterialDetailDrawer from '../components/MaterialDetailDrawer'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import SumarCantidadDialog from '../components/SumarCantidadDialog'
+import MoverMaterialDialog from '../components/MoverMaterialDialog'
+import { useSeccionesTransferibles } from '../hooks/useSeccionesTransferibles'
+import { useOperadorRapido } from '../hooks/useOperadorRapido'
+import { etiquetaSeccion } from '../utils/seccionLabel'
 import FibraMaterialForm from '../components/FibraMaterialForm'
 import {
   eliminarFibraMaterial,
@@ -53,7 +58,10 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
 
   // CRUD FO (REQ-CRUD-001): selección de fila + drawer + modal de edición +
   // diálogo de eliminación, espejo del patrón de SeccionGeneral.
-  const [selected, setSelected] = useState<FibraStockRow | null>(null)
+  // Solo se recuerda el material (snapshot); la fila mostrada se re-deriva de
+  // la query de stock FO (`selected`), así el detalle refleja el stock
+  // PERSISTIDO tras +Cantidad/Mover.
+  const [selectedSnapshot, setSelected] = useState<FibraStockRow | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -72,6 +80,9 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
     queryKey: ['fibra', modulo],
     queryFn: () => listFibraStock(modulo),
   })
+
+  // Inventarios candidatos como destino de «Mover» (General + raíces FO).
+  const { data: seccionesDestino = [] } = useSeccionesTransferibles()
 
   const { data: categorias = [] } = useQuery({
     queryKey: ['categorias'],
@@ -188,11 +199,53 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
   }
 
   const rows = stockQuery.data ?? []
+  const selected: FibraStockRow | null = selectedSnapshot
+    ? (rows.find((r) => r.material_id === selectedSnapshot.material_id) ??
+      selectedSnapshot)
+    : null
   const motivoRequerido = selected !== null && selected.stock_actual > 0
 
   // ============================================================================
   // RENDER
   // ============================================================================
+
+  // Contexto fijo de los operadores rápidos (presentación; el stock
+  // definitivo lo confirma el servidor).
+  const tipoSeccionFo = modulo === 'PAQUETE' ? 'FO_PAQUETE' : 'FO_EN_USO'
+  const origenSeccion = seccionesDestino.find((s) => s.tipo === tipoSeccionFo)
+  const origenValue =
+    origenSeccion !== undefined ? String(origenSeccion.almacen_id) : undefined
+  const contextoOperacion = selected
+    ? {
+        codigo: selected.codigo ?? '—',
+        descripcion: selected.descripcion,
+        um: selected.u_m,
+        stockActual: selected.stock_actual,
+        origenLabel:
+          modulo === 'PAQUETE'
+            ? 'Fibra Óptica - Paquete'
+            : 'Fibra Óptica - En Uso',
+      }
+    : null
+  const destinosMover = seccionesDestino
+    .filter((s) => s.transferible)
+    .map((s) => ({
+      value: String(s.almacen_id),
+      label: etiquetaSeccion(s),
+      tipo: s.tipo,
+    }))
+
+  // Operadores rápidos (REQ-P2-INV-001/005) sobre FO Paquete/En Uso: clave de
+  // idempotencia por apertura, errores traducidos, toast con el stock del
+  // servidor y recarga de stocks (origen y destino).
+  const operador = useOperadorRapido({
+    inventario: tipoSeccionFo,
+    material:
+      selected && contextoOperacion
+        ? { materialId: selected.material_id, ...contextoOperacion }
+        : null,
+    destinos: destinosMover,
+  })
 
   return (
     <div className="space-y-4">
@@ -337,6 +390,7 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
         onClose={() => {
           setDrawerOpen(false)
           setSelected(null)
+          operador.cerrar()
         }}
         descripcion={selected?.descripcion ?? null}
         stockActual={selected?.stock_actual ?? 0}
@@ -346,6 +400,24 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
         codigo={selected?.codigo ?? ''}
         onModificar={() => selected && setEditOpen(true)}
         onEliminar={() => selected && handleOpenDelete()}
+        onSumarCantidad={() => selected && operador.abrirSumar()}
+        onMover={() => selected && operador.abrirMover()}
+      />
+
+      <SumarCantidadDialog
+        open={operador.operacion === 'sumar'}
+        material={contextoOperacion}
+        onClose={operador.cerrar}
+        {...operador.sumar}
+      />
+      <MoverMaterialDialog
+        open={operador.operacion === 'mover'}
+        material={contextoOperacion}
+        destinos={destinosMover}
+        origenValue={origenValue}
+        origenTipo={tipoSeccionFo}
+        onClose={operador.cerrar}
+        {...operador.mover}
       />
 
       {/* Modal de edición (REQ-CATFO-001, REQ-STOCK-001): FibraMaterialForm

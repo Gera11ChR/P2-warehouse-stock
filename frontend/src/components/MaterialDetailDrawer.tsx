@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Pencil, Trash2, X } from 'lucide-react'
+import { ArrowRightLeft, Pencil, Trash2, X } from 'lucide-react'
 
 interface MaterialDetailDrawerProps {
   open: boolean
@@ -12,6 +12,10 @@ interface MaterialDetailDrawerProps {
   codigo: string
   onModificar: () => void
   onEliminar: () => void
+  /** «+ Cantidad» (REQ-P2-INV-001/005). Sin handler no se muestra la acción. */
+  onSumarCantidad?: () => void
+  /** «Mover» (REQ-P2-INV-003/005). Sin handler no se muestra la acción. */
+  onMover?: () => void
 }
 
 function Field({
@@ -42,12 +46,17 @@ export default function MaterialDetailDrawer({
   codigo,
   onModificar,
   onEliminar,
+  onSumarCantidad,
+  onMover,
 }: MaterialDetailDrawerProps) {
   if (!open) {
     return null
   }
   return (
-    <aside className="fixed inset-y-0 right-0 z-40 flex w-96 flex-col border-l border-slate-200 bg-white shadow-2xl">
+    <aside
+      aria-label="Detalle del Material"
+      className="fixed inset-y-0 right-0 z-40 flex w-96 flex-col border-l border-slate-200 bg-white shadow-2xl"
+    >
       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
         <h2 className="text-lg font-semibold text-slate-800">Detalle del Material</h2>
         <button
@@ -83,21 +92,58 @@ export default function MaterialDetailDrawer({
         </Field>
       </div>
 
-      <div className="flex gap-2 border-t border-slate-200 px-5 py-4">
-        <button
-          type="button"
-          onClick={onModificar}
-          className="flex flex-1 items-center justify-center gap-1 rounded-md bg-yellow-500 px-3 py-2 text-sm font-medium text-white hover:bg-yellow-600"
-        >
-          <Pencil className="h-4 w-4" /> Modificar
-        </button>
-        <button
-          type="button"
-          onClick={onEliminar}
-          className="flex flex-1 items-center justify-center gap-1 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
-        >
-          <Trash2 className="h-4 w-4" /> Eliminar
-        </button>
+      <div className="space-y-2 border-t border-slate-200 px-5 py-4">
+        {/* Operaciones de inventario (mueven stock): fila superior, acción
+            principal «+ Cantidad» y secundaria «Mover». */}
+        {(onSumarCantidad || onMover) && (
+          <div
+            role="group"
+            aria-label="Operaciones de inventario"
+            className="flex gap-2"
+          >
+            {onSumarCantidad && (
+              <button
+                type="button"
+                onClick={onSumarCantidad}
+                className="flex flex-1 items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                + Cantidad
+              </button>
+            )}
+            {onMover && (
+              <button
+                type="button"
+                onClick={onMover}
+                disabled={stockActual <= 0}
+                title={
+                  stockActual <= 0
+                    ? 'Sin stock disponible para mover'
+                    : undefined
+                }
+                className="flex flex-1 items-center justify-center gap-1 rounded-md border border-blue-600 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ArrowRightLeft className="h-4 w-4" aria-hidden="true" /> Mover
+              </button>
+            )}
+          </div>
+        )}
+        {/* Gestión del material (catálogo): fila inferior. */}
+        <div role="group" aria-label="Gestión del material" className="flex gap-2">
+          <button
+            type="button"
+            onClick={onModificar}
+            className="flex flex-1 items-center justify-center gap-1 rounded-md bg-yellow-500 px-3 py-2 text-sm font-medium text-white hover:bg-yellow-600"
+          >
+            <Pencil className="h-4 w-4" /> Modificar
+          </button>
+          <button
+            type="button"
+            onClick={onEliminar}
+            className="flex flex-1 items-center justify-center gap-1 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+          >
+            <Trash2 className="h-4 w-4" /> Eliminar
+          </button>
+        </div>
       </div>
     </aside>
   )

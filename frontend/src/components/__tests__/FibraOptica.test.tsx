@@ -36,6 +36,16 @@ vi.mock('../../services/catalog', () => ({
   listUms: vi.fn().mockResolvedValue([{ id: 1, nombre: 'PZ', is_active: true }]),
 }))
 
+vi.mock('../../hooks/useSeccionesTransferibles', () => ({
+  useSeccionesTransferibles: () => ({
+    data: [
+      { almacen_id: 1, nombre: 'Inventario General', tipo: 'GENERAL', transferible: true },
+      { almacen_id: 2, nombre: 'Fibra Optica - Paquete', tipo: 'FO_PAQUETE', transferible: true },
+      { almacen_id: 3, nombre: 'Fibra Optica - En Uso', tipo: 'FO_EN_USO', transferible: true },
+    ],
+  }),
+}))
+
 vi.mock('../../services/fibra', () => ({
   listFibraStock: vi.fn(),
   updateFibraMaterial: vi.fn(),
@@ -250,5 +260,51 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
       })
     })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['auditoria'] })
+  })
+
+  it('REQ-P2-INV-005: el drawer FO ofrece + Cantidad y Mover junto a Modificar / Eliminar', async () => {
+    const user = userEvent.setup()
+    renderConQueryClient()
+
+    await user.click(await screen.findByText('Cable FO'))
+
+    expect(await screen.findByRole('button', { name: '+ Cantidad' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mover' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Modificar' }).length).toBeGreaterThan(0)
+  })
+
+  it('+ Cantidad abre el diálogo con el inventario FO de origen y Esc devuelve el foco', async () => {
+    const user = userEvent.setup()
+    renderConQueryClient()
+
+    await user.click(await screen.findByText('Cable FO'))
+    const boton = await screen.findByRole('button', { name: '+ Cantidad' })
+    await user.click(boton)
+
+    const dialogo = screen.getByRole('dialog', { name: '+ Cantidad' })
+    expect(dialogo).toHaveTextContent('Fibra Óptica - Paquete')
+    expect(dialogo).toHaveTextContent('FO-1')
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(boton).toHaveFocus()
+  })
+
+  it('Mover ofrece como destino los demás inventarios (sin el origen FO Paquete)', async () => {
+    const user = userEvent.setup()
+    renderConQueryClient()
+
+    await user.click(await screen.findByText('Cable FO'))
+    await user.click(await screen.findByRole('button', { name: 'Mover' }))
+
+    const select = screen.getByLabelText('Inventario destino')
+    const opciones = Array.from(select.querySelectorAll('option')).map(
+      (o) => o.textContent,
+    )
+    expect(opciones).toEqual([
+      '— Selecciona destino —',
+      'Inventario General',
+      'Fibra Óptica - En Uso',
+    ])
   })
 })

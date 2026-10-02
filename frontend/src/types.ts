@@ -150,15 +150,15 @@ export interface EquipoConfigLocal {
 }
 
 // ============================================================================
-// DESPLIEGUES DE EQUIPO (FASE 7 — contrato real
-// /api/v1/equipos/{equipo_id}/despliegues)
+// SEGUIMIENTOS DE CONSUMO DE EQUIPO (contrato certificado
+// /api/v1/equipos/{equipo_id}/seguimientos; openspec.yaml)
 // ============================================================================
 
-export type EstadoDespliegue = 'ABIERTA' | 'CERRADA'
+export type EstadoSeguimiento = 'ABIERTA' | 'CERRADA'
 
-/** Línea de un despliegue. `cantidad_consumida` la calcula el backend
+/** Línea de un seguimiento. `cantidad_consumida` la calcula el backend
  *  (tomada − sobrante) al cierre; NUNCA el frontend. */
-export interface DespliegueItem {
+export interface SeguimientoItem {
   id: number
   material_id: number
   cantidad_tomada: number
@@ -167,83 +167,138 @@ export interface DespliegueItem {
 }
 
 /**
- * Despliegue (salida de crear/cerrar/detalle). Ciclo de vida
- * ABIERTA → CERRADA: el backend garantiza a lo sumo UNA abierta por equipo.
+ * Seguimiento (SeguimientoOut: crear/cerrar/detalle). Ciclo de vida
+ * ABIERTA → CERRADA: el backend garantiza a lo sumo UNO abierto por equipo.
  */
-export interface Despliegue {
+export interface Seguimiento {
   id: number
   equipo_id: number
   fecha: string
   observaciones: string | null
   usuario: string
-  estado: EstadoDespliegue
+  estado: EstadoSeguimiento
   created_at: string
   updated_at: string
   closed_at: string | null
-  items: DespliegueItem[]
+  items: SeguimientoItem[]
 }
 
-/** Respuesta de GET /equipos/{equipo_id}/despliegues (DespliegueListOut). */
-export interface DespliegueList {
-  despliegues: Despliegue[]
+/** Respuesta de GET /equipos/{equipo_id}/seguimientos (SeguimientoListOut). */
+export interface SeguimientoList {
+  seguimientos: Seguimiento[]
 }
 
-/** POST /equipos/{equipo_id}/despliegues — apertura (201). */
-export interface DespliegueCreatePayload {
+/** POST /equipos/{equipo_id}/seguimientos — apertura (201). */
+export interface SeguimientoCreatePayload {
   observaciones?: string
   items: { material_id: number; cantidad_tomada: number }[]
 }
 
-/** POST /equipos/{equipo_id}/despliegues/{despliegue_id}/cerrar. */
-export interface CerrarDesplieguePayload {
+/** POST /equipos/{equipo_id}/seguimientos/{seguimiento_id}/cerrar. */
+export interface CerrarSeguimientoPayload {
   sobrantes: { material_id: number; cantidad_sobrante: number }[]
   observaciones_cierre?: string
 }
 
+/** POST .../{seguimiento_id}/agregar-todo — body OPCIONAL (AgregarTodoRequest). */
+export interface AgregarTodoPayload {
+  /** 1..100 caracteres; un reenvío con la misma clave devuelve el resultado
+   *  original sin duplicar efectos. */
+  clave_idempotencia?: string
+}
+
+/** Respuesta de agregar-todo (AgregarTodoOut). `lineas_agregadas` lo calcula
+ *  la función SQL (0 en un reenvío idempotente). */
+export interface AgregarTodoResultadoOut {
+  lineas_agregadas: number
+  seguimiento: Seguimiento
+}
+
 // ============================================================================
-// REPORTES DE DESPLIEGUES (contrato real /api/v1/reportes/despliegues)
+// OPERADORES RÁPIDOS DE INVENTARIO (contrato certificado
+// POST /api/v1/inventario/sumar-cantidad y /inventario/mover).
+// Los payloads (SumarCantidadPayload / MoverMaterialPayload) viven en
+// utils/operadorPayload.ts junto a sus constructores puros.
+// El stock resultante lo devuelve el SERVIDOR: el cliente nunca lo calcula.
 // ============================================================================
 
-/** Línea reportable de un despliegue (join catálogo SIN filtro is_active:
- *  el reporte histórico queda íntegro). */
-export interface ReporteDespliegueItem {
+export type InventarioContratoOut = 'GENERAL' | 'FO'
+export type ModuloFoOut = 'PAQUETE' | 'EN_USO'
+
+/** Respuesta de POST /inventario/sumar-cantidad (SumarCantidadOut). */
+export interface SumarCantidadOut {
+  destino: InventarioContratoOut
+  modulo: ModuloFoOut | null
+  material_id: number
+  stock_nuevo: number
+  reenvio_idempotente: boolean
+}
+
+/** Respuesta de POST /inventario/mover (MoverMaterialOut). */
+export interface MoverMaterialOut {
+  material_id: number
+  origen: InventarioContratoOut
+  origen_modulo: ModuloFoOut | null
+  destino: InventarioContratoOut
+  destino_modulo: ModuloFoOut | null
+  stock_origen: number
+  stock_destino: number
+  reenvio_idempotente: boolean
+}
+
+// ============================================================================
+// ACTAS DE ENTREGA / CONSUMO (contrato certificado ActaOut de
+// /api/v1/reportes/entrega y /api/v1/reportes/consumo, formato=json).
+// Los números (incl. `cantidad_consumida`) los calcula PostgreSQL; el
+// frontend solo los muestra, sin agregar ni recalcular.
+// ============================================================================
+
+export type ActaTipo = 'ENTREGA' | 'CONSUMO'
+
+export interface ActaItem {
   material_id: number
   codigo: string | null
   descripcion: string
   categoria: string | null
-  um: string | null
-  cantidad_tomada: number
+  u_m: string | null
+  /** ENTREGA: cantidad entregada al equipo. */
+  cantidad: number | null
+  /** CONSUMO: tomada / sobrante / consumida. */
+  cantidad_tomada: number | null
   cantidad_sobrante: number | null
   cantidad_consumida: number | null
 }
 
-/** Despliegue reportable (ReporteDespliegueOut). */
-export interface ReporteDespliegue {
-  despliegue_id: number
-  equipo_id: number
-  equipo_nombre: string
-  fecha: string
-  estado: string
-  usuario: string
+export interface Acta {
+  acta_id: number
+  tipo: ActaTipo
+  movimiento_id: number | null
+  seguimiento_id: number | null
+  equipo_id: number | null
+  equipo_nombre: string | null
+  usuario: string | null
   observaciones: string | null
-  created_at: string
-  closed_at: string | null
-  items: ReporteDespliegueItem[]
+  fecha: string
+  items: ActaItem[]
 }
 
-/** Respuesta JSON de GET /reportes/despliegues (ReporteDespliegueListOut). */
-export interface ReporteDespliegueList {
-  despliegues: ReporteDespliegue[]
+/** Respuesta JSON de GET /reportes/entrega|consumo (ActaListOut). */
+export interface ActaList {
+  actas: Acta[]
 }
 
-/** Parámetros de GET /reportes/despliegues. `format=csv` devuelve un blob
- *  text/csv (descarga); `format=json` (default) devuelve JSON. */
+/** Filtros de GET /reportes/entrega|consumo (todos opcionales). El parámetro
+ *  `formato` lo fija el servicio (json | normal | extenso). */
 export interface ReporteParams {
   equipo_id?: number
   desde?: string
   hasta?: string
-  format?: 'json' | 'csv'
+  /** Exporta/consulta un acta individual. */
+  acta_id?: number
 }
+
+/** Formatos XLSX descargables (plantillas corporativas Normal / Extenso). */
+export type FormatoXlsx = 'normal' | 'extenso'
 
 // ============================================================================
 // FIBRA ÓPTICA — inventarios independientes PAQUETE / EN_USO
@@ -465,4 +520,7 @@ export const UNIDADES = [
 export interface NavigationTarget {
   page: string
   sub?: string
+  /** Pre-filtro opcional por equipo al abrir Reportes (evita exportar actas
+   *  de otro equipo por accidente tras una entrega/cierre). */
+  equipoId?: number
 }

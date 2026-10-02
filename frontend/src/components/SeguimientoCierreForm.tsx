@@ -1,35 +1,35 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { cerrarDespliegueSchema } from '../schemas/despliegue'
-import type { CerrarDesplieguePayload, DespliegueItem } from '../types'
+import { cerrarSeguimientoSchema } from '../schemas/seguimiento'
+import type { CerrarSeguimientoPayload, SeguimientoItem } from '../types'
 
 // ============================================================================
-// FORMULARIO — CIERRE DE DESPLIEGUE (FASE 7)
+// FORMULARIO — CIERRE DE SEGUIMIENTO (CONSUMO) (FASE 7)
 //
 // Una fila por ítem: descripción y cantidad tomada SOLO LECTURA; el único
 // campo editable es `cantidad_sobrante` (default 0, rango 0..tomada). El
 // formulario NUNCA calcula el consumo (tomada − sobrante): ese cálculo es
 // exclusivo del backend (PostgreSQL). Captura la intención y la valida con
-// `cerrarDespliegueSchema`; el backend sigue siendo la autoridad.
+// `cerrarSeguimientoSchema`; el backend sigue siendo la autoridad.
 //
 // Contrato de props (wave 2b — página InventarioPorEquipos):
 //   { items, materiales, onSubmit, onCancel }
 //   `materiales` = mapa material_id → descripción (solo etiquetas).
 // ============================================================================
 
-interface DespliegueCierreFormProps {
-  items: DespliegueItem[]
+interface SeguimientoCierreFormProps {
+  items: SeguimientoItem[]
   materiales: Record<number, string>
-  onSubmit: (payload: CerrarDesplieguePayload) => void
+  onSubmit: (payload: CerrarSeguimientoPayload) => void
   onCancel: () => void
 }
 
-export default function DespliegueCierreForm({
+export default function SeguimientoCierreForm({
   items,
   materiales,
   onSubmit,
   onCancel,
-}: DespliegueCierreFormProps) {
+}: SeguimientoCierreFormProps) {
   // estado por material_id: string editable del sobrante
   const [sobrantes, setSobrantes] = useState<Record<number, string>>(() => {
     const inicial: Record<number, string> = {}
@@ -55,7 +55,7 @@ export default function DespliegueCierreForm({
       }
     }
 
-    const payload: CerrarDesplieguePayload = {
+    const payload: CerrarSeguimientoPayload = {
       sobrantes: items.map((item) => ({
         material_id: item.material_id,
         cantidad_sobrante: Number(sobrantes[item.material_id] ?? 0) || 0,
@@ -65,7 +65,7 @@ export default function DespliegueCierreForm({
       payload.observaciones_cierre = observacionesCierre.trim()
     }
 
-    const resultado = cerrarDespliegueSchema.safeParse(payload)
+    const resultado = cerrarSeguimientoSchema.safeParse(payload)
     if (!resultado.success) {
       const mensajes: string[] = []
       for (const issue of resultado.error.issues) {
@@ -183,7 +183,7 @@ export default function DespliegueCierreForm({
           type="submit"
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
-          Cerrar Despliegue
+          Cerrar Seguimiento
         </button>
       </div>
     </form>

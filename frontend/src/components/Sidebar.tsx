@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   Wrench,
 } from 'lucide-react'
+import logoDms from '../assets/company_logobrand.png'
 import type { NavigationTarget } from '../types'
 
 interface NavItem {
@@ -45,9 +46,20 @@ export default function Sidebar({ current, onNavigate }: SidebarProps) {
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col bg-slate-900 text-slate-200">
-      <div className="flex h-16 items-center gap-2 border-b border-slate-700 px-5">
-        <Cable className="h-6 w-6 text-blue-400" />
-        <span className="text-lg font-semibold text-white">DMS - TELECOM</span>
+      {/* Marca corporativa (REQ-P2-UI-001): logo en la esquina superior izquierda.
+          El PNG es transparente con trazos negros: se asienta sobre una ficha
+          clara para conservar el contraste en el sidebar oscuro. */}
+      <div className="flex h-16 items-center gap-2 border-b border-slate-700 px-3">
+        <span className="flex shrink-0 items-center rounded-md bg-white px-1.5 py-1">
+          <img
+            src={logoDms}
+            alt="Logotipo corporativo DMS Telecom"
+            width={1080}
+            height={413}
+            className="h-8 w-auto"
+          />
+        </span>
+        <span className="text-base font-semibold text-white">DMS - TELECOM</span>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {NAV_ITEMS.map((item) => {

@@ -19,7 +19,7 @@ import { usePatchConfigLocal } from '../hooks/usePatchConfigLocal'
 import EquipoInventoryTable from '../components/EquipoInventoryTable'
 import EquipoForm from '../components/EquipoForm'
 import ConfigLocalForm from '../components/ConfigLocalForm'
-import DesplieguePanel from '../components/DesplieguePanel'
+import SeguimientoPanel from '../components/SeguimientoPanel'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../hooks/useToasts'
@@ -40,7 +40,7 @@ function errorMessage(error: unknown): string {
 const TABS = [
   { value: 'consulta', label: 'Consulta' },
   { value: 'configuracion', label: 'Configuración' },
-  { value: 'despliegue', label: 'DESPLIEGUE' },
+  { value: 'consumo', label: 'CONSUMO' },
 ] as const
 
 type TabValue = (typeof TABS)[number]['value']
@@ -56,7 +56,7 @@ export default function InventarioPorEquipos() {
   const [equipoToDelete, setEquipoToDelete] = useState<Equipo | null>(null)
 
   // Pestañas del área de inventario (FASE 7): consulta / configuración /
-  // despliegue.
+  // consumo.
   const [tab, setTab] = useState<TabValue>('consulta')
   const [configMaterial, setConfigMaterial] =
     useState<InventarioEquipoRow | null>(null)
@@ -328,14 +328,19 @@ export default function InventarioPorEquipos() {
         </div>
       )}
 
-      {/* Despliegue (FASE 7) */}
-      {tab === 'despliegue' &&
+      {/* Consumo — seguimientos (FASE 7) */}
+      {tab === 'consumo' &&
         (effectiveEquipoId === null ? (
           <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
             <p className="text-slate-500">Seleccione un equipo</p>
           </div>
         ) : (
-          <DesplieguePanel equipoId={effectiveEquipoId} />
+          <SeguimientoPanel
+            equipoId={effectiveEquipoId}
+            equipoNombre={
+              equipos.find((e) => e.equipo_id === effectiveEquipoId)?.nombre
+            }
+          />
         ))}
 
       {/* Modal CRUD de equipos */}

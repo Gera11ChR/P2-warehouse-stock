@@ -10,9 +10,13 @@ import BulkSearch from '../components/BulkSearch'
 import Modal from '../components/Modal'
 import MaterialForm from '../components/MaterialForm'
 import ConfirmDialog from '../components/ConfirmDialog'
+import SumarCantidadDialog from '../components/SumarCantidadDialog'
+import MoverMaterialDialog from '../components/MoverMaterialDialog'
+import { etiquetaSeccion } from '../utils/seccionLabel'
 import CatalogManagementPanel from '../components/CatalogManagementPanel'
 import { useUms } from '../hooks/useUms'
 import { useSeccionesTransferibles } from '../hooks/useSeccionesTransferibles'
+import { useOperadorRapido } from '../hooks/useOperadorRapido'
 import {
   listCategorias,
   listCatalog,
@@ -57,7 +61,10 @@ export default function SeccionGeneral({
     almacen: '',
   })
   const [selectedAlmacenId, setSelectedAlmacenId] = useState<number | null>(null)
-  const [selected, setSelected] = useState<InventoryRow | null>(null)
+  // Selección: solo se recuerda el material (snapshot). La fila que se muestra
+  // se re-deriva de la query de stock (`selected`, más abajo), de modo que tras
+  // +Cantidad/Mover el panel de detalle refleja el stock PERSISTIDO.
+  const [selectedSnapshot, setSelected] = useState<InventoryRow | null>(null)
   const [tab, setTab] = useState<'buscador' | 'granel'>('buscador')
   const [page, setPage] = useState(1)
   const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null)
@@ -145,6 +152,14 @@ export default function SeccionGeneral({
       almacen: activeSeccion.nombre,
     }))
   }, [stockRows, activeSeccion])
+
+  const selected: InventoryRow | null = useMemo(() => {
+    if (!selectedSnapshot) return null
+    return (
+      rows.find((r) => r.material_id === selectedSnapshot.material_id) ??
+      selectedSnapshot
+    )
+  }, [rows, selectedSnapshot])
 
   // ============================================================================
   // FILTERS
@@ -278,6 +293,42 @@ export default function SeccionGeneral({
     return Array.from(set)
   }, [rows])
 
+  // Contexto fijo de los operadores rápidos (presentación; el stock
+  // definitivo lo confirma el servidor).
+  const contextoOperacion = selected
+    ? {
+        codigo: selected.codigo ?? '—',
+        descripcion: selected.descripcion,
+        um: selected.u_m,
+        stockActual: selected.stock_actual,
+        origenLabel: selected.almacen,
+      }
+    : null
+  const destinosMover = seccionesDestino
+    .filter((s) => s.transferible)
+    .map((s) => ({
+      value: String(s.almacen_id),
+      label: etiquetaSeccion(s),
+      tipo: s.tipo,
+    }))
+
+  // Operadores rápidos (REQ-P2-INV-001/003/005): diálogos sobre el material
+  // seleccionado en el Inventario General. Clave de idempotencia por apertura,
+  // errores traducidos, toast con el stock del servidor y recarga de stocks.
+  const operador = useOperadorRapido({
+    inventario: 'GENERAL',
+    material: selected
+      ? {
+          materialId: selected.material_id,
+          codigo: selected.codigo ?? '—',
+          um: selected.u_m,
+          stockActual: selected.stock_actual,
+          origenLabel: selected.almacen,
+        }
+      : null,
+    destinos: destinosMover,
+  })
+
   return (
     <div className="space-y-4">
       <KpiCards stock={rows} />
@@ -368,7 +419,10 @@ export default function SeccionGeneral({
 
       <MaterialDetailDrawer
         open={selected !== null}
-        onClose={() => setSelected(null)}
+        onClose={() => {
+          setSelected(null)
+          operador.cerrar()
+        }}
         descripcion={selected?.descripcion ?? null}
         stockActual={selected?.stock_actual ?? 0}
         stockMinimo={selected?.stock_minimo ?? null}
@@ -377,6 +431,26 @@ export default function SeccionGeneral({
         codigo={selected?.codigo ?? ''}
         onModificar={() => selected && setFormMode('edit')}
         onEliminar={() => selected && setDeleteOpen(true)}
+        onSumarCantidad={() => selected && operador.abrirSumar()}
+        onMover={() => selected && operador.abrirMover()}
+      />
+
+      <SumarCantidadDialog
+        open={operador.operacion === 'sumar'}
+        material={contextoOperacion}
+        onClose={operador.cerrar}
+        {...operador.sumar}
+      />
+      <MoverMaterialDialog
+        open={operador.operacion === 'mover'}
+        material={contextoOperacion}
+        destinos={destinosMover}
+        origenValue={
+          selected?.almacen_id != null ? String(selected.almacen_id) : undefined
+        }
+        origenTipo="GENERAL"
+        onClose={operador.cerrar}
+        {...operador.mover}
       />
 
       <Modal

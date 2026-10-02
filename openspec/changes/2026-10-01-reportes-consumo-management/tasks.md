@@ -167,25 +167,53 @@ Flujo **Backend First** y **estrictamente secuencial**.
 
 ## Fase 4 — Frontend React 19 (secuencial: `@ui-agent` → `@ux-agent` → `@form-agent` → `@state-agent`)
 
-- [ ] **T4.1 `@ui-agent`** — renombres visibles: DESPLIEGUE→CONSUMO, "Crear Despliegue"→
+- [x] **T4.1 `@ui-agent`** — renombres visibles: DESPLIEGUE→CONSUMO, "Crear Despliegue"→
   "Crear Seguimiento"; sección REPORTES con subsecciones Entrega y Consumo (botones
   "Exportar XLSX (Normal)" / "Exportar XLSX (Extenso)"); logo corporativo esquina superior
   izquierda. Prompt:
   > "Implementa los cambios de UI de la Fase 4 del cambio 2026-10-01... según EARS.md.
   > No modifiques lógica de estado ni endpoints."
-- [ ] **T4.2 `@ux-agent`** — revisar flujos: botón "Agregar todo" en Inventario por Equipos
+- [x] **T4.2 `@ux-agent`** — revisar flujos: botón "Agregar todo" en Inventario por Equipos
   (ubicación demarcada en `docs/reportes-implementacion/consume_functionalities.png`),
   opciones `+Cantidad` y `Mover` junto a Modificar/Eliminar en el panel Detalle del Material,
   y confirmación de exportación (ver `confirmation_report_generation.png`).
-- [ ] **T4.3 `@form-agent`** — formularios: `+Cantidad` (input numérico > 0), `Mover`
+- [x] **T4.3 `@form-agent`** — formularios: `+Cantidad` (input numérico > 0), `Mover`
   (select box de inventarios destino válidos + cantidad, por defecto stock completo),
   validaciones client-side coherentes con 400/409/422 del backend.
-- [ ] **T4.4 `@state-agent`** — estado/data fetching: integración con endpoints de seguimientos,
+- [x] **T4.4 `@state-agent`** — estado/data fetching: integración con endpoints de seguimientos,
   `agregar-todo`, operadores rápidos y reportes XLSX (descarga de blob); manejo de errores y
   recarga de stock tras operaciones; sincronización de la tabla transaccional TEAMS para el
   disparo del Acta de Entrega.
-- [ ] **T4.5** vitest secuencial: componentes renombrados, "Agregar todo", `+Cantidad`, `Mover`,
+- [x] **T4.5** vitest secuencial: componentes renombrados, "Agregar todo", `+Cantidad`, `Mover`,
   subsecciones de Reportes, logo. Commit.
+
+### Resultado de la Fase 4 (frontend)
+
+- **vitest:** 28 archivos / 326 tests en verde (secuencial); `tsc -b`, `eslint src` y
+  `npm run build` sin errores. Cobertura explícita de renombres CONSUMO/Seguimiento,
+  "Agregar todo", `+Cantidad`, `Mover`, subsecciones Entrega/Consumo con exportación
+  XLSX (Normal/Extenso) y logo corporativo (`Sidebar.test.tsx`).
+- **Sin referencias funcionales a "despliegue"** en `frontend/src` (solo guardas
+  negativas en comentarios/tests).
+- **Verificación solo contra mocks de la capa HTTP:** URLs, parámetro `formato` y claves
+  de respuesta (`seguimientos`, `actas`) contrastados a mano con el backend certificado;
+  no hay prueba E2E navegador <-> backend real.
+
+#### Decisiones de la Fase 4 que requieren aprobación del administrador
+
+1. **"Agregar todo" (REQ-P2-CON-003) se resuelve en el cliente.** La lista de seguimiento
+   se arma ANTES de crear el seguimiento y `fn_agregar_todo_seguimiento` solo opera sobre
+   un seguimiento ABIERTA ya creado, por lo que la UI precarga localmente desde el
+   inventario del equipo (sin duplicar ni pisar líneas, como el SP) y el seguimiento se crea
+   después con `fn_crear_seguimiento` (atómico). El endpoint `POST .../agregar-todo` y su
+   hook (`useAgregarTodoSeguimiento`) existen y están probados, pero **no están montados en
+   ninguna pantalla**. Alternativa si se desea el flujo literal de EARS: añadir una pantalla
+   de edición de seguimientos ABIERTA.
+2. `Transferencias`: un borrador TEAMS procesado desde la tabla de historial ahora también
+   muestra el aviso de Acta de Entrega y la invalidación completa (antes solo el flujo directo).
+3. Pendientes menores: etiquetas de auditoría para los eventos nuevos, formalizar el cuerpo
+   200 de `agregar-todo` en `openspec.yaml`, y `Modal`/`ConfirmDialog` preexistentes sin
+   trampa de foco (reutilizar `useDialogA11y`).
 
 ## Fase 5 — Cierre y QA final
 

@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Check, Plus, Search, Trash2, Undo2, X } from 'lucide-react'
 import Modal from '../components/Modal'
+import ActaGeneradaAviso from '../components/ActaGeneradaAviso'
+import { useAppNavigation } from '../hooks/useAppNavigation'
 import { listEquipos, inventarioEquipo } from '../services/equipos'
 import { stockSeccion } from '../services/inventory'
 import { listFibraStock } from '../services/fibra'
@@ -16,6 +18,7 @@ import {
 } from '../services/movimientos'
 import type { MovimientoBorradorCreatePayload } from '../services/movimientos'
 import { useToast } from '../hooks/useToasts'
+import { invalidarTrasConfirmarMovimiento } from '../hooks/queryKeys'
 import type { CartLine, Movimiento, TipoMovimiento } from '../types'
 import { ESTADOS_MOVIMIENTO } from '../types'
 
@@ -118,8 +121,19 @@ function CartRows({
 export default function Transferencias() {
   const { pushToast, pushError } = useToast()
   const queryClient = useQueryClient()
+  const navigate = useAppNavigation()
 
   const [tab, setTab] = useState<TipoMovimiento>('TEAMS')
+
+  // Acta de Entrega (REQ-P2-REP-003): el servidor la registra en la MISMA
+  // transacción que la confirmación TEAMS. Solo se informa en el `onSuccess`
+  // de procesar (nunca por predicción) y solo para movimientos TEAMS: DEVOL
+  // no genera acta. Se recuerda el borrador en curso para conocer el equipo
+  // destino real devuelto por el servidor (no el estado mutable de la UI).
+  const borradorEnCurso = useRef<Movimiento | null>(null)
+  const [actaEntrega, setActaEntrega] = useState<{
+    equipoId: number | null
+  } | null>(null)
 
   // TEAMS state: sección origen → equipo destino
   const [seccionOrigen, setSeccionOrigen] = useState<number | null>(null)
@@ -334,48 +348,42 @@ export default function Transferencias() {
   // MUTACIONES
   // ============================================================================
 
-  const invalidarInventarios = () => {
-    queryClient.invalidateQueries({ queryKey: ['movimientos'] })
-    queryClient.invalidateQueries({ queryKey: ['secciones'] })
-    if (tab === 'TEAMS') {
-      // REQ-TRF-002: si el origen es una raíz FO, el stock movido vive en
-      // inventario_fibra — invalidar ['fibra', modulo]; en caso contrario,
-      // la invalidación por sección existente.
-      if (origenModulo !== null) {
-        queryClient.invalidateQueries({ queryKey: ['fibra', origenModulo] })
-      } else {
-        queryClient.invalidateQueries({ queryKey: ['stock', seccionOrigen] })
-      }
-      queryClient.invalidateQueries({ queryKey: ['equipo', equipoDestino] })
-    } else {
-      queryClient.invalidateQueries({ queryKey: ['equipo', equipoOrigen] })
-      // REQ-TRF-002 (DEVOL): si el destino es una raíz FO, el stock se
-      // acredita en inventario_fibra — invalidar su módulo.
-      const destinoModulo = moduloDeSeccion(seccionDestino)
-      if (destinoModulo !== null) {
-        queryClient.invalidateQueries({ queryKey: ['fibra', destinoModulo] })
-      } else {
-        queryClient.invalidateQueries({ queryKey: ['stock', seccionDestino] })
-      }
-    }
-  }
-
   const crearBorradorMut = useMutation({
     mutationFn: crearBorrador,
     onError: (error) => pushError(errorMessage(error)),
     onSuccess: (movimiento) => {
+      borradorEnCurso.current = movimiento
       procesarMut.mutate(movimiento.id)
     },
   })
 
   const procesarMut = useMutation({
     mutationFn: procesarMovimiento,
-    onSuccess: () => {
+    onSuccess: (_data, movimientoId) => {
       pushToast('Movimiento CONFIRMADO por el servidor')
-      invalidarInventarios()
+      // Movimiento confirmado: el borrador en curso (flujo directo) o, si se
+      // procesó desde la tabla de historial, el de esa lista.
+      const confirmado: Pick<
+        Movimiento,
+        'tipo_movimiento' | 'destino_equipo_id'
+      > | null =
+        borradorEnCurso.current ??
+        movimientos.find((m) => m.id === movimientoId) ??
+        null
+      if (confirmado?.tipo_movimiento === 'TEAMS') {
+        setActaEntrega({ equipoId: confirmado.destino_equipo_id ?? null })
+      }
+      const tipo = confirmado?.tipo_movimiento ?? null
+      borradorEnCurso.current = null
+      // Recarga el estado PERSISTIDO: movimientos, stocks (General/FO),
+      // inventario de equipos, auditoría y — si es TEAMS — las actas de
+      // Entrega (el trigger de PostgreSQL ya la registró en la misma
+      // transacción), de modo que aparezca en Reportes > Entrega sin recargar.
+      void invalidarTrasConfirmarMovimiento(queryClient, tipo)
       limpiarCarrito()
     },
     onError: (error) => {
+      borradorEnCurso.current = null
       pushError(`${errorMessage(error)} — el borrador se conserva en el historial`)
       queryClient.invalidateQueries({ queryKey: ['movimientos'] })
       limpiarCarrito()
@@ -463,6 +471,7 @@ export default function Transferencias() {
 
   const confirmar = () => {
     if (payload) {
+      setActaEntrega(null)
       crearBorradorMut.mutate(payload)
     }
   }
@@ -506,6 +515,30 @@ export default function Transferencias() {
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-semibold text-slate-800">Transferencias</h2>
+
+      {actaEntrega && (
+        <ActaGeneradaAviso
+          tipo="ENTREGA"
+          equipoNombre={
+            actaEntrega.equipoId !== null
+              ? nombreEquipo(actaEntrega.equipoId)
+              : null
+          }
+          onVerActa={
+            navigate
+              ? () =>
+                  navigate({
+                    page: 'reportes',
+                    sub: 'entrega',
+                    ...(actaEntrega.equipoId !== null
+                      ? { equipoId: actaEntrega.equipoId }
+                      : {}),
+                  })
+              : undefined
+          }
+          onDismiss={() => setActaEntrega(null)}
+        />
+      )}
 
       {/* Tabs */}
       <div className="flex gap-2">

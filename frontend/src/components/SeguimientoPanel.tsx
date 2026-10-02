@@ -1,23 +1,30 @@
 import { useMemo, useState } from 'react'
 import axios from 'axios'
-import { useDespliegues } from '../hooks/useDespliegues'
+import { useSeguimientos } from '../hooks/useSeguimientos'
 import { useEquipoInventario } from '../hooks/useEquipoInventario'
-import { useCrearDespliegue } from '../hooks/useCrearDespliegue'
-import { useCerrarDespliegue } from '../hooks/useCerrarDespliegue'
+import { useCrearSeguimiento } from '../hooks/useCrearSeguimiento'
+import { useCerrarSeguimiento } from '../hooks/useCerrarSeguimiento'
 import { useToast } from '../hooks/useToasts'
-import DespliegueNuevaListaForm from './DespliegueNuevaListaForm'
-import DespliegueCierreForm from './DespliegueCierreForm'
+import SeguimientoNuevaListaForm from './SeguimientoNuevaListaForm'
+import SeguimientoCierreForm from './SeguimientoCierreForm'
 import ConfirmDialog from './ConfirmDialog'
-import type { CerrarDesplieguePayload } from '../types'
+import ActaGeneradaAviso from './ActaGeneradaAviso'
+import { useAppNavigation } from '../hooks/useAppNavigation'
+import type { CerrarSeguimientoPayload } from '../types'
 
 // ============================================================================
-// PANEL — DESPLIEGUES DE EQUIPO (FASE 7, wave 2b)
+// PANEL — SEGUIMIENTOS DE CONSUMO DE EQUIPO (FASE 7, wave 2b)
 //
 // Consume el estado persistido vía hooks (wave 1) y delega la captura de
 // intención a los formularios (wave 2a). NUNCA calcula stock ni consumos:
 // apertura y cierre se delegan al backend; la UI solo inicia y representa.
 //
-// Contrato de props: { equipoId }
+// Contrato de props: { equipoId, equipoNombre? }
+//
+// Flujo de cierre (REQ-P2-CON-005): el aviso «Acta de Consumo generada» solo
+// se muestra en el `onSuccess` del cierre (el servidor ya aceptó el cierre y
+// registró el acta en la misma transacción). Ofrece ir a Reportes > Consumo
+// pre-filtrado por este equipo (si hay navegación disponible).
 // ============================================================================
 
 function errorMessage(error: unknown): string {
@@ -32,24 +39,55 @@ function errorMessage(error: unknown): string {
   return 'Ocurrió un error'
 }
 
-export default function DesplieguePanel({ equipoId }: { equipoId: number }) {
+export default function SeguimientoPanel({
+  equipoId,
+  equipoNombre,
+}: {
+  equipoId: number
+  equipoNombre?: string | null
+}) {
   const { pushToast, pushError } = useToast()
+  const navigate = useAppNavigation()
+
+  // Equipo del último cierre aceptado (el aviso solo aplica a ESE equipo:
+  // evita mostrar un acta ajena si el operador cambia de equipo).
+  const [actaConsumoEquipoId, setActaConsumoEquipoId] = useState<number | null>(
+    null,
+  )
+  const avisoActa =
+    actaConsumoEquipoId === equipoId ? (
+      <ActaGeneradaAviso
+        tipo="CONSUMO"
+        equipoNombre={equipoNombre}
+        onVerActa={
+          navigate
+            ? () =>
+                navigate({
+                  page: 'reportes',
+                  sub: 'consumo',
+                  equipoId,
+                })
+            : undefined
+        }
+        onDismiss={() => setActaConsumoEquipoId(null)}
+      />
+    ) : null
 
   const {
-    isLoading: desplieguesLoading,
-    isError: desplieguesError,
-    error: desplieguesErrorObj,
+    isLoading: seguimientosLoading,
+    isError: seguimientosError,
+    error: seguimientosErrorObj,
     abierta,
-  } = useDespliegues(equipoId)
+  } = useSeguimientos(equipoId)
 
   const inventarioQuery = useEquipoInventario(equipoId)
 
-  const crearMut = useCrearDespliegue(equipoId)
-  const cerrarMut = useCerrarDespliegue(equipoId)
+  const crearMut = useCrearSeguimiento(equipoId)
+  const cerrarMut = useCerrarSeguimiento(equipoId)
 
   // Payload de cierre pendiente de confirmación (estado temporal UX).
   const [cierrePendiente, setCierrePendiente] =
-    useState<CerrarDesplieguePayload | null>(null)
+    useState<CerrarSeguimientoPayload | null>(null)
   const [cierreConfirmOpen, setCierreConfirmOpen] = useState(false)
 
   // Mapa de PRESENTACIÓN material_id → descripción (solo etiquetas para el
@@ -64,36 +102,37 @@ export default function DesplieguePanel({ equipoId }: { equipoId: number }) {
 
   // ── Estados FAIL-CLOSED (loading / error) ─────────────────────────────────
 
-  if (desplieguesLoading) {
+  if (seguimientosLoading) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
-        <p className="text-slate-500">Cargando despliegues...</p>
+        <p className="text-slate-500">Cargando seguimientos...</p>
       </div>
     )
   }
 
-  if (desplieguesError) {
+  if (seguimientosError) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-6">
         <p className="text-red-700">
-          No se pudieron cargar los despliegues del equipo.
+          No se pudieron cargar los seguimientos de consumo del equipo.
         </p>
         <p className="mt-1 text-sm text-red-600">
-          {errorMessage(desplieguesErrorObj)}
+          {errorMessage(seguimientosErrorObj)}
         </p>
       </div>
     )
   }
 
-  // ── Despliegue ABIERTO: resumen + cierre con sobrantes ────────────────────
+  // ── Seguimiento ABIERTO: resumen + cierre con sobrantes ────────────────────
 
   if (abierta) {
     return (
       <div className="space-y-4">
+        {avisoActa}
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-base font-semibold text-slate-800">
-              Despliegue abierto — {abierta.fecha}
+              Seguimiento abierto — {abierta.fecha}
             </h3>
             <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
               ABIERTA
@@ -126,9 +165,9 @@ export default function DesplieguePanel({ equipoId }: { equipoId: number }) {
 
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <h4 className="text-sm font-semibold text-slate-800">
-            Cierre del despliegue
+            Cierre del seguimiento
           </h4>
-          <DespliegueCierreForm
+          <SeguimientoCierreForm
             items={abierta.items}
             materiales={descripcionPorMaterial}
             onSubmit={(payload) => {
@@ -141,16 +180,17 @@ export default function DesplieguePanel({ equipoId }: { equipoId: number }) {
 
         <ConfirmDialog
           open={cierreConfirmOpen}
-          title="Cerrar despliegue"
+          title="Cerrar seguimiento"
           message="Se registrarán los sobrantes y el consumo se descontará del inventario del equipo. ¿Confirmar?"
           confirmLabel="Confirmar"
           onConfirm={() => {
             if (cierrePendiente) {
               cerrarMut.mutate(
-                { despliegueId: abierta.id, payload: cierrePendiente },
+                { seguimientoId: abierta.id, payload: cierrePendiente },
                 {
                   onSuccess: () => {
-                    pushToast('Despliegue cerrado correctamente')
+                    pushToast('Seguimiento cerrado correctamente')
+                    setActaConsumoEquipoId(equipoId)
                     setCierreConfirmOpen(false)
                     setCierrePendiente(null)
                   },
@@ -168,10 +208,11 @@ export default function DesplieguePanel({ equipoId }: { equipoId: number }) {
     )
   }
 
-  // ── Sin despliegue abierto: apertura de nueva lista ───────────────────────
+  // ── Sin seguimiento abierto: apertura de nueva lista ───────────────────────
 
   return (
     <div className="space-y-4">
+      {avisoActa}
       {inventarioQuery.isLoading && (
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
           <p className="text-slate-500">Cargando inventario del equipo...</p>
@@ -191,14 +232,13 @@ export default function DesplieguePanel({ equipoId }: { equipoId: number }) {
 
       {!inventarioQuery.isLoading && !inventarioQuery.isError && (
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <h3 className="text-base font-semibold text-slate-800">
-            Nueva lista de despliegue
-          </h3>
-          <DespliegueNuevaListaForm
+          <SeguimientoNuevaListaForm
             materiales={inventarioQuery.data ?? []}
+            isLoading={inventarioQuery.isFetching}
+            editable={!crearMut.isPending}
             onSubmit={(payload) =>
               crearMut.mutate(payload, {
-                onSuccess: () => pushToast('Despliegue creado'),
+                onSuccess: () => pushToast('Seguimiento creado'),
                 onError: (err) => pushError(errorMessage(err)),
               })
             }

@@ -1,26 +1,33 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
-import { Download } from 'lucide-react'
 import { listEquipos } from '../services/equipos'
-import { descargarReporteCsv } from '../services/reportes'
-import { useReporteDespliegues } from '../hooks/useReporteDespliegues'
-import { useToast } from '../hooks/useToasts'
+import { useExportarReporte, useReporteActas } from '../hooks/useReportes'
+import Tabs from '../components/Tabs'
+import ReporteSubseccion from '../components/ReporteSubseccion'
+import ReporteConsumoTable from '../components/ReporteConsumoTable'
+import ReporteEntregaTable from '../components/ReporteEntregaTable'
 import type { ReporteParams } from '../types'
 
 // ============================================================================
-// REPORTES — actividad de DESPLIEGUES (REQ-REPORT-001, FASE 7)
+// REPORTES — subsecciones ENTREGA y CONSUMO (REQ-P2-REP-005)
 //
-// Contrato real GET /api/v1/reportes/despliegues. La vista consume el
-// reporte TAL CUAL lo sirve el backend (format=json para la tabla y
-// format=csv vía servicio de descarga); el frontend no agrega ni transforma
-// datos.
+// Contenedor de la vista: gestiona pestaña activa y filtros (estado de UX) y
+// consume la capa de estado:
+//  - useReporteActas(tipo, filtros)  → GET /reportes/{entrega|consumo}
+//    ?formato=json: las actas persistidas por PostgreSQL (trigger al confirmar
+//    TEAMS / cierre de seguimiento) se recargan al invalidarse sus queries.
+//  - useExportarReporte(tipo)        → descarga XLSX (Normal / Extenso) y su
+//    `exportStatus` (idle|loading|success|error con httpStatus y detalle).
+// El frontend no agrega ni transforma datos del reporte.
 // ============================================================================
 
-const BADGE_ESTADO: Record<string, string> = {
-  ABIERTA: 'bg-amber-100 text-amber-700',
-  CERRADA: 'bg-green-100 text-green-700',
-}
+const SUBSECCIONES = [
+  { value: 'entrega', label: 'Entrega' },
+  { value: 'consumo', label: 'Consumo' },
+] as const
+
+type Subseccion = (typeof SUBSECCIONES)[number]['value']
 
 function errorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
@@ -34,13 +41,30 @@ function errorMessage(error: unknown): string {
   return 'Ocurrió un error'
 }
 
-export default function Reportes() {
-  const { pushToast, pushError } = useToast()
+/** Props de navegación (opcionales): permiten llegar desde el aviso de acta
+ *  generada (Transferencias / Seguimiento) directo a la subsección correcta,
+ *  pre-filtrada por el equipo implicado. */
+interface ReportesProps {
+  initialSub?: string
+  initialEquipoId?: number
+}
 
-  const [equipoId, setEquipoId] = useState<number | null>(null)
+function subseccionInicial(sub?: string): Subseccion {
+  return sub === 'consumo' ? 'consumo' : 'entrega'
+}
+
+export default function Reportes({
+  initialSub,
+  initialEquipoId,
+}: ReportesProps = {}) {
+  const [subseccion, setSubseccion] = useState<Subseccion>(
+    subseccionInicial(initialSub),
+  )
+  const [equipoId, setEquipoId] = useState<number | null>(
+    initialEquipoId ?? null,
+  )
   const [desde, setDesde] = useState('')
   const [hasta, setHasta] = useState('')
-  const [csvLoading, setCsvLoading] = useState(false)
 
   const { data: equipos = [] } = useQuery({
     queryKey: ['equipos'],
@@ -48,132 +72,73 @@ export default function Reportes() {
   })
 
   // Filtros opcionales (equipo / rango de fechas). El contrato no exige
-  // ninguno: sin filtros el reporte es global.
-  const filtros = useMemo(() => {
-    const p: { equipo_id?: number; desde?: string; hasta?: string } = {}
+  // ninguno: sin filtros el reporte es global. El formato lo fija el servicio.
+  const params: ReporteParams = useMemo(() => {
+    const p: ReporteParams = {}
     if (equipoId !== null) p.equipo_id = equipoId
     if (desde !== '') p.desde = desde
     if (hasta !== '') p.hasta = hasta
     return p
   }, [equipoId, desde, hasta])
 
-  const params: ReporteParams = useMemo(
-    () => ({ ...filtros, format: 'json' }),
-    [filtros],
-  )
-
   const {
-    data: despliegues = [],
+    data: actas = [],
     isLoading,
     isError,
     error,
-  } = useReporteDespliegues(params)
+  } = useReporteActas(subseccion, params)
 
-  const handleExportar = async () => {
-    setCsvLoading(true)
-    try {
-      await descargarReporteCsv(filtros)
-      pushToast('Reporte CSV descargado')
-    } catch (err) {
-      pushError(errorMessage(err))
-    } finally {
-      setCsvLoading(false)
-    }
+  const exportEntrega = useExportarReporte('entrega')
+  const exportConsumo = useExportarReporte('consumo')
+  const exportActivo = subseccion === 'entrega' ? exportEntrega : exportConsumo
+
+  // Un resultado de exportación (éxito/error) pertenece a los filtros con los
+  // que se pidió: al cambiarlos se limpia para no inducir a error.
+  const reiniciarExportaciones = () => {
+    exportEntrega.reiniciar()
+    exportConsumo.reiniciar()
   }
 
-  // Una fila por ítem reportado; despliegue sin ítems → fila con "—".
-  const filas = useMemo(() => {
-    const resultado: {
-      despliegue: (typeof despliegues)[number]
-      item: (typeof despliegues)[number]['items'][number] | null
-    }[] = []
-    for (const d of despliegues) {
-      if (d.items.length === 0) {
-        resultado.push({ despliegue: d, item: null })
-      } else {
-        for (const item of d.items) {
-          resultado.push({ despliegue: d, item })
-        }
-      }
-    }
-    return resultado
-  }, [despliegues])
+  const equiposActivos = equipos.filter((e) => e.is_active)
+  const filtrosProps = {
+    equipos: equiposActivos,
+    equipoId,
+    desde,
+    hasta,
+    onEquipoChange: (id: number | null) => {
+      setEquipoId(id)
+      reiniciarExportaciones()
+    },
+    onDesdeChange: (valor: string) => {
+      setDesde(valor)
+      reiniciarExportaciones()
+    },
+    onHastaChange: (valor: string) => {
+      setHasta(valor)
+      reiniciarExportaciones()
+    },
+  }
 
-  return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-semibold text-slate-800">
-        Reportes — Actividad de Despliegues
-      </h2>
+  // Exportar solo tiene sentido con un listado cargado y no vacío; en los demás
+  // casos el botón queda deshabilitado CON motivo visible (sin botones mudos).
+  const motivoSinExportar = isLoading
+    ? 'Cargando actas…'
+    : isError
+      ? 'No se pudo cargar el listado de actas, por lo que no es posible exportar.'
+      : actas.length === 0
+        ? 'No hay actas para los filtros seleccionados; no hay nada que exportar.'
+        : undefined
 
-      {/* Filtros + exportación */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-48 flex-1">
-            <label
-              htmlFor="reportes-equipo"
-              className="text-xs font-semibold uppercase tracking-wide text-slate-400"
-            >
-              Equipo
-            </label>
-            <select
-              id="reportes-equipo"
-              value={equipoId ?? ''}
-              onChange={(e) =>
-                setEquipoId(e.target.value === '' ? null : Number(e.target.value))
-              }
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            >
-              <option value="">Todos</option>
-              {equipos
-                .filter((e) => e.is_active)
-                .map((e) => (
-                  <option key={e.equipo_id} value={e.equipo_id}>
-                    {e.nombre}
-                  </option>
-                ))}
-            </select>
-          </div>
-          <div>
-            <label
-              htmlFor="reportes-desde"
-              className="text-xs font-semibold uppercase tracking-wide text-slate-400"
-            >
-              Desde
-            </label>
-            <input
-              id="reportes-desde"
-              type="date"
-              value={desde}
-              onChange={(e) => setDesde(e.target.value)}
-              className="mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="reportes-hasta"
-              className="text-xs font-semibold uppercase tracking-wide text-slate-400"
-            >
-              Hasta
-            </label>
-            <input
-              id="reportes-hasta"
-              type="date"
-              value={hasta}
-              onChange={(e) => setHasta(e.target.value)}
-              className="mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleExportar}
-            disabled={isLoading || csvLoading}
-            className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            <Download className="h-4 w-4" /> Exportar CSV
-          </button>
-        </div>
-      </div>
+  const exportProps = {
+    onExportNormal: () => exportActivo.exportar('normal', params),
+    onExportExtenso: () => exportActivo.exportar('extenso', params),
+    exportDisabled: motivoSinExportar !== undefined,
+    exportDisabledReason: motivoSinExportar,
+    exportStatus: exportActivo.status,
+  }
 
+  const contenido = (
+    <>
       {isLoading && (
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
           <p className="text-slate-500">Cargando reporte...</p>
@@ -183,99 +148,57 @@ export default function Reportes() {
       {isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4">
           <p className="text-red-700">
-            No se pudo cargar el reporte de despliegues.
+            No se pudo cargar el reporte de {subseccion}.
           </p>
           <p className="mt-1 text-sm text-red-600">{errorMessage(error)}</p>
         </div>
       )}
 
-      {!isLoading && !isError && (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-2">Despliegue</th>
-                <th className="px-4 py-2">Fecha</th>
-                <th className="px-4 py-2">Equipo</th>
-                <th className="px-4 py-2">Estado</th>
-                <th className="px-4 py-2">Material</th>
-                <th className="px-4 py-2">Categoría</th>
-                <th className="px-4 py-2">U.M.</th>
-                <th className="px-4 py-2">Tomada</th>
-                <th className="px-4 py-2">Sobrante</th>
-                <th className="px-4 py-2">Consumida</th>
-                <th className="px-4 py-2">Usuario</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filas.map(({ despliegue: d, item }) => (
-                <tr
-                  key={`${d.despliegue_id}-${item?.material_id ?? 'sin-items'}`}
-                  className="hover:bg-slate-50"
-                >
-                  <td className="px-4 py-2 font-mono text-slate-600">
-                    #{d.despliegue_id}
-                  </td>
-                  <td className="px-4 py-2 text-slate-700">
-                    {d.fecha.slice(0, 10)}
-                  </td>
-                  <td className="px-4 py-2 text-slate-700">{d.equipo_nombre}</td>
-                  <td className="px-4 py-2">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                        BADGE_ESTADO[d.estado] ?? 'bg-slate-100 text-slate-700'
-                      }`}
-                    >
-                      {d.estado}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2">
-                    {item ? (
-                      <div>
-                        <p className="font-mono text-xs text-slate-500">
-                          {item.codigo ?? '—'}
-                        </p>
-                        <p className="text-slate-700">{item.descripcion}</p>
-                      </div>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-slate-600">
-                    {item?.categoria ?? '—'}
-                  </td>
-                  <td className="px-4 py-2 text-slate-500">
-                    {item?.um ?? '—'}
-                  </td>
-                  <td className="px-4 py-2 font-semibold text-slate-700">
-                    {item ? item.cantidad_tomada.toLocaleString('es-MX') : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-slate-700">
-                    {item
-                      ? item.cantidad_sobrante != null
-                        ? item.cantidad_sobrante.toLocaleString('es-MX')
-                        : '—'
-                      : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-slate-700">
-                    {item
-                      ? item.cantidad_consumida != null
-                        ? item.cantidad_consumida.toLocaleString('es-MX')
-                        : '—'
-                      : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-slate-700">{d.usuario}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filas.length === 0 && (
-            <p className="p-6 text-center text-sm text-slate-500">
-              Sin actividad de despliegues
-            </p>
-          )}
-        </div>
-      )}
+      {!isLoading &&
+        !isError &&
+        (subseccion === 'entrega' ? (
+          <ReporteEntregaTable actas={actas} />
+        ) : (
+          <ReporteConsumoTable actas={actas} />
+        ))}
+    </>
+  )
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-2xl font-semibold text-slate-800">Reportes</h2>
+
+      <Tabs
+        tabs={SUBSECCIONES}
+        value={subseccion}
+        onChange={setSubseccion}
+        idPrefix="reportes"
+        ariaLabel="Subsecciones de reportes"
+      >
+        {subseccion === 'entrega' && (
+          <ReporteSubseccion
+            tipo="entrega"
+            idPrefix="reportes-entrega"
+            descripcion="Actas de Entrega: se generan al confirmar un movimiento TEAMS."
+            {...filtrosProps}
+            {...exportProps}
+          >
+            {contenido}
+          </ReporteSubseccion>
+        )}
+
+        {subseccion === 'consumo' && (
+          <ReporteSubseccion
+            tipo="consumo"
+            idPrefix="reportes-consumo"
+            descripcion="Actas de Consumo: se generan al cerrar un seguimiento."
+            {...filtrosProps}
+            {...exportProps}
+          >
+            {contenido}
+          </ReporteSubseccion>
+        )}
+      </Tabs>
     </div>
   )
 }

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import DespliegueCierreForm from '../DespliegueCierreForm'
-import type { DespliegueItem } from '../../types'
+import SeguimientoCierreForm from '../SeguimientoCierreForm'
+import type { SeguimientoItem } from '../../types'
 
-const items: DespliegueItem[] = [
+const items: SeguimientoItem[] = [
   {
     id: 1,
     material_id: 10,
@@ -28,7 +28,7 @@ const materiales: Record<number, string> = {
 
 function renderForm(onSubmit = vi.fn()) {
   return render(
-    <DespliegueCierreForm
+    <SeguimientoCierreForm
       items={items}
       materiales={materiales}
       onSubmit={onSubmit}
@@ -37,7 +37,7 @@ function renderForm(onSubmit = vi.fn()) {
   )
 }
 
-describe('DespliegueCierreForm render', () => {
+describe('SeguimientoCierreForm render', () => {
   it('renderiza una fila por ítem con descripción, tomada y sobrante default 0', () => {
     renderForm()
 
@@ -54,7 +54,7 @@ describe('DespliegueCierreForm render', () => {
   })
 })
 
-describe('DespliegueCierreForm validación', () => {
+describe('SeguimientoCierreForm validación', () => {
   it('sobrante > tomada → error y no llama onSubmit', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
@@ -64,7 +64,7 @@ describe('DespliegueCierreForm validación', () => {
     const inputs = screen.getAllByLabelText(/Sobrante/i)
     await user.clear(inputs[0])
     await user.type(inputs[0], '5')
-    await user.click(screen.getByRole('button', { name: 'Cerrar Despliegue' }))
+    await user.click(screen.getByRole('button', { name: 'Cerrar Seguimiento' }))
 
     expect(onSubmit).not.toHaveBeenCalled()
     expect(
@@ -86,7 +86,7 @@ describe('DespliegueCierreForm validación', () => {
       screen.getByLabelText(/Observaciones del cierre/i),
       'Cierre de obra',
     )
-    await user.click(screen.getByRole('button', { name: 'Cerrar Despliegue' }))
+    await user.click(screen.getByRole('button', { name: 'Cerrar Seguimiento' }))
 
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onSubmit).toHaveBeenCalledWith({

@@ -7,6 +7,7 @@ import InventarioPorEquipos from '../pages/InventarioPorEquipos'
 import Transferencias from '../pages/Transferencias'
 import Reportes from '../pages/Reportes'
 import Auditoria from '../pages/Auditoria'
+import { NavigationContext } from '../hooks/navigationContext'
 import type { NavigationTarget } from '../types'
 
 const LABELS: Record<string, string> = {
@@ -16,6 +17,13 @@ const LABELS: Record<string, string> = {
   transferencias: 'Transferencias',
   reportes: 'Reportes',
   auditoria: 'Auditoría',
+}
+
+const SUB_LABELS: Record<string, string> = {
+  paquete: 'Paquete',
+  'en-uso': 'En Uso',
+  entrega: 'Entrega',
+  consumo: 'Consumo',
 }
 
 export default function MainLayout() {
@@ -30,27 +38,35 @@ export default function MainLayout() {
   }
 
   const breadcrumb = route.sub
-    ? `${LABELS[route.page] ?? ''} / ${route.sub === 'paquete' ? 'Paquete' : 'En Uso'}`
+    ? `${LABELS[route.page] ?? ''} / ${SUB_LABELS[route.sub] ?? route.sub}`
     : LABELS[route.page] ?? ''
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-100">
-      <Sidebar current={route} onNavigate={setRoute} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Header breadcrumb={breadcrumb} onSearch={handleSearch} />
-        <main className="flex-1 overflow-y-auto p-6">
-          {route.page === 'seccion-general' && (
-            <SeccionGeneral globalSearch={globalSearch} />
-          )}
-          {route.page === 'fibra-optica' && (
-            <FibraOptica sub={route.sub ?? 'paquete'} />
-          )}
-          {route.page === 'inventario-por-equipos' && <InventarioPorEquipos />}
-          {route.page === 'transferencias' && <Transferencias />}
-          {route.page === 'reportes' && <Reportes />}
-          {route.page === 'auditoria' && <Auditoria />}
-        </main>
+    <NavigationContext.Provider value={setRoute}>
+      <div className="flex h-screen overflow-hidden bg-slate-100">
+        <Sidebar current={route} onNavigate={setRoute} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Header breadcrumb={breadcrumb} onSearch={handleSearch} />
+          <main className="flex-1 overflow-y-auto p-6">
+            {route.page === 'seccion-general' && (
+              <SeccionGeneral globalSearch={globalSearch} />
+            )}
+            {route.page === 'fibra-optica' && (
+              <FibraOptica sub={route.sub ?? 'paquete'} />
+            )}
+            {route.page === 'inventario-por-equipos' && <InventarioPorEquipos />}
+            {route.page === 'transferencias' && <Transferencias />}
+            {route.page === 'reportes' && (
+              <Reportes
+                key={`${route.sub ?? ''}-${route.equipoId ?? ''}`}
+                initialSub={route.sub}
+                initialEquipoId={route.equipoId}
+              />
+            )}
+            {route.page === 'auditoria' && <Auditoria />}
+          </main>
+        </div>
       </div>
-    </div>
+    </NavigationContext.Provider>
   )
 }
