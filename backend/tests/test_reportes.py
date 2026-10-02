@@ -401,6 +401,44 @@ async def test_documento_consolidado_concatena_lineas_sin_agregar(
     assert filas == {("Mat A", 3), ("Mat B", 4)}
 
 
+async def test_REQ_P2_REP_001_cap_de_lineas_xlsx_422(
+    client: AsyncClient, monkeypatch
+) -> None:
+    """B-1: el documento XLSX tiene un límite defensivo de líneas; al
+    excederse responde 422 sin generar el workbook."""
+    from app.services import reportes as reportes_svc
+
+    # Un movimiento TEAMS con 3 líneas -> acta con 3 items.
+    materiales = [
+        await crear_material(client, descripcion=f"Cap linea {i}")
+        for i in range(3)
+    ]
+    for m in materiales:
+        await carga_inicial(client, material_id=m["id_lista"], cantidad=100)
+    equipo = await crear_equipo(client, nombre="Equipo Cap")
+    resp = await client.post(
+        "/api/v1/movimientos",
+        json={
+            "tipo_movimiento": "TEAMS",
+            "origen_almacen_id": 1,
+            "destino_equipo_id": equipo["equipo_id"],
+            "detalle": [
+                {"material_id": m["id_lista"], "cantidad": 10}
+                for m in materiales
+            ],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    await procesar(client, resp.json()["id"])
+
+    monkeypatch.setattr(reportes_svc, "MAX_LINEAS_XLSX", 2)
+    resp = await client.get("/api/v1/reportes/entrega?formato=normal")
+    assert resp.status_code == 422, resp.text
+    assert "límite de líneas" in resp.json()["error"]["message"]
+    monkeypatch.undo()
+    assert (await client.get("/api/v1/reportes/entrega?formato=normal")).status_code == 200
+
+
 async def test_descripcion_maliciosa_no_se_escribe_como_formula(
     client: AsyncClient,
 ) -> None:

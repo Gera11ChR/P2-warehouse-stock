@@ -30,6 +30,7 @@ interno de los tests de concurrencia es el requerido por la tarea.
 """
 
 import json
+import os
 import threading
 
 import psycopg
@@ -38,7 +39,9 @@ from psycopg.errors import RaiseException
 
 # URL nativa psycopg a p2_test (misma BD que la suite de la app; el
 # bootstrap de sql_tests/conftest.py aplica `alembic upgrade head`).
-PSYCOPG_TEST_URL = "postgresql://p2admin:***REDACTED***@127.0.0.1:5432/p2_test"
+PSYCOPG_TEST_URL = os.environ["P2_TEST_DATABASE_URL"].replace(
+    "postgresql+psycopg://", "postgresql://"
+)
 
 P0001 = "P0001"
 

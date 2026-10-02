@@ -22,14 +22,17 @@ import pytest
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
-ADMIN_DB_URL = os.environ.get(
-    "P2_ADMIN_DATABASE_URL",
-    "postgresql://p2admin:***REDACTED***@127.0.0.1:5432/p2",
-)
-TEST_DB_URL = os.environ.get(
-    "P2_TEST_DATABASE_URL",
-    "postgresql+psycopg://p2admin:***REDACTED***@127.0.0.1:5432/p2_test",
-)
+# Sin credenciales hardcodeadas (A-1, dictamen sec-ops): las URLs las
+# provee el entorno (runner) y su ausencia ABORTA la suite.
+try:
+    ADMIN_DB_URL = os.environ["P2_ADMIN_DATABASE_URL"]
+    TEST_DB_URL = os.environ["P2_TEST_DATABASE_URL"]
+except KeyError as exc:
+    raise RuntimeError(
+        f"Variable de entorno obligatoria ausente: {exc}. "
+        "Ejecuta la suite vía el runner que exporta las URLs derivadas de "
+        "backend/.env (nunca las hardcodees aquí)."
+    ) from exc
 
 # URL nativa psycopg (sin el driver "+psycopg" de SQLAlchemy).
 PSYCOPG_TEST_URL = TEST_DB_URL.replace("postgresql+psycopg://", "postgresql://")
@@ -78,7 +81,7 @@ TABLAS_DOMINIO = [
 
 
 def pytest_configure(config: object) -> None:
-    """Aplica la cadena de migraciones completa (0001 -> 0020) sobre
+    """Aplica la cadena de migraciones completa (0001 -> 0021) sobre
     p2_test antes de recolectar las pruebas — valida las migraciones de la
     Fase 1 en cada ejecución."""
     env = {**os.environ, "P2_DATABASE_URL": TEST_DB_URL}
