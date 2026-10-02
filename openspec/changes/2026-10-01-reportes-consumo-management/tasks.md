@@ -138,7 +138,7 @@ Flujo **Backend First** y **estrictamente secuencial**.
 
 ## Fase 3 — Seguridad, pruebas y certificación de contrato (GATE BLOQUEANTE)
 
-- [ ] **T3.1 `@sec-ops`** (secuencial, tras T2):
+- [x] **T3.1 `@sec-ops`** (secuencial, tras T2):
   > "Audita la seguridad del backend del cambio 2026-10-01...: control de acceso a reportes y
   > operadores (roles), inyección SQL en llamadas a SP, **path traversal en plantillas
   > (prioridad Alta)**, fórmula injection en XLSX, `Content-Disposition`/content-type en
