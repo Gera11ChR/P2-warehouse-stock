@@ -31,30 +31,48 @@ Flujo **Backend First** y **estrictamente secuencial**.
   > fn_sumar_cantidad / fn_mover_material / fn_agregar_todo_seguimiento y su encaje en la
   > delegación transaccional; (4) riesgos de romper el contrato existente. Entrega un dictamen
   > APROBADO/CONDICIONADO con lista de ajustes. NO modifiques código."
-- [ ] **T0.2.** Incorporar ajustes del dictamen a proposal/EARS si los hubiera. Commit.
+- [ ] **T0.2.** Incorporar a proposal/EARS/tasks el dictamen de `@arq-reviewer` (ajustes
+  Críticos 1–3, Altos 4–7, Medios 8–11: trigger del Acta de Entrega en la misma transacción,
+  inventario de objetos dependientes del renombre + inmutabilidad del ledger, contrato con
+  summaries/eventos/glosario, semántica dispersa de `Mover`, diferenciación `SUMA_CANTIDAD`
+  vs `AJUSTE_*`, idempotencia, re-anclado de merges/imagen en desborde, versiones fijadas de
+  openpyxl/Pillow, snapshot jsonb del acta, sanitización de descargas). Commit.
 
 ## Fase 1 — Base de Datos (`@dba-guard`)
 
 - [ ] **T1.1** Inspeccionar el esquema real (solo lectura) para confirmar: nombre del estado
   transaccional TEAMS (`COMPLETED` vs `CONFIRMADO`), estructura de inventarios FO, detalle del
-  seguimiento y `auditoria_eventos`. Resolver las preguntas abiertas de EARS.md.
-- [ ] **T1.2** Migración Alembic de renombre físico: `fn_crear_despliegue` →
-  `fn_crear_seguimiento`; `fn_cerrar_despliegue` → `fn_cerrar_seguimiento`; tablas/columnas y
-  constraints asociadas a la nomenclatura CONSUMO/seguimiento.
+  seguimiento, `auditoria_eventos` (taxonomía de tipos de evento), objetos dependientes de la
+  nomenclatura DESPLIEGUE (vistas, triggers, FKs, secuencias, defaults) y **versión real de
+  PostgreSQL**. Resolver las preguntas abiertas de EARS.md.
+- [ ] **T1.2** Migración Alembic **manual** de renombre físico: `fn_crear_despliegue` →
+  `fn_crear_seguimiento`; `fn_cerrar_despliegue` → `fn_cerrar_seguimiento`; tablas/columnas,
+  vistas, triggers, claves foráneas, secuencias y defaults asociados a la nomenclatura
+  CONSUMO/seguimiento. **Prohibido** actualizar filas históricas de `auditoria_eventos`
+  (ledger inmutable; mapeo legacy↔nuevo solo en lectura). No confiar en Alembic autogenerate.
 - [ ] **T1.3** Migración Alembic: `fn_sumar_cantidad(...)` — suma cantidad al stock (General y
-  FO), inserta movimiento **inmutable** en `auditoria_eventos`, todo en una transacción.
-  Validaciones: cantidad > 0, material activo, registro de inventario existente.
+  FO), inserta movimiento **inmutable** en `auditoria_eventos` con evento `SUMA_CANTIDAD`
+  (diferenciado de `AJUSTE_*`), todo en una transacción. Validaciones: cantidad > 0, material
+  activo, registro de inventario existente. **Guarda de idempotencia** (clave de operación)
+  contra doble ejecución.
 - [ ] **T1.4** Migración Alembic: `fn_mover_material(...)` — descuenta origen, acredita destino,
-  audita; rechaza destino = origen, cantidad ≤ 0 o cantidad > stock origen. Atomicidad total.
-- [ ] **T1.5** Migración Alembic: `fn_agregar_todo_seguimiento(...)` — inserción atómica de
-  todas las líneas con stock del inventario del equipo en el seguimiento ABIERTA activo.
+  audita con evento `MOVIMIENTO_INVENTARIO`; rechaza destino = origen, cantidad ≤ 0 o cantidad >
+  stock origen. Atomicidad total + guarda de idempotencia. **Documentar la decisión** de
+  semántica dispersa: crear fila destino solo con stock > 0; eliminar (o conservar) fila origen
+  con stock 0; validación de coherencia U.M./catálogo entre origen y destino.
+- [ ] **T1.5** Migración Alembic: `fn_agregar_todo_seguimiento(...)` — inserción atómica e
+  **idempotente** de todas las líneas con stock del inventario del equipo en el seguimiento
+  ABIERTA activo (doble invocación no duplica líneas). Evento de auditoría propio `AGREGAR_TODO`.
 - [ ] **T1.6** Migración Alembic: `fn_cerrar_seguimiento` extendido para persistir el registro
-  del **Acta de Consumo** (conso consumido = tomada − sobrante, calculado en SQL) y nuevos
-  tipos de evento de auditoría (p. ej. `ACTA_ENTREGA_GENERADA`, `ACTA_CONSUMO_GENERADA`,
-  `SUMA_CANTIDAD`, `MOVIMIENTO_INVENTARIO`).
+  del **Acta de Consumo** (consumo = tomada − sobrante, calculado en SQL, con **snapshot jsonb**)
+  y nuevos tipos de evento (`ACTA_ENTREGA_GENERADA`, `ACTA_CONSUMO_GENERADA`). **Trigger/SP**:
+  el registro del **Acta de Entrega** ocurre **en la misma transacción SQL** de la confirmación
+  TEAMS (transición al estado transaccional real), con snapshot jsonb; nunca como paso HTTP
+  posterior.
 - [ ] **T1.7** Pruebas SQL secuenciales (psql / pytest de migraciones): atomicidad (rollback
   ante fallo inducido), concurrencia con `FOR UPDATE`, inmutabilidad de `auditoria_eventos`,
-  casos borde (cantidad 0/negativa, destino=origen, stock insuficiente).
+  idempotencia (doble invocación de los tres SP nuevos), casos borde (cantidad 0/negativa,
+  destino=origen, stock insuficiente).
 - [ ] **T1.8** Commit fase BD. Revisión de `@dba-guard`:
   > "Audita las migraciones y funciones SQL de la Fase 1 del cambio 2026-10-01... Verifica
   > atomicidad, cero aritmética en capa de aplicación, inmutabilidad de auditoria_eventos y
@@ -62,29 +80,39 @@ Flujo **Backend First** y **estrictamente secuencial**.
 
 ## Fase 2 — Backend FastAPI (`@coder`)
 
-- [ ] **T2.1** Agregar dependencias `openpyxl` y `Pillow` a `backend/pyproject.toml`
-  (requisito funcional: conservar imagen embebida de las plantillas).
+- [ ] **T2.1** Agregar dependencias `openpyxl` y `Pillow` a `backend/pyproject.toml` con
+  **versiones fijadas**; documentar que Pillow es requisito para que openpyxl conserve la
+  imagen embebida de las plantillas; verificar licencias (MIT/HPND); incluir un test del
+  servicio de reportes que **falle si Pillow no está instalado**.
 - [ ] **T2.2** Servicio de plantillas (`PlantillaReporte`): carga de
   `1 ACTA DE REPORTE NORMAL.xlsx` / `2 ACTA DE REPORTE EXTENSO.xlsx`, inyección de datos con
-  OpenPyXL, copia de estilo al insertar filas de desborde (Normal 10–25, Extenso 9–28),
-  desplazamiento de bloques de firma, título "ACTA DE CONSUMO" cuando corresponda,
-  preservación del logo embebido, sanitización anti-fórmula de celdas y nombres de archivo.
+  OpenPyXL, copia de estilo al insertar filas de desborde (Normal filas 10–25, Extenso 9–28),
+  **re-anclado manual de merges y de la imagen** (`drawing1.xml` no se desplaza solo con
+  `insert_rows`), desplazamiento de bloques de firma, título "ACTA DE CONSUMO" cuando
+  corresponda, preservación del logo embebido, sanitización anti-fórmula de celdas y nombres
+  de archivo. Rutas de plantillas como **constantes del servidor** (nunca input de usuario).
 - [ ] **T2.3** Renombre de capa API: rutas y schemas de `/equipos/{equipo_id}/despliegues*` →
   `/equipos/{equipo_id}/seguimientos*` (crear, listar, obtener, cerrar). Sin alias legacy.
 - [ ] **T2.4** Endpoint `POST /api/v1/equipos/{equipo_id}/seguimientos/{seguimiento_id}/agregar-todo`
-  → llama a `fn_agregar_todo_seguimiento` (sin lógica de negocio en Python).
-- [ ] **T2.5** Endpoints de operadores rápidos (delegación total a SP):
-  - `POST /api/v1/ajustes/sumar-cantidad` → `fn_sumar_cantidad` (códigos 200/400/404).
+  → llama a `fn_agregar_todo_seguimiento` (sin lógica de negocio en Python). Soporta clave de
+  idempotencia en el body/header.
+- [ ] **T2.5** Endpoints de operadores rápidos (delegación total a SP, namespace unificado
+  `/api/v1/inventario/`):
+  - `POST /api/v1/inventario/sumar-cantidad` → `fn_sumar_cantidad` (códigos 200/400/404).
   - `POST /api/v1/inventario/mover` → `fn_mover_material` (códigos 200/400/409/422).
+  - Ambos con clave de idempotencia (doble submit no duplica efectos).
 - [ ] **T2.6** Reportes XLSX: `GET /api/v1/reportes/entrega` y `GET /api/v1/reportes/consumo`
   con `?formato=normal|extenso` (y filtros equipo/desde/hasta). Respuesta
-  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. Se elimina el enum
-  `csv` del reporte legacy `/reportes/despliegues` (ruta reemplazada por `/reportes/consumo`).
-- [ ] **T2.7** Disparo del Acta de Entrega: al confirmar TEAMS y transicionar el movimiento al
-  estado transaccional real (`COMPLETED`, verificado en T1.1), persistir el registro del acta
-  (los datos provienen de la transacción SQL; el XLSX se genera bajo demanda en T2.6).
-- [ ] **T2.8** Actualizar `openspec/openspec.yaml` (REQ-P2-CTR-001): mandatory_functions y
-  paths del contrato.
+  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` con `Content-Disposition`
+  seguro. Se elimina el enum `csv` del reporte legacy `/reportes/despliegues` (ruta reemplazada
+  por `/reportes/consumo`).
+- [ ] **T2.7** Acta de Entrega: el registro se persiste **dentro de la transacción SQL** de la
+  confirmación TEAMS (trigger/SP de T1.6), con snapshot jsonb. FastAPI solo expone la
+  exportación bajo demanda del XLSX desde ese snapshot (sin recalcular desde stock actual).
+- [ ] **T2.8** Actualizar `openspec/openspec.yaml` (REQ-P2-CTR-001): mandatory_functions, paths
+  renombrados **con summaries/descripciones y eventos de auditoría**, eliminación del enum
+  `csv`, endpoints de operadores rápidos bajo `/api/v1/inventario/` y **glosario de
+  nomenclatura** (CONSUMO / seguimiento / entrega).
 - [ ] **T2.9** Commit fase Backend. Prompt `@coder`:
   > "Implementa la Fase 2 del cambio 2026-10-01-reportes-consumo-management conforme a
   > EARS.md y tasks.md. Respeta: cero aritmética de stock en Python, delegación total a SP,
@@ -94,13 +122,15 @@ Flujo **Backend First** y **estrictamente secuencial**.
 
 - [ ] **T3.1 `@sec-ops`** (secuencial, tras T2):
   > "Audita la seguridad del backend del cambio 2026-10-01...: control de acceso a reportes y
-  > operadores (roles), inyección SQL en llamadas a SP, path traversal en plantillas/nombres de
-  > archivo, fórmula injection en XLSX, exposición de datos de auditoría. Entrega hallazgos
-  > priorizados. NO modifiques código."
+  > operadores (roles), inyección SQL en llamadas a SP, **path traversal en plantillas
+  > (prioridad Alta)**, fórmula injection en XLSX, `Content-Disposition`/content-type en
+  > descargas, exposición de datos de auditoría. Entrega hallazgos priorizados. NO modifiques
+  > código."
 - [ ] **T3.2** Aplicar correcciones de seguridad y re-ejecutar pruebas.
 - [ ] **T3.3 `@tester`** — pytest secuencial: migraciones, SP (atomicidad/rollback),
-  endpoints de operadores, generación de actas Normal/Extenso, desborde de filas, errores
-  400/404/409/422, sin regresiones del resto de la suite.
+  endpoints de operadores **con idempotencia**, generación de actas Normal/Extenso, desborde de
+  filas **verificando que merges + imagen + estilo permanecen intactos tras `insert_rows` en
+  ambas plantillas**, errores 400/404/409/422, sin regresiones del resto de la suite.
 - [ ] **T3.4 `@qa-agent`** — auditoría de contrato (Zero-Drift): implementación vs
   `openspec/openspec.yaml` y EARS.md. Lista de drift (si existiera) y dictamen.
 - [ ] **T3.5** **CERTIFICACIÓN DEL CONTRATO BACKEND:** pytest 100% verde + dictamen QA sin
@@ -140,11 +170,15 @@ Flujo **Backend First** y **estrictamente secuencial**.
 
 ## Definición de Terminado (DoD)
 
-- [ ] Renombre físico CONSUMO/seguimiento completo en BD, API y UI.
-- [ ] Reportes XLSX sobre plantillas corporativas (Normal y Extenso) con estilo y logo intactos.
-- [ ] Acta de Entrega automática al estado transaccional de entrega TEAMS y Acta de Consumo
-  al cierre del seguimiento.
-- [ ] `+Cantidad` y `Mover` operativos vía SP atómicos con auditoría inmutable.
-- [ ] Contrato `openspec/openspec.yaml` actualizado y certificado sin drift.
+- [ ] Renombre físico CONSUMO/seguimiento completo en BD, API y UI, con objetos dependientes
+  cubiertos e `auditoria_eventos` histórico intacto (ledger inmutable).
+- [ ] Reportes XLSX sobre plantillas corporativas (Normal y Extenso) con estilo, merges y logo
+  intactos, incluido el desborde de filas.
+- [ ] Acta de Entrega automática (misma transacción SQL de la confirmación TEAMS, snapshot
+  jsonb) y Acta de Consumo al cierre del seguimiento.
+- [ ] `+Cantidad` y `Mover` operativos vía SP atómicos e idempotentes, con eventos de
+  auditoría diferenciados y namespace unificado `/api/v1/inventario/`.
+- [ ] Contrato `openspec/openspec.yaml` actualizado (summaries, eventos, glosario) y
+  certificado sin drift.
 - [ ] Cero aritmética de stock en Python. Pruebas secuenciales en verde.
 - [ ] Commits solo en `feat/reportes-consumo-management`; ningún merge ejecutado.
