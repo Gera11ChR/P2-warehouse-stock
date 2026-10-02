@@ -64,10 +64,11 @@ _SQL_MOVER_MATERIAL = text(
     ":material_id, :cantidad, :usuario, :clave_idempotencia)"
 )
 # Lectura (solo SELECT) del resultado original de una operación idempotente
-# (REQ-P2-INV-007). La guarda y la escritura de `resultado` viven en el SP.
+# (REQ-P2-INV-007, ligada al ACTOR desde la migración 0021). La guarda y la
+# escritura de `resultado` viven en el SP.
 _SQL_RESULTADO_IDEMPOTENTE = text(
     "SELECT resultado FROM operaciones_idempotencia "
-    "WHERE tipo_operacion = :tipo AND clave = :clave"
+    "WHERE tipo_operacion = :tipo AND clave = :clave AND actor = :actor"
 )
 
 # Código de error de dominio para el reenvío de una clave de idempotencia ya
@@ -133,10 +134,19 @@ async def _mapear_raise_exception(exc: DBAPIError) -> Exception:
         return BusinessRuleError(mensaje, status_code=422)
 
     # ── Idempotencia (REQ-P2-INV-007): reenvío de una clave ya confirmada ─
+    # La clave pertenece a OTRO actor (migración 0021): conflicto sin
+    # divulgación del resultado original.
+    if "ya fue utilizada por otro actor" in mensaje:
+        return BusinessRuleError(mensaje, status_code=409)
+
     if "ya fue ejecutada" in mensaje and "idempotencia" in mensaje:
         return BusinessRuleError(
             mensaje, code=IDEMPOTENT_REPLAY, status_code=409
         )
+
+    # Desborde numérico (SQLSTATE 22003): cantidad/stock fuera de INT4.
+    if "fuera de rango" in mensaje or "out of range" in mensaje.lower():
+        return BusinessRuleError(mensaje, status_code=400)
 
     # ── Operadores rápidos (fn_sumar_cantidad / fn_mover_material) ───────
     if "debe ser mayor que cero" in mensaje:
@@ -187,6 +197,16 @@ async def _mapear_raise_exception(exc: DBAPIError) -> Exception:
         return BusinessRuleError(mensaje, status_code=400)
 
     return BusinessRuleError(mensaje, status_code=422)
+
+
+async def _set_actor(session: AsyncSession, actor: str) -> None:
+    """Atribución del actor vía `set_config('app.actor', ...)` dentro de la
+    MISMA transacción (Constitution 6.2): los SP y el trigger tg_acta_entrega
+    usan current_setting('app.actor') y el evento ACTA_ENTREGA_GENERADA
+    queda atribuido a quien CONFIRMA, no al creador del borrador."""
+    await session.execute(
+        text("SELECT set_config('app.actor', :actor, true)"), {"actor": actor}
+    )
 
 
 async def _prechequear_estado(
@@ -293,6 +313,11 @@ async def _ejecutar(
         sqlstate = _sqlstate(exc)
         if sqlstate == "P0001":
             raise await _mapear_raise_exception(exc) from exc
+        if sqlstate == "22003":
+            raise BusinessRuleError(
+                "La cantidad o el stock resultante excede el rango soportado",
+                status_code=400,
+            ) from exc
         if sqlstate in ("23503", "23505"):
             raise BusinessRuleError(
                 "Conflicto de integridad referencial o de unicidad en la "
@@ -303,14 +328,17 @@ async def _ejecutar(
 
 
 async def procesar_movimiento(
-    session: AsyncSession, *, movimiento_id: int
+    session: AsyncSession, *, movimiento_id: int, usuario: str
 ) -> None:
     """fn_procesar_movimiento: TEAMS/DEVOL atómico (BORRADOR -> CONFIRMADO).
-    El commit lo gobierna el contexto transaccional del router."""
+    El commit lo gobierna el contexto transaccional del router. Si el
+    movimiento es TEAMS, tg_acta_entrega registra el Acta de Entrega en la
+    MISMA transacción, atribuida a `usuario` (quien confirma)."""
     await _prechequear_estado(
         session, movimiento_id=movimiento_id, estado_requerido="BORRADOR",
         operacion="procesar",
     )
+    await _set_actor(session, usuario)
     await _ejecutar(
         session,
         _SQL_PROCESS_MOVEMENT,
@@ -319,13 +347,15 @@ async def procesar_movimiento(
 
 
 async def cancelar_movimiento(
-    session: AsyncSession, *, movimiento_id: int, motivo: str | None
+    session: AsyncSession, *, movimiento_id: int, motivo: str | None, usuario: str
 ) -> None:
-    """fn_cancelar_movimiento: reversión forense (CONFIRMADO -> CANCELADO)."""
+    """fn_cancelar_movimiento: reversión forense (CONFIRMADO -> CANCELADO).
+    La auditoría del evento queda atribuida a `usuario` (quien cancela)."""
     await _prechequear_estado(
         session, movimiento_id=movimiento_id, estado_requerido="CONFIRMADO",
         operacion="cancelar",
     )
+    await _set_actor(session, usuario)
     await _ejecutar(
         session,
         _SQL_CANCEL_MOVEMENT,
@@ -677,13 +707,15 @@ async def cerrar_seguimiento(
 
 
 async def resultado_idempotente(
-    session: AsyncSession, *, tipo: str, clave: str
+    session: AsyncSession, *, tipo: str, clave: str, actor: str
 ) -> dict | None:
-    """Resultado original de una operación idempotente ya confirmada
-    (SOLO LECTURA de `operaciones_idempotencia`; None si la clave no
-    existe). Lo escribe el propio SP en su transacción."""
+    """Resultado original de una operación idempotente ya confirmada POR EL
+    MISMO ACTOR (SOLO LECTURA de `operaciones_idempotencia`; None si la
+    clave no existe o pertenece a otro actor). Lo escribe el propio SP en
+    su transacción."""
     result = await session.execute(
-        _SQL_RESULTADO_IDEMPOTENTE, {"tipo": tipo, "clave": clave}
+        _SQL_RESULTADO_IDEMPOTENTE,
+        {"tipo": tipo, "clave": clave, "actor": actor},
     )
     fila = result.first()
     return None if fila is None else fila[0]

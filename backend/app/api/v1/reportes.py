@@ -84,6 +84,14 @@ async def _reporte(
             status_code=404,
         )
     lineas = reportes_svc.lineas_para_xlsx(tipo, actas)
+    if len(lineas) > reportes_svc.MAX_LINEAS_XLSX:
+        raise BusinessRuleError(
+            "El reporte excede el límite de líneas permitido "
+            f"({reportes_svc.MAX_LINEAS_XLSX}); refine los filtros o exporte "
+            "por acta individual",
+            coordinates=[{"tipo": tipo, "lineas": len(lineas)}],
+            status_code=422,
+        )
     fecha = reportes_svc.fecha_documento(actas)
     # openpyxl es síncrono/CPU-bound: fuera del event loop.
     contenido = await run_in_threadpool(

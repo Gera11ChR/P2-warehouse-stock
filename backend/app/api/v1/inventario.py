@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -16,7 +17,13 @@ from app.schemas.operadores import (
     SumarCantidadOut,
     SumarCantidadRequest,
 )
-from app.security import ActorContext, assert_authenticated, get_current_actor
+from app.models import Seccion
+from app.security import (
+    ActorContext,
+    assert_authenticated,
+    assert_scope,
+    get_current_actor,
+)
 from app.services import inventario, transaccional
 
 router = APIRouter(prefix="/inventario", tags=["inventario"])
@@ -28,12 +35,35 @@ _TIPO_SUMA_CANTIDAD = "SUMA_CANTIDAD"
 _TIPO_MOVIMIENTO_INVENTARIO = "MOVIMIENTO_INVENTARIO"
 
 
+async def _asegurar_scope_general(
+    session: AsyncSession, actor_ctx: ActorContext
+) -> None:
+    """SEC-002 (A-3, dictamen sec-ops): default-deny sobre las secciones
+    GENERAL activas implicadas en `+Cantidad` y `Mover`. El administrador
+    recibe pase directo. Los módulos FO no tienen sección de alcance en el
+    modelo de scopes (espejo de la postura de los endpoints de fibra) y
+    quedan cubiertos por `assert_authenticated`."""
+    if actor_ctx.es_admin:
+        return
+    filas = (
+        await session.execute(
+            select(Seccion.almacen_id).where(
+                Seccion.tipo == "GENERAL", Seccion.is_active.is_(True)
+            )
+        )
+    ).scalars()
+    if filas:
+        assert_scope(actor_ctx, set(filas))
+
+
 async def _ejecutar_idempotente(
     session: AsyncSession,
     *,
     tipo: str,
     clave: str | None,
+    actor_id: str,
     operacion,
+    precheck=None,
 ) -> tuple[dict, bool]:
     """Ejecuta `operacion` (que invoca UN Stored Procedure) en una única
     transacción y devuelve `(resultado, reenvio_idempotente)`.
@@ -48,9 +78,11 @@ async def _ejecutar_idempotente(
     lee. CERO aritmética de stock en Python."""
 
     async def _intento() -> tuple[dict, bool]:
+        if precheck is not None:
+            await precheck()
         if clave is not None:
             previo = await transaccional.resultado_idempotente(
-                session, tipo=tipo, clave=clave
+                session, tipo=tipo, clave=clave, actor=actor_id
             )
             if previo is not None:
                 return previo, True
@@ -64,7 +96,7 @@ async def _ejecutar_idempotente(
             raise
     async with session.begin():
         previo = await transaccional.resultado_idempotente(
-            session, tipo=tipo, clave=clave
+            session, tipo=tipo, clave=clave, actor=actor_id
         )
     if previo is None:  # pragma: no cover - defensivo
         raise BusinessRuleError(
@@ -124,6 +156,10 @@ async def sumar_cantidad(
     única transacción. Idempotente por `clave_idempotencia`."""
     assert_authenticated(actor_ctx)
 
+    async def _precheck() -> None:
+        if payload.destino == "GENERAL":
+            await _asegurar_scope_general(session, actor_ctx)
+
     async def _operar() -> dict:
         nuevo = await transaccional.sumar_cantidad(
             session,
@@ -140,7 +176,9 @@ async def sumar_cantidad(
         session,
         tipo=_TIPO_SUMA_CANTIDAD,
         clave=payload.clave_idempotencia,
+        actor_id=actor_ctx.actor_id,
         operacion=_operar,
+        precheck=_precheck,
     )
     return SumarCantidadOut(
         destino=payload.destino,
@@ -167,6 +205,10 @@ async def mover_material(
     modificar ningún inventario. Idempotente por `clave_idempotencia`."""
     assert_authenticated(actor_ctx)
 
+    async def _precheck() -> None:
+        if payload.origen == "GENERAL" or payload.destino == "GENERAL":
+            await _asegurar_scope_general(session, actor_ctx)
+
     async def _operar() -> dict:
         return await transaccional.mover_material(
             session,
@@ -184,7 +226,9 @@ async def mover_material(
         session,
         tipo=_TIPO_MOVIMIENTO_INVENTARIO,
         clave=payload.clave_idempotencia,
+        actor_id=actor_ctx.actor_id,
         operacion=_operar,
+        precheck=_precheck,
     )
     return MoverMaterialOut(
         material_id=payload.material_id,

@@ -101,6 +101,8 @@ async def procesar(
     assert_authenticated(actor_ctx)
     async with session.begin():
         await transaccional.procesar_movimiento(
-            session, movimiento_id=payload.movimiento_id
+            session,
+            movimiento_id=payload.movimiento_id,
+            usuario=actor_ctx.actor_id,
         )
     return ProcesadoOut(movimiento_id=payload.movimiento_id, estado="CONFIRMADO")

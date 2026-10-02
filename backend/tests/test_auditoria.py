@@ -15,6 +15,18 @@ from tests.helpers.fabrica import (
 
 
 @pytest.mark.critical
+async def test_auditoria_requiere_actor_conocido(
+    client: AsyncClient, client_sin_scope: AsyncClient
+) -> None:
+    """A-2 (dictamen sec-ops): el ledger ya no es legible con un header
+    X-Actor arbitrario; un actor sin alcance ni rol recibe 403."""
+    resp = await client_sin_scope.get("/api/v1/auditoria")
+    assert resp.status_code == 403
+    # El actor con alcance sigue pudiendo consultar.
+    assert (await client.get("/api/v1/auditoria")).status_code == 200
+
+
+@pytest.mark.critical
 async def test_auditoria_sin_endpoint_de_mutacion(
     client: AsyncClient,
 ) -> None:

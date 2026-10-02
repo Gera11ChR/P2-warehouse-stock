@@ -142,7 +142,10 @@ async def agregar_todo(
         )
         if clave is not None:
             previo = await transaccional.resultado_idempotente(
-                session, tipo=_TIPO_AGREGAR_TODO, clave=clave
+                session,
+                tipo=_TIPO_AGREGAR_TODO,
+                clave=clave,
+                actor=actor_ctx.actor_id,
             )
             if previo is not None:
                 return await _eco_agregar_todo(previo)
@@ -179,7 +182,10 @@ async def agregar_todo(
     # resultado original en una transacción nueva.
     async with session.begin():
         previo = await transaccional.resultado_idempotente(
-            session, tipo=_TIPO_AGREGAR_TODO, clave=clave
+            session,
+            tipo=_TIPO_AGREGAR_TODO,
+            clave=clave,
+            actor=actor_ctx.actor_id,
         )
         if previo is None:  # pragma: no cover - defensivo
             raise BusinessRuleError(

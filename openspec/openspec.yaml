@@ -49,7 +49,7 @@ domain_rules:
     description: "+Cantidad (SUMA_CANTIDAD) es una vía de mutación DISTINTA de los ajustes (AJUSTE_INVENTARIO / AJUSTE_INVENTARIO_FO, que fijan un nuevo stock con motivo obligatorio): suma una cantidad directa al stock existente. Mover (MOVIMIENTO_INVENTARIO) transfiere cantidad parcial entre Inventario General y módulos FO bajo el modelo disperso: la fila destino se crea solo con stock > 0 y la fila origen que llega a 0 se conserva."
   idempotency:
     required: true
-    description: "fn_sumar_cantidad, fn_mover_material y fn_agregar_todo_seguimiento aceptan clave_idempotencia (tabla operaciones_idempotencia). Un reenvío con la misma clave responde 200 con el resultado original (reenvio_idempotente=true) sin duplicar efectos sobre stock ni auditoría."
+    description: "fn_sumar_cantidad, fn_mover_material y fn_agregar_todo_seguimiento aceptan clave_idempotencia (tabla operaciones_idempotencia, ligada al ACTOR desde la migración 0021). Un reenvío del MISMO actor con la misma clave responde 200 con el resultado original (reenvio_idempotente=true) sin duplicar efectos sobre stock ni auditoría; la clave de OTRO actor se rechaza con 409 sin divulgar el resultado original. La clave de idempotencia nunca se persiste en auditoria_eventos."
   official_reports:
     required: true
     description: "Los reportes oficiales son XLSX inyectados sobre las plantillas corporativas (nunca generados desde cero) conservando estilo, celdas combinadas y logo. El CSV legacy queda descartado. Las actas son snapshots jsonb (actas_reportes) escritos por PostgreSQL en la transacción del evento."
@@ -310,13 +310,13 @@ paths:
         "200":
           description: "Stock incrementado vía fn_sumar_cantidad (evento inmutable SUMA_CANTIDAD, distinto de AJUSTE_*). Reenvío con la misma clave: resultado original con reenvio_idempotente=true"
         "400":
-          description: "Cantidad menor o igual a cero"
+          description: "Cantidad menor o igual a cero o fuera del rango INT4"
         "403":
-          description: "Actor sin alcance"
+          description: "Actor sin alcance sobre las secciones GENERAL activas implicadas (default-deny SEC-002)"
         "404":
           description: "Material inexistente/inactivo o sin registro de inventario previo (requiere carga inicial)"
         "409":
-          description: "Más de una sección GENERAL activa con el material (destino no determinable)"
+          description: "Más de una sección GENERAL activa con el material (destino no determinable) o clave de idempotencia en uso por otro actor"
         "422":
           description: "Payload inválido (módulo FO ausente o no aplicable)"
   /api/v1/inventario/mover:
@@ -357,13 +357,13 @@ paths:
         "200":
           description: "Material movido vía fn_mover_material (evento inmutable MOVIMIENTO_INVENTARIO; fila destino creada solo con stock > 0; fila origen en 0 conservada). Reenvío con la misma clave: resultado original con reenvio_idempotente=true"
         "400":
-          description: "Cantidad menor o igual a cero o stock insuficiente en el origen (ningún inventario queda modificado)"
+          description: "Cantidad menor o igual a cero, fuera del rango INT4, o stock insuficiente en el origen (ningún inventario queda modificado)"
         "403":
-          description: "Actor sin alcance"
+          description: "Actor sin alcance sobre las secciones GENERAL activas implicadas (default-deny SEC-002)"
         "404":
           description: "Material inexistente/inactivo o sin registro de inventario en el origen"
         "409":
-          description: "Más de una sección GENERAL activa o ninguna activa (destino/origen no determinable)"
+          description: "Más de una sección GENERAL activa o ninguna activa (destino/origen no determinable) o clave de idempotencia en uso por otro actor"
         "422":
           description: "Destino igual al origen o payload inválido (módulo FO ausente o no aplicable)"
   /api/v1/reportes/entrega:

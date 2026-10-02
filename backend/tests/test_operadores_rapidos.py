@@ -531,6 +531,152 @@ async def test_agregar_todo_actor_no_integrante_403(
         await ajeno.aclose()
 
 
+# ── Correcciones de seguridad (T3.2, dictamen sec-ops) ──────────────────────
+
+
+async def test_clave_idempotencia_no_se_persiste_en_auditoria(
+    client: AsyncClient, session
+) -> None:
+    """A-2: la clave de idempotencia queda REDACTADA del ledger."""
+    m = await crear_material(client, descripcion="Redaccion clave")
+    await carga_inicial(client, material_id=m["id_lista"], cantidad=3)
+    await client.post(
+        SUMAR,
+        json={
+            "destino": "GENERAL",
+            "material_id": m["id_lista"],
+            "cantidad": 1,
+            "clave_idempotencia": "secreto-clave",
+        },
+    )
+    eventos = await _eventos(session, "SUMA_CANTIDAD")
+    assert len(eventos) == 1
+    assert "clave_idempotencia" not in eventos[0]["detalles"]
+    assert "secreto-clave" not in str(eventos[0]["detalles"])
+
+
+@pytest.mark.parametrize("ruta,payload,clave", [
+    (
+        SUMAR,
+        {"destino": "GENERAL", "material_id": 0, "cantidad": 5},
+        "suma-cruzada",
+    ),
+    (
+        MOVER,
+        {"origen": "GENERAL", "destino": "FO", "destino_modulo": "PAQUETE",
+         "material_id": 0, "cantidad": 5},
+        "mover-cruzada",
+    ),
+])
+async def test_replay_de_clave_de_otro_actor_409_sin_divulgar_resultado(
+    client: AsyncClient, client_factory, session, ruta: str, payload: dict, clave: str
+) -> None:
+    """M-1: la clave de idempotencia está ligada al actor. Otro actor no
+    obtiene el resultado original ni aplica cambios."""
+    from sqlalchemy import text
+
+    await session.execute(
+        text(
+            "INSERT INTO actor_almacen_scopes (actor_id, almacen_id) "
+            "VALUES ('otro-actor', 1) ON CONFLICT DO NOTHING"
+        )
+    )
+    await session.commit()
+    m = await crear_material(client, descripcion="Clave cruzada")
+    await carga_inicial(client, material_id=m["id_lista"], cantidad=10)
+    payload = {**payload, "material_id": m["id_lista"], "clave_idempotencia": clave}
+    primera = await client.post(ruta, json=payload)
+    assert primera.status_code == 200, primera.text
+
+    otro = client_factory("otro-actor")
+    try:
+        resp = await otro.post(ruta, json=payload)
+        assert resp.status_code == 409, resp.text
+        assert "otro actor" in resp.json()["error"]["message"].lower()
+        # Sin efectos adicionales: stock intacto.
+        assert (await stock_seccion(client, ALMACEN_GENERAL))[m["id_lista"]] == (
+            15 if ruta == SUMAR else 5
+        )
+    finally:
+        await otro.aclose()
+
+
+async def test_scope_general_sin_alcance_sobre_seccion_implicada_403(
+    client: AsyncClient, client_factory, session
+) -> None:
+    """A-3: un actor regular con alcance sobre OTRA sección no puede sumar
+    ni mover stock en una sección GENERAL fuera de su alcance."""
+    # Segunda sección GENERAL activa; el actor `extranio` tiene alcance solo
+    # sobre la 1 (qa); le retiramos todo y le damos un alcance ajeno.
+    from sqlalchemy import text
+
+    m = await crear_material(client, descripcion="Scope general")
+    await carga_inicial(client, material_id=m["id_lista"], cantidad=10)
+    # La suite no trunca `secciones`: garantizamos el estado de partida.
+    await session.execute(
+        text("DELETE FROM secciones WHERE nombre = 'General Dos QA'")
+    )
+    await session.execute(
+        text(
+            "INSERT INTO secciones (nombre, tipo, is_active) "
+            "VALUES ('General Dos QA', 'GENERAL', true)"
+        )
+    )
+    await session.execute(
+        text(
+            "INSERT INTO actor_almacen_scopes (actor_id, almacen_id) "
+            "VALUES ('extranio', 1) ON CONFLICT DO NOTHING"
+        )
+    )
+    await session.commit()
+
+    extranio = client_factory("extranio")
+    try:
+        # qa tiene alcance {1}; `extranio` también tiene {1} pero hay DOS
+        # secciones GENERAL activas: necesita alcance sobre AMBAS (fail-closed).
+        resp = await extranio.post(
+            SUMAR,
+            json={"destino": "GENERAL", "material_id": m["id_lista"], "cantidad": 1},
+        )
+        assert resp.status_code == 403, resp.text
+        resp = await extranio.post(
+            MOVER,
+            json={
+                "origen": "GENERAL",
+                "destino": "FO",
+                "destino_modulo": "PAQUETE",
+                "material_id": m["id_lista"],
+                "cantidad": 1,
+            },
+        )
+        assert resp.status_code == 403, resp.text
+    finally:
+        await extranio.aclose()
+        async with session.begin():
+            await session.execute(
+                text("DELETE FROM secciones WHERE nombre = 'General Dos QA'")
+            )
+
+
+@pytest.mark.parametrize("ruta", [SUMAR, MOVER])
+async def test_cantidad_fuera_de_rango_int4_422(
+    client: AsyncClient, ruta: str
+) -> None:
+    """M-3: cantidades que desbordan INT4 se rechazan en Pydantic (422)."""
+    payload = (
+        {"destino": "GENERAL", "material_id": 1, "cantidad": 2**31}
+        if ruta == SUMAR
+        else {
+            "origen": "GENERAL",
+            "destino": "FO",
+            "destino_modulo": "PAQUETE",
+            "material_id": 1,
+            "cantidad": 2**31,
+        }
+    )
+    assert (await client.post(ruta, json=payload)).status_code == 422
+
+
 # ── Invariante constitucional: cero aritmética de stock en Python ──────────
 
 

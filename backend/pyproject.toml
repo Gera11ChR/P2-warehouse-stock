@@ -19,13 +19,15 @@ dependencies = [
     # inyecta datos sobre las plantillas corporativas con openpyxl (licencia
     # MIT) y NUNCA genera workbooks desde cero (REQ-P2-REP-001).
     "openpyxl==3.1.5",
-    # Pillow (licencia MIT-CMU, variante SPDX de la histórica HPND del PIL
-    # original; verificada en el METADATA del wheel) es REQUISITO para que
-    # openpyxl CONSERVE la imagen embebida (company_logobrand.png) al guardar
-    # el workbook: sin Pillow, openpyxl descarta silenciosamente las imágenes
-    # (drawing1.xml no se reescribe) y las plantillas pierden el logo. Un test
-    # del servicio de reportes FALLA si Pillow no está instalado.
-    "Pillow==11.3.0",
+    # Pillow es REQUISITO para que openpyxl CONSERVE la imagen embebida
+    # (company_logobrand.png) al guardar el workbook: sin Pillow, openpyxl
+    # descarta silenciosamente las imágenes (drawing1.xml no se reescribe) y
+    # las plantillas pierden el logo. Un test del servicio de reportes FALLA
+    # si Pillow no está instalado. Versión FIJADA a 12.3.0 (M-2, dictamen
+    # sec-ops): 11.3.0 acumulaba decenas de CVEs corregidos en 12.2/12.3;
+    # la aplicabilidad aquí es baja (solo PNGs de plantillas locales de
+    # confianza), pero la deuda CVE era evitable.
+    "Pillow==12.3.0",
 ]
 
 [project.optional-dependencies]

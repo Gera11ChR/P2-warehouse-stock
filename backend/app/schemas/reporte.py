@@ -15,6 +15,10 @@ from pydantic import BaseModel
 ActaTipo = Literal["ENTREGA", "CONSUMO"]
 
 
+# B-4 (dictamen sec-ops): `acta_id`, `movimiento_id`, `seguimiento_id`,
+# `material_id` y `usuario` son IDs internos del dominio. Se exponen
+# deliberadamente (el frontend los necesita para la exportación individual)
+# acotados por el aislamiento por equipo; nunca se expone el snapshot crudo.
 class ActaItemOut(BaseModel):
     material_id: int
     codigo: str | None = None

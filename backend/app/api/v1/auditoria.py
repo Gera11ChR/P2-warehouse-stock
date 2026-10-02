@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_session
 from app.models import AuditoriaEvento, CatalogoMaterial, Categoria
 from app.schemas.auditoria import AuditoriaListOut, AuditoriaOut
-from app.security import ActorContext, get_current_actor
+from app.security import (
+    ActorContext,
+    assert_authenticated,
+    equipos_visibles,
+    get_current_actor,
+)
+from sqlalchemy import and_, or_
 
 router = APIRouter(prefix="/auditoria", tags=["auditoria"])
 
@@ -18,7 +24,7 @@ ActorDep = Annotated[ActorContext, Depends(get_current_actor)]
 @router.get("", response_model=AuditoriaListOut)
 async def list_eventos(
     session: SessionDep,
-    _actor: ActorDep,
+    actor_ctx: ActorDep,
     material_id: int | None = None,
     tipo_accion: str | None = None,
     usuario: str | None = None,
@@ -47,6 +53,36 @@ async def list_eventos(
         )
         .outerjoin(Categoria, Categoria.id == CatalogoMaterial.categoria_id)
     )
+    assert_authenticated(actor_ctx)
+    # Aislamiento (A-2, dictamen sec-ops): el actor regular solo ve eventos
+    # ligados a sus secciones de alcance o a sus equipos, más los eventos
+    # sin ubicación (catálogo, U.M., operadores FO); el administrador ve el
+    # ledger completo.
+    if not actor_ctx.es_admin:
+        scopes = set(actor_ctx.scoped_almacen_ids)
+        equipos = await equipos_visibles(actor_ctx, session) or set()
+        condiciones = [
+            AuditoriaEvento.almacen_origen_id.is_(None),
+            AuditoriaEvento.almacen_destino_id.is_(None),
+            AuditoriaEvento.equipo_origen_id.is_(None),
+            AuditoriaEvento.equipo_destino_id.is_(None),
+        ]
+        sin_ubicacion = and_(*condiciones)
+        if scopes:
+            condiciones.append(
+                or_(
+                    AuditoriaEvento.almacen_origen_id.in_(scopes),
+                    AuditoriaEvento.almacen_destino_id.in_(scopes),
+                )
+            )
+        if equipos:
+            condiciones.append(
+                or_(
+                    AuditoriaEvento.equipo_origen_id.in_(equipos),
+                    AuditoriaEvento.equipo_destino_id.in_(equipos),
+                )
+            )
+        stmt = stmt.where(or_(sin_ubicacion, *condiciones))
     if material_id is not None:
         stmt = stmt.where(AuditoriaEvento.material_id == material_id)
     if tipo_accion:

@@ -19,6 +19,10 @@ from app.models import ActaReporte
 from app.schemas.reporte import ActaItemOut, ActaOut
 from app.services.plantilla_reporte import LineaActa
 
+# Límite defensivo de líneas por documento XLSX (B-1, dictamen sec-ops):
+# evita workbooks gigantes y el coste O(n) de la inserción de filas.
+MAX_LINEAS_XLSX = 1000
+
 # Equipo de un acta: ENTREGA -> snapshot.destino_equipo.equipo_id;
 # CONSUMO -> snapshot.equipo_id (los tipos se filtran antes de consultar).
 _EQUIPO_ID = cast(

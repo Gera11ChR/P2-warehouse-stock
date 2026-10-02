@@ -32,5 +32,6 @@ async def cancelar_movimiento(
             session,
             movimiento_id=movimiento_id,
             motivo=payload.motivo,
+            usuario=actor_ctx.actor_id,
         )
     return CanceladoOut(movimiento_id=movimiento_id, estado="CANCELADO")

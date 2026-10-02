@@ -26,8 +26,9 @@ class SumarCantidadRequest(BaseModel):
     )
     material_id: int = Field(gt=0, description="Referencia a id_lista inmutable")
     # Sin `gt=0`: la regla (cantidad > 0) es autoridad del SP y devuelve 400
-    # (contrato); Pydantic solo garantiza el tipo entero.
-    cantidad: int
+    # (contrato); Pydantic garantiza el tipo entero y la cota superior de
+    # INT4 (desbordes -> 422 antes de llegar a PostgreSQL, M-3 sec-ops).
+    cantidad: int = Field(le=2_147_483_647)
     clave_idempotencia: str | None = Field(
         default=None, min_length=1, max_length=100
     )
@@ -60,8 +61,9 @@ class MoverMaterialRequest(BaseModel):
     destino_modulo: ModuloFo | None = None
     material_id: int = Field(gt=0, description="Referencia a id_lista inmutable")
     # Sin `gt=0`: la regla (cantidad > 0) es autoridad del SP y devuelve 400
-    # (contrato); Pydantic solo garantiza el tipo entero.
-    cantidad: int
+    # (contrato); Pydantic garantiza el tipo entero y la cota superior de
+    # INT4 (desbordes -> 422 antes de llegar a PostgreSQL, M-3 sec-ops).
+    cantidad: int = Field(le=2_147_483_647)
     clave_idempotencia: str | None = Field(
         default=None, min_length=1, max_length=100
     )
