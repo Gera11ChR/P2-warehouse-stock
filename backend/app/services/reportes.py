@@ -1,182 +1,125 @@
-"""Reportes de despliegues (0014) — SOLO LECTURA.
+"""Reportes oficiales de Entrega y Consumo (actas) — SOLO LECTURA.
 
-Consulta plana despliegues → despliegue_items → catalogo_materiales con los
-nombres de catálogo resueltos (categoría y U.M.) y el nombre del equipo.
-Incluye TODOS los estados (ABIERTA y CERRADA); el reporte se centra en el
-cierre pero el historial abierto queda visible para operaciones.
-
-La exportación CSV aplica sanitización anti-inyección de fórmulas (OWASP):
-toda celda cuyo texto inicia con `=`, `+`, `-` o `@` se prefija con una
-comilla simple.
+Reemplaza al reporte legacy de despliegues/CSV (descartado). Fuente única:
+la tabla append-only `actas_reportes`, cuyo SNAPSHOT jsonb escribe
+PostgreSQL EN LA MISMA TRANSACCIÓN del evento (REQ-P2-REP-003/004):
+  * 'ENTREGA' -> trigger `tg_acta_entrega` al confirmar TEAMS (CONFIRMADO).
+  * 'CONSUMO' -> `fn_cerrar_seguimiento` al cerrar el seguimiento.
+El payload JSON y el XLSX se derivan SIEMPRE de ese snapshot y nunca del
+stock mutable actual. Las cantidades (incl. `cantidad_consumida`) ya vienen
+calculadas por SQL: aquí solo se transportan (cero aritmética de stock).
 """
 
-import csv
-import io
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import Date, Integer, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import (
-    CatalogoMaterial,
-    Categoria,
-    Despliegue,
-    DespliegueItem,
-    Equipo,
-    Ums,
-)
-from app.schemas.reporte import (
-    ReporteDespliegueItemOut,
-    ReporteDespliegueOut,
+from app.models import ActaReporte
+from app.schemas.reporte import ActaItemOut, ActaOut
+from app.services.plantilla_reporte import LineaActa
+
+# Equipo de un acta: ENTREGA -> snapshot.destino_equipo.equipo_id;
+# CONSUMO -> snapshot.equipo_id (los tipos se filtran antes de consultar).
+_EQUIPO_ID = cast(
+    func.coalesce(
+        ActaReporte.snapshot["destino_equipo"]["equipo_id"].astext,
+        ActaReporte.snapshot["equipo_id"].astext,
+    ),
+    Integer,
 )
 
 
-async def consultar_reportes_despliegues(
+def _a_acta_out(acta: ActaReporte) -> ActaOut:
+    """Convierte la fila persistida (snapshot jsonb) en el DTO de lectura."""
+    snap = acta.snapshot or {}
+    equipo = snap.get("destino_equipo") or {}
+    es_entrega = acta.tipo == "ENTREGA"
+    items = []
+    for it in snap.get("items", []):
+        items.append(
+            ActaItemOut(
+                material_id=it["material_id"],
+                codigo=it.get("codigo"),
+                descripcion=it.get("descripcion") or "",
+                categoria=it.get("categoria"),
+                u_m=it.get("u_m"),
+                cantidad=it.get("cantidad") if es_entrega else None,
+                cantidad_tomada=None if es_entrega else it.get("cantidad_tomada"),
+                cantidad_sobrante=None if es_entrega else it.get("cantidad_sobrante"),
+                cantidad_consumida=(
+                    None if es_entrega else it.get("cantidad_consumida")
+                ),
+            )
+        )
+    return ActaOut(
+        acta_id=acta.id,
+        tipo=acta.tipo,
+        movimiento_id=acta.movimiento_id,
+        seguimiento_id=acta.seguimiento_id,
+        equipo_id=equipo.get("equipo_id") if es_entrega else snap.get("equipo_id"),
+        equipo_nombre=equipo.get("nombre") if es_entrega else snap.get("equipo_nombre"),
+        usuario=snap.get("usuario"),
+        observaciones=snap.get("observaciones"),
+        fecha=acta.created_at,
+        items=items,
+    )
+
+
+async def consultar_actas(
     session: AsyncSession,
     *,
+    tipo: str,
+    acta_id: int | None = None,
     equipo_id: int | None = None,
     desde: date | None = None,
     hasta: date | None = None,
     solo_equipos: set[int] | None = None,
-) -> list[ReporteDespliegueOut]:
-    """Reporte plano de despliegues con filtros de equipo y rango de fechas
-    (sobre despliegues.fecha). `solo_equipos` restringe la lectura a los
-    equipos visibles del actor (aislamiento por integrante); None = todos
-    (administrador)."""
-    stmt = (
-        select(
-            Despliegue.id,
-            Despliegue.equipo_id,
-            Despliegue.fecha,
-            Despliegue.estado,
-            Despliegue.usuario,
-            Despliegue.observaciones,
-            Despliegue.created_at,
-            Despliegue.closed_at,
-            Equipo.nombre.label("equipo_nombre"),
-            DespliegueItem.material_id,
-            CatalogoMaterial.codigo,
-            CatalogoMaterial.descripcion,
-            Categoria.nombre.label("categoria_nombre"),
-            Ums.nombre.label("um_nombre"),
-            DespliegueItem.cantidad_tomada,
-            DespliegueItem.cantidad_sobrante,
-            DespliegueItem.cantidad_consumida,
-        )
-        .join(Equipo, Equipo.equipo_id == Despliegue.equipo_id)
-        .join(DespliegueItem, DespliegueItem.despliegue_id == Despliegue.id)
-        .join(
-            CatalogoMaterial,
-            CatalogoMaterial.id_lista == DespliegueItem.material_id,
-        )
-        .outerjoin(Categoria, Categoria.id == CatalogoMaterial.categoria_id)
-        .outerjoin(Ums, Ums.nombre == CatalogoMaterial.u_m)
-    )
+) -> list[ActaOut]:
+    """Actas del `tipo` indicado, más reciente primero. `solo_equipos`
+    restringe la lectura a los equipos visibles del actor (aislamiento por
+    integrante); None = todos (administrador). Las actas sin equipo
+    asociado (p. ej. TEAMS hacia un módulo FO) solo las ve el
+    administrador. `desde`/`hasta` filtran sobre la fecha del evento
+    (`actas_reportes.created_at`)."""
+    stmt = select(ActaReporte).where(ActaReporte.tipo == tipo)
+    if acta_id is not None:
+        stmt = stmt.where(ActaReporte.id == acta_id)
     if equipo_id is not None:
-        stmt = stmt.where(Despliegue.equipo_id == equipo_id)
+        stmt = stmt.where(_EQUIPO_ID == equipo_id)
     if solo_equipos is not None:
-        stmt = stmt.where(Despliegue.equipo_id.in_(solo_equipos))
+        stmt = stmt.where(_EQUIPO_ID.in_(solo_equipos))
     if desde is not None:
-        stmt = stmt.where(Despliegue.fecha >= desde)
+        stmt = stmt.where(cast(ActaReporte.created_at, Date) >= desde)
     if hasta is not None:
-        stmt = stmt.where(Despliegue.fecha <= hasta)
-    stmt = stmt.order_by(
-        Despliegue.fecha.desc(),
-        Despliegue.id.desc(),
-        DespliegueItem.material_id.asc(),
-    )
-    filas = (await session.execute(stmt)).all()
+        stmt = stmt.where(cast(ActaReporte.created_at, Date) <= hasta)
+    stmt = stmt.order_by(ActaReporte.created_at.desc(), ActaReporte.id.desc())
+    filas = (await session.execute(stmt)).scalars().all()
+    return [_a_acta_out(a) for a in filas]
 
-    reportes: dict[int, ReporteDespliegueOut] = {}
-    for fila in filas:
-        reporte = reportes.get(fila.id)
-        if reporte is None:
-            reporte = ReporteDespliegueOut(
-                despliegue_id=fila.id,
-                equipo_id=fila.equipo_id,
-                equipo_nombre=fila.equipo_nombre,
-                fecha=fila.fecha,
-                estado=fila.estado,
-                usuario=fila.usuario,
-                observaciones=fila.observaciones,
-                created_at=fila.created_at,
-                closed_at=fila.closed_at,
-                items=[],
+
+def fecha_documento(actas: list[ActaOut]) -> date:
+    """Fecha del documento XLSX: la del evento más reciente del conjunto
+    (para un acta individual, la fecha de su evento)."""
+    reciente: datetime = max(a.fecha for a in actas)
+    return reciente.date()
+
+
+def lineas_para_xlsx(tipo: str, actas: list[ActaOut]) -> list[LineaActa]:
+    """Líneas (CANT., DESCRIPCIÓN, U.M.) del documento, concatenando las
+    actas en el orden recibido, SIN agregar ni recalcular cantidades.
+
+    * ENTREGA: CANT. = cantidad entregada.
+    * CONSUMO: CANT. = cantidad consumida (calculada en SQL, columna
+      GENERATED); las líneas sin consumo (consumida = 0) se omiten porque
+      no certifican ningún consumo."""
+    lineas: list[LineaActa] = []
+    for acta in actas:
+        for it in acta.items:
+            cantidad = it.cantidad if tipo == "ENTREGA" else it.cantidad_consumida
+            if not cantidad:
+                continue
+            lineas.append(
+                LineaActa(cantidad=cantidad, descripcion=it.descripcion, u_m=it.u_m)
             )
-            reportes[fila.id] = reporte
-        reporte.items.append(
-            ReporteDespliegueItemOut(
-                material_id=fila.material_id,
-                codigo=fila.codigo,
-                descripcion=fila.descripcion,
-                categoria=fila.categoria_nombre,
-                um=fila.um_nombre,
-                cantidad_tomada=fila.cantidad_tomada,
-                cantidad_sobrante=fila.cantidad_sobrante,
-                cantidad_consumida=fila.cantidad_consumida,
-            )
-        )
-    return list(reportes.values())
-
-
-def _sanitizar_celda(valor) -> str:
-    """OWASP CSV Injection: neutraliza celdas que inician con =, +, -, @.
-
-    V5 (sec-ops): el chequeo se aplica sobre el texto SIN espacios líderes —
-    `"  =CMD()"` también queda neutralizado."""
-    texto = "" if valor is None else str(valor)
-    if texto.lstrip().startswith(("=", "+", "-", "@")):
-        return "'" + texto
-    return texto
-
-
-def generar_csv(rows: list[ReporteDespliegueOut]) -> str:
-    """Serializa el reporte a CSV (UTF-8, QUOTE_MINIMAL) con todas las
-    celdas sanitizadas contra inyección de fórmulas."""
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, quoting=csv.QUOTE_MINIMAL)
-    writer.writerow(
-        [
-            "despliegue_id",
-            "equipo_id",
-            "equipo_nombre",
-            "fecha",
-            "estado",
-            "usuario",
-            "observaciones",
-            "material_id",
-            "codigo",
-            "descripcion",
-            "categoria",
-            "um",
-            "cantidad_tomada",
-            "cantidad_sobrante",
-            "cantidad_consumida",
-            "created_at",
-            "closed_at",
-        ]
-    )
-    for reporte in rows:
-        for item in reporte.items:
-            writer.writerow(
-                [
-                    _sanitizar_celda(reporte.despliegue_id),
-                    _sanitizar_celda(reporte.equipo_id),
-                    _sanitizar_celda(reporte.equipo_nombre),
-                    _sanitizar_celda(reporte.fecha),
-                    _sanitizar_celda(reporte.estado),
-                    _sanitizar_celda(reporte.usuario),
-                    _sanitizar_celda(reporte.observaciones),
-                    _sanitizar_celda(item.material_id),
-                    _sanitizar_celda(item.codigo),
-                    _sanitizar_celda(item.descripcion),
-                    _sanitizar_celda(item.categoria),
-                    _sanitizar_celda(item.um),
-                    _sanitizar_celda(item.cantidad_tomada),
-                    _sanitizar_celda(item.cantidad_sobrante),
-                    _sanitizar_celda(item.cantidad_consumida),
-                    _sanitizar_celda(reporte.created_at),
-                    _sanitizar_celda(reporte.closed_at),
-                ]
-            )
-    return buffer.getvalue()
+    return lineas

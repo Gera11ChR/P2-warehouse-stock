@@ -42,7 +42,8 @@ Requisitos del cambio `2026-10-01-reportes-consumo-management` expresados en not
   **OpenPyXL** para **inyectar** los datos del reporte, **conservando** estilos, celdas
   combinadas y la imagen `company_logobrand.png` embebida.
 - **REQ-P2-REP-003 (Event-driven / CRÍTICO).** **Cuando** el estado de un movimiento TEAMS en la
-  tabla transaccional pase a **COMPLETED** tras confirmar la entrega, **el sistema deberá**
+  tabla transaccional pase a **COMPLETED** (en el esquema real, el estado **CONFIRMADO**) tras
+  confirmar la entrega, **el sistema deberá**
   disparar automáticamente la generación del **Acta de Entrega**. El registro del acta y la
   transición de estado **deberán** compartir la **misma transacción SQL** (trigger o lógica del
   SP de confirmación), nunca un paso HTTP posterior en FastAPI. El registro **deberá** incluir
@@ -132,7 +133,12 @@ Requisitos del cambio `2026-10-01-reportes-consumo-management` expresados en not
   contrato certificado (Zero-Drift); `@qa-agent` audita que la implementación y el contrato
   coincidan antes de cada cierre de fase.
 
-## Preguntas abiertas (a resolver en fase de BD por `@dba-guard`)
+## Preguntas abiertas — RESUELTAS en la Fase 1 por `@dba-guard`
+
+> Resolución: (1) el estado real es **CONFIRMADO**; (2) inventarios FO en `inventario_fibra`
+> (modulo, material_id), seguimiento en `seguimientos`/`seguimiento_items`; (3) sin colisiones
+> de eventos de auditoría; (4) cubiertos 2 tablas, 2 secuencias, PKs, FKs, CHECKs e índices (sin
+> vistas ni triggers dependientes); (5) PostgreSQL **18.6**. Texto original conservado:
 
 1. Nombre exacto del estado transaccional de entrega TEAMS: ¿`COMPLETED` o `CONFIRMADO`?
    El contrato maestro actual menciona "CONFIRMADO"; el contexto indica `COMPLETED`.

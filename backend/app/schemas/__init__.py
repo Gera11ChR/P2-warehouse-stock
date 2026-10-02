@@ -1,15 +1,6 @@
 from app.schemas.ajuste import AjusteOut, AjusteStockAlmacenRequest, CargaInicialRequest
 from app.schemas.auditoria import AuditoriaListOut, AuditoriaOut
 from app.schemas.cancelacion import CanceladoOut, CancelarMovimientoRequest
-from app.schemas.despliegue import (
-    CerrarDespliegueRequest,
-    DespliegueCreate,
-    DespliegueItemIn,
-    DespliegueItemOut,
-    DespliegueListOut,
-    DespliegueOut,
-    SobranteLine,
-)
 from app.schemas.equipo import (
     EquipoConfigLocalOut,
     EquipoConfigLocalUpdate,
@@ -50,13 +41,41 @@ from app.schemas.movimiento import (
     ProcesadoOut,
     ProcesarRequest,
 )
-from app.schemas.reporte import (
-    ReporteDespliegueItemOut,
-    ReporteDespliegueListOut,
-    ReporteDespliegueOut,
+from app.schemas.operadores import (
+    MoverMaterialOut,
+    MoverMaterialRequest,
+    SumarCantidadOut,
+    SumarCantidadRequest,
+)
+from app.schemas.reporte import ActaItemOut, ActaListOut, ActaOut
+from app.schemas.seguimiento import (
+    AgregarTodoOut,
+    AgregarTodoRequest,
+    CerrarSeguimientoRequest,
+    SeguimientoCreate,
+    SeguimientoItemIn,
+    SeguimientoItemOut,
+    SeguimientoListOut,
+    SeguimientoOut,
+    SobranteLine,
 )
 
 __all__ = [
+    "ActaItemOut",
+    "ActaListOut",
+    "ActaOut",
+    "AgregarTodoOut",
+    "AgregarTodoRequest",
+    "CerrarSeguimientoRequest",
+    "MoverMaterialOut",
+    "MoverMaterialRequest",
+    "SeguimientoCreate",
+    "SeguimientoItemIn",
+    "SeguimientoItemOut",
+    "SeguimientoListOut",
+    "SeguimientoOut",
+    "SumarCantidadOut",
+    "SumarCantidadRequest",
     "AjusteOut",
     "AjusteStockAlmacenRequest",
     "AuditoriaListOut",
@@ -68,14 +87,8 @@ __all__ = [
     "CategoriaCreate",
     "CategoriaOut",
     "CategoriaUpdate",
-    "CerrarDespliegueRequest",
     "DetalleLine",
     "DetalleOut",
-    "DespliegueCreate",
-    "DespliegueItemIn",
-    "DespliegueItemOut",
-    "DespliegueListOut",
-    "DespliegueOut",
     "EquipoConfigLocalOut",
     "EquipoConfigLocalUpdate",
     "EquipoCreate",
@@ -97,9 +110,6 @@ __all__ = [
     "MovimientoOut",
     "ProcesadoOut",
     "ProcesarRequest",
-    "ReporteDespliegueItemOut",
-    "ReporteDespliegueListOut",
-    "ReporteDespliegueOut",
     "SeccionOut",
     "SeccionStockOut",
     "SobranteLine",

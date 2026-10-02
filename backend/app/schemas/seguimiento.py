@@ -1,8 +1,10 @@
-"""DTOs del flujo DESPLIEGUE de campo (migración 0014).
+"""DTOs del flujo CONSUMO de campo — entidad `seguimiento` (0014, renombrada
+en 0016).
 
-Toda la aritmética de stock del despliegue vive en PostgreSQL
-(`fn_crear_despliegue` / `fn_cerrar_despliegue`); estos DTOs solo transportan
-la lista de materiales, los sobrantes del cierre y los ecos de lectura.
+Toda la aritmética de stock del seguimiento vive en PostgreSQL
+(`fn_crear_seguimiento` / `fn_cerrar_seguimiento` /
+`fn_agregar_todo_seguimiento`); estos DTOs solo transportan la lista de
+materiales, los sobrantes del cierre y los ecos de lectura.
 """
 
 from datetime import date, datetime
@@ -10,9 +12,9 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class DespliegueItemIn(BaseModel):
+class SeguimientoItemIn(BaseModel):
     """Línea de apertura: material y cantidad tomada del inventario del
-    equipo (validación autoritativa en fn_crear_despliegue)."""
+    equipo (validación autoritativa en fn_crear_seguimiento)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -20,16 +22,16 @@ class DespliegueItemIn(BaseModel):
     cantidad_tomada: int = Field(gt=0)
 
 
-class DespliegueCreate(BaseModel):
-    """Apertura de despliegue (estado ABIERTA)."""
+class SeguimientoCreate(BaseModel):
+    """Apertura de seguimiento (estado ABIERTA)."""
 
     model_config = ConfigDict(extra="forbid")
 
     observaciones: str | None = Field(default=None, max_length=2000)
-    items: list[DespliegueItemIn] = Field(min_length=1)
+    items: list[SeguimientoItemIn] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _check_items_unicos(self) -> "DespliegueCreate":
+    def _check_items_unicos(self) -> "SeguimientoCreate":
         ids = [item.material_id for item in self.items]
         if len(ids) != len(set(ids)):
             raise ValueError("items con material_id duplicado.")
@@ -45,8 +47,8 @@ class SobranteLine(BaseModel):
     cantidad_sobrante: int = Field(ge=0)
 
 
-class CerrarDespliegueRequest(BaseModel):
-    """Cierre de despliegue. Las líneas omitidas se cierran con sobrante 0."""
+class CerrarSeguimientoRequest(BaseModel):
+    """Cierre de seguimiento. Las líneas omitidas se cierran con sobrante 0."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -54,14 +56,14 @@ class CerrarDespliegueRequest(BaseModel):
     observaciones_cierre: str | None = Field(default=None, max_length=2000)
 
     @model_validator(mode="after")
-    def _check_sobrantes_unicos(self) -> "CerrarDespliegueRequest":
+    def _check_sobrantes_unicos(self) -> "CerrarSeguimientoRequest":
         ids = [line.material_id for line in self.sobrantes]
         if len(ids) != len(set(ids)):
             raise ValueError("sobrantes con material_id duplicado.")
         return self
 
 
-class DespliegueItemOut(BaseModel):
+class SeguimientoItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -71,7 +73,7 @@ class DespliegueItemOut(BaseModel):
     cantidad_consumida: int | None
 
 
-class DespliegueOut(BaseModel):
+class SeguimientoOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -83,8 +85,29 @@ class DespliegueOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None
-    items: list[DespliegueItemOut]
+    items: list[SeguimientoItemOut]
 
 
-class DespliegueListOut(BaseModel):
-    despliegues: list[DespliegueOut]
+class SeguimientoListOut(BaseModel):
+    seguimientos: list[SeguimientoOut]
+
+
+class AgregarTodoRequest(BaseModel):
+    """"Agregar todo": carga al seguimiento ABIERTA todas las líneas con
+    stock del inventario del equipo. La clave de idempotencia (opcional)
+    protege contra doble submit; la idempotencia natural (UNIQUE
+    seguimiento+material) vive en `fn_agregar_todo_seguimiento`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    clave_idempotencia: str | None = Field(
+        default=None, min_length=1, max_length=100
+    )
+
+
+class AgregarTodoOut(BaseModel):
+    """Resultado del "Agregar todo": cantidad de líneas añadidas por la
+    función SQL (0 en un reenvío idempotente) y el seguimiento resultante."""
+
+    lineas_agregadas: int
+    seguimiento: SeguimientoOut

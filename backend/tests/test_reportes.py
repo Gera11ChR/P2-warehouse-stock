@@ -1,17 +1,27 @@
-"""Reportes de despliegues — REQ-REPORT-001/002.
+"""Reportes oficiales — Acta de Entrega y Acta de Consumo (XLSX).
 
-GET /api/v1/reportes/despliegues: historial plano centrado exclusivamente
-en la función DESPLIEGUE con catálogo resuelto (código, descripción,
-categoría y U.M.), aislamiento por equipo visible del actor, filtros de
-fecha y exportación CSV con sanitización anti-inyección de fórmulas.
+REQ-P2-REP-001..008 / REQ-P2-CON-005.
+
+  * GET /api/v1/reportes/entrega  (hito A: TEAMS confirmado -> CONFIRMADO).
+  * GET /api/v1/reportes/consumo  (hito B: cierre de seguimiento).
+  * formato=json|normal|extenso; CSV legacy DESCARTADO.
+
+Las actas son snapshots jsonb escritos por PostgreSQL en la transacción del
+evento (trigger tg_acta_entrega / fn_cerrar_seguimiento); el XLSX se genera
+bajo demanda inyectando datos sobre las plantillas corporativas.
 """
 
+import io
+import re
 from datetime import date, timedelta
 
 import pytest
 from httpx import AsyncClient
+from openpyxl import load_workbook
 
+from app.services.plantilla_reporte import MEDIA_TYPE_XLSX
 from tests.helpers.fabrica import (
+    borrador_devol,
     borrador_teams,
     carga_inicial,
     crear_equipo,
@@ -20,256 +30,381 @@ from tests.helpers.fabrica import (
 )
 
 
-async def _setup_reportes(
-    client: AsyncClient, client_admin: AsyncClient
-) -> tuple[dict, dict, dict, dict, dict, dict]:
-    """Dos despliegues propios (uno CERRADO con sobrantes y uno ABIERTO) y
-    un despliegue ajeno creado por el administrador en otro equipo."""
-    m1 = await crear_material(
-        client,
-        descripcion="=cmd|calc",
-        codigo="F1",
-        u_m="METRO (M)",
-        nueva_categoria="Redes",
+async def _entrega(
+    client: AsyncClient,
+    *,
+    equipo_nombre: str = "Equipo Reportes",
+    integrantes: list[str] | None = None,
+    descripcion: str = "CABLE FIBRA OPTICA ADSS 12 HILOS",
+    u_m: str = "METRO (M)",
+    cantidad: int = 50,
+) -> tuple[dict, dict, dict]:
+    """TEAMS confirmado (Inventario General -> equipo): PostgreSQL registra
+    el Acta de Entrega en la misma transacción de la confirmación."""
+    material = await crear_material(
+        client, descripcion=descripcion, u_m=u_m, nueva_categoria="Cables"
     )
-    m2 = await crear_material(
-        client,
-        descripcion="Patchcord QA",
-        codigo="F2",
-        u_m="PZ",
-        nueva_categoria="Redes",
+    equipo = await crear_equipo(
+        client, nombre=equipo_nombre, integrantes=integrantes
     )
-    equipo = await crear_equipo(client, nombre="Equipo Reportes")
-    await carga_inicial(client, material_id=m1["id_lista"], cantidad=100)
-    await carga_inicial(client, material_id=m2["id_lista"], cantidad=100)
-    b1 = await borrador_teams(
+    await carga_inicial(client, material_id=material["id_lista"], cantidad=200)
+    borrador = await borrador_teams(
         client,
         almacen_id=1,
         equipo_id=equipo["equipo_id"],
-        material_id=m1["id_lista"],
-        cantidad=50,
+        material_id=material["id_lista"],
+        cantidad=cantidad,
     )
-    await procesar(client, b1["id"])
-    b2 = await borrador_teams(
-        client,
-        almacen_id=1,
-        equipo_id=equipo["equipo_id"],
-        material_id=m2["id_lista"],
-        cantidad=30,
-    )
-    await procesar(client, b2["id"])
+    await procesar(client, borrador["id"])
+    return material, equipo, borrador
 
+
+async def _consumo(
+    client: AsyncClient, material: dict, equipo: dict, *, tomada=20, sobrante=5
+) -> dict:
     resp = await client.post(
-        f"/api/v1/equipos/{equipo['equipo_id']}/despliegues",
-        json={
-            "observaciones": " =2+2",
-            "items": [
-                {"material_id": m1["id_lista"], "cantidad_tomada": 20},
-                {"material_id": m2["id_lista"], "cantidad_tomada": 10},
-            ],
-        },
+        f"/api/v1/equipos/{equipo['equipo_id']}/seguimientos",
+        json={"items": [{"material_id": material["id_lista"], "cantidad_tomada": tomada}]},
     )
-    d1 = resp.json()
+    assert resp.status_code == 201, resp.text
+    seguimiento = resp.json()
     resp = await client.post(
-        f"/api/v1/equipos/{equipo['equipo_id']}/despliegues/"
-        f"{d1['id']}/cerrar",
+        f"/api/v1/equipos/{equipo['equipo_id']}/seguimientos/"
+        f"{seguimiento['id']}/cerrar",
         json={
             "sobrantes": [
-                {"material_id": m1["id_lista"], "cantidad_sobrante": 5}
+                {"material_id": material["id_lista"], "cantidad_sobrante": sobrante}
             ]
         },
     )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def _xlsx(resp) -> object:
+    assert resp.status_code == 200, resp.text
+    return load_workbook(io.BytesIO(resp.content)).active
+
+
+# ── Hito A: Acta de Entrega ────────────────────────────────────────────────
+
+
+@pytest.mark.critical
+async def test_REQ_P2_REP_003_confirmar_teams_registra_acta_de_entrega(
+    client: AsyncClient,
+) -> None:
+    """Al confirmar TEAMS (estado CONFIRMADO) el acta queda registrada y
+    consultable, con snapshot del equipo destino y las líneas entregadas."""
+    material, equipo, borrador = await _entrega(client)
+
+    resp = await client.get("/api/v1/reportes/entrega")
     assert resp.status_code == 200
-    d1_cerrado = resp.json()
+    actas = resp.json()["actas"]
+    assert len(actas) == 1
+    acta = actas[0]
+    assert acta["tipo"] == "ENTREGA"
+    assert acta["movimiento_id"] == borrador["id"]
+    assert acta["equipo_id"] == equipo["equipo_id"]
+    assert acta["equipo_nombre"] == "Equipo Reportes"
+    assert acta["usuario"] == "qa"
+    item = acta["items"][0]
+    assert item["material_id"] == material["id_lista"]
+    assert item["descripcion"] == "CABLE FIBRA OPTICA ADSS 12 HILOS"
+    assert item["u_m"] == "METRO (M)"
+    assert item["categoria"] == "Cables"
+    assert item["cantidad"] == 50
 
+
+async def test_borrador_sin_confirmar_no_genera_acta(client: AsyncClient) -> None:
+    material = await crear_material(client, descripcion="Sin confirmar")
+    equipo = await crear_equipo(client, nombre="Equipo Borrador")
+    await carga_inicial(client, material_id=material["id_lista"], cantidad=10)
+    await borrador_teams(
+        client,
+        almacen_id=1,
+        equipo_id=equipo["equipo_id"],
+        material_id=material["id_lista"],
+        cantidad=5,
+    )
+    resp = await client.get("/api/v1/reportes/entrega")
+    assert resp.json()["actas"] == []
+
+
+async def test_devol_no_genera_acta_de_entrega(client: AsyncClient) -> None:
+    material, equipo, _ = await _entrega(client, cantidad=30)
+    devol = await borrador_devol(
+        client,
+        equipo_id=equipo["equipo_id"],
+        almacen_id=1,
+        material_id=material["id_lista"],
+        cantidad=10,
+    )
+    await procesar(client, devol["id"])
+    actas = (await client.get("/api/v1/reportes/entrega")).json()["actas"]
+    assert [a["tipo"] for a in actas] == ["ENTREGA"]  # solo la del TEAMS
+
+
+@pytest.mark.critical
+@pytest.mark.parametrize(
+    "formato,titulo,primera_fila",
+    [
+        ("normal", "ACTA DE ENTREGA DE EQUIPOS Y MATERIALES", 10),
+        ("extenso", "ACTA DE ENTREGA DE MATERIALES", 9),
+    ],
+)
+async def test_REQ_P2_REP_002_entrega_xlsx_sobre_plantilla_corporativa(
+    client: AsyncClient, formato: str, titulo: str, primera_fila: int
+) -> None:
+    await _entrega(client)
+
+    resp = await client.get(f"/api/v1/reportes/entrega?formato={formato}")
+    assert resp.headers["content-type"].startswith(MEDIA_TYPE_XLSX)
+    disposicion = resp.headers["content-disposition"]
+    assert re.fullmatch(
+        rf'attachment; filename="acta-entrega-{formato}-\d{{4}}-\d{{2}}-\d{{2}}\.xlsx"',
+        disposicion,
+    )
+    ws = _xlsx(resp)
+    assert ws["A2"].value == titulo
+    assert ws["A5"].value.startswith("FECHA: ")
+    assert ws.cell(row=primera_fila, column=1).value == 50
+    assert ws.cell(row=primera_fila, column=2).value == "CABLE FIBRA OPTICA ADSS 12 HILOS"
+    assert ws.cell(row=primera_fila, column=5).value == "METRO (M)"
+    assert len(ws._images) == 1  # logo corporativo conservado
+
+
+async def test_entrega_xlsx_por_acta_individual(client: AsyncClient) -> None:
+    await _entrega(client, equipo_nombre="Equipo Uno", descripcion="Material Uno")
+    material2, _, _ = await _entrega(
+        client, equipo_nombre="Equipo Dos", descripcion="Material Dos", cantidad=7
+    )
+    actas = (await client.get("/api/v1/reportes/entrega")).json()["actas"]
+    assert len(actas) == 2
+    segunda = next(a for a in actas if a["equipo_nombre"] == "Equipo Dos")
+
+    ws = _xlsx(
+        await client.get(
+            f"/api/v1/reportes/entrega?formato=normal&acta_id={segunda['acta_id']}"
+        )
+    )
+    assert ws["B10"].value == "Material Dos"
+    assert ws["A10"].value == 7
+    assert ws["B11"].value is None  # solo esa acta
+
+
+# ── Hito B: Acta de Consumo ────────────────────────────────────────────────
+
+
+@pytest.mark.critical
+async def test_REQ_P2_CON_005_cerrar_seguimiento_genera_acta_de_consumo(
+    client: AsyncClient,
+) -> None:
+    material, equipo, _ = await _entrega(client)
+    await _consumo(client, material, equipo, tomada=20, sobrante=5)
+
+    resp = await client.get("/api/v1/reportes/consumo")
+    actas = resp.json()["actas"]
+    assert len(actas) == 1
+    acta = actas[0]
+    assert acta["tipo"] == "CONSUMO"
+    assert acta["equipo_id"] == equipo["equipo_id"]
+    assert acta["seguimiento_id"] is not None
+    item = acta["items"][0]
+    # tomada, sobrante y consumida las calcula PostgreSQL (columna GENERATED).
+    assert (item["cantidad_tomada"], item["cantidad_sobrante"]) == (20, 5)
+    assert item["cantidad_consumida"] == 15
+
+
+async def test_seguimiento_abierto_no_genera_acta_de_consumo(
+    client: AsyncClient,
+) -> None:
+    material, equipo, _ = await _entrega(client)
     resp = await client.post(
-        f"/api/v1/equipos/{equipo['equipo_id']}/despliegues",
-        json={
-            "items": [{"material_id": m1["id_lista"], "cantidad_tomada": 10}]
-        },
-    )
-    d2 = resp.json()
-
-    ajeno = await crear_equipo(
-        client, nombre="Equipo Ajeno", integrantes=["otro"]
-    )
-    resp = await client_admin.post(
-        f"/api/v1/equipos/{ajeno['equipo_id']}/despliegues",
-        json={
-            "items": [{"material_id": m2["id_lista"], "cantidad_tomada": 7}]
-        },
+        f"/api/v1/equipos/{equipo['equipo_id']}/seguimientos",
+        json={"items": [{"material_id": material["id_lista"], "cantidad_tomada": 10}]},
     )
     assert resp.status_code == 201
-    d_ajeno = resp.json()
-
-    return m1, m2, equipo, ajeno, d1_cerrado, d_ajeno
+    assert (await client.get("/api/v1/reportes/consumo")).json()["actas"] == []
 
 
 @pytest.mark.critical
-async def test_REQ_REPORT_001_json_contiene_despliegues_con_items_y_catalogo(
-    client: AsyncClient, client_admin: AsyncClient
+@pytest.mark.parametrize(
+    "formato,primera_fila", [("normal", 10), ("extenso", 9)]
+)
+async def test_REQ_P2_REP_004_consumo_xlsx_titulo_y_cantidad_consumida(
+    client: AsyncClient, formato: str, primera_fila: int
 ) -> None:
-    """REQ-REPORT-001: el reporte JSON expone el historial DESPLIEGUE con
-    equipo, estado, observaciones y líneas de material con catálogo
-    resuelto (código, descripción, categoría y U.M.)."""
-    m1, m2, equipo, _, d1, _ = await _setup_reportes(client, client_admin)
+    material, equipo, _ = await _entrega(client)
+    await _consumo(client, material, equipo, tomada=20, sobrante=5)
 
-    resp = await client.get("/api/v1/reportes/despliegues")
-    assert resp.status_code == 200
-    propios = [
-        d
-        for d in resp.json()["despliegues"]
-        if d["equipo_id"] == equipo["equipo_id"]
-    ]
-    assert len(propios) == 2
-
-    cerrado = next(d for d in propios if d["estado"] == "CERRADA")
-    assert cerrado["despliegue_id"] == d1["id"]
-    assert cerrado["equipo_nombre"] == "Equipo Reportes"
-    assert cerrado["observaciones"] == " =2+2"
-    assert cerrado["closed_at"] is not None
-    items = {i["material_id"]: i for i in cerrado["items"]}
-    linea_m1 = items[m1["id_lista"]]
-    assert linea_m1["codigo"] == "F1"
-    assert linea_m1["descripcion"] == "=cmd|calc"
-    assert linea_m1["categoria"] == "Redes"
-    assert linea_m1["um"] == "METRO (M)"
-    assert linea_m1["cantidad_tomada"] == 20
-    assert linea_m1["cantidad_sobrante"] == 5
-    assert linea_m1["cantidad_consumida"] == 15
-    linea_m2 = items[m2["id_lista"]]
-    assert linea_m2["cantidad_sobrante"] == 0
-    assert linea_m2["cantidad_consumida"] == 10
-
-    abierto = next(d for d in propios if d["estado"] == "ABIERTA")
-    assert abierto["closed_at"] is None
-    assert abierto["items"][0]["cantidad_sobrante"] is None
+    resp = await client.get(f"/api/v1/reportes/consumo?formato={formato}")
+    assert re.fullmatch(
+        rf'attachment; filename="acta-consumo-{formato}-[\d-]+\.xlsx"',
+        resp.headers["content-disposition"],
+    )
+    ws = _xlsx(resp)
+    assert ws["A2"].value == "ACTA DE CONSUMO"
+    assert ws.cell(row=primera_fila, column=1).value == 15  # CANT. = consumida
+    assert ws.cell(row=primera_fila, column=2).value == "CABLE FIBRA OPTICA ADSS 12 HILOS"
+    assert len(ws._images) == 1
 
 
-@pytest.mark.critical
-async def test_REQ_REPORT_002_csv_headers_y_contenido(
-    client: AsyncClient, client_admin: AsyncClient
+async def test_consumo_xlsx_omite_lineas_sin_consumo(client: AsyncClient) -> None:
+    """Una línea devuelta completa (consumida = 0) no certifica consumo."""
+    material, equipo, _ = await _entrega(client)
+    await _consumo(client, material, equipo, tomada=20, sobrante=20)
+    assert (await client.get("/api/v1/reportes/consumo")).json()["actas"]
+    ws = _xlsx(await client.get("/api/v1/reportes/consumo?formato=normal"))
+    assert ws["B10"].value is None
+
+
+# ── Contrato: CSV descartado, ruta legacy eliminada, errores ───────────────
+
+
+@pytest.mark.parametrize("ruta", ["entrega", "consumo"])
+async def test_REQ_P2_REP_001_formato_csv_descartado(
+    client: AsyncClient, ruta: str
 ) -> None:
-    """REQ-REPORT-002: la exportación CSV devuelve 200 con media type
-    text/csv, Content-Disposition attachment, cabecera canónica y los
-    valores del reporte presentes en las celdas."""
-    _, _, _, _, d1, _ = await _setup_reportes(client, client_admin)
-
-    resp = await client.get(
-        "/api/v1/reportes/despliegues", params={"format": "csv"}
-    )
-    assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("text/csv")
-    disposition = resp.headers["content-disposition"]
-    assert "attachment" in disposition
-    assert f"reporte-despliegues-{date.today().isoformat()}.csv" in disposition
-
-    texto = resp.text
-    lineas = texto.splitlines()
-    assert lineas[0] == (
-        "despliegue_id,equipo_id,equipo_nombre,fecha,estado,usuario,"
-        "observaciones,material_id,codigo,descripcion,categoria,um,"
-        "cantidad_tomada,cantidad_sobrante,cantidad_consumida,"
-        "created_at,closed_at"
-    )
-    assert "Equipo Reportes" in texto
-    assert "Patchcord QA" in texto
-    assert str(d1["id"]) in texto
-
-
-async def test_REQ_REPORT_002_csv_sanitizacion_formulas(
-    client: AsyncClient, client_admin: AsyncClient
-) -> None:
-    """REQ-REPORT-002 + V5: las celdas cuyo texto inicia con =, +, - o @
-    (incluso tras espacios líderes) se prefijan con comilla simple —
-    neutralización OWASP CSV Injection probada con datos reales."""
-    await _setup_reportes(client, client_admin)
-
-    resp = await client.get(
-        "/api/v1/reportes/despliegues", params={"format": "csv"}
-    )
-    assert resp.status_code == 200
-    texto = resp.text
-
-    # Descripción peligrosa sin espacios: "=cmd|calc" → "'=cmd|calc".
-    assert "'=cmd|calc" in texto
-    assert ",=cmd|calc" not in texto
-
-    # Observaciones con espacio líder: " =2+2" → "' =2+2".
-    assert "' =2+2" in texto
-    assert ", =2+2" not in texto
-
-
-async def test_REQ_REPORT_001_aislamiento_no_admin_solo_equipos_propios(
-    client: AsyncClient, client_admin: AsyncClient
-) -> None:
-    """REQ-REPORT-001: el actor regular SIN equipo_id ve únicamente los
-    despliegues de los equipos donde es integrante."""
-    _, _, equipo, ajeno, _, _ = await _setup_reportes(client, client_admin)
-
-    resp = await client.get("/api/v1/reportes/despliegues")
-    assert resp.status_code == 200
-    despliegues = resp.json()["despliegues"]
-    assert despliegues
-    assert all(d["equipo_id"] == equipo["equipo_id"] for d in despliegues)
-    assert all(d["equipo_id"] != ajeno["equipo_id"] for d in despliegues)
-
-
-async def test_REQ_REPORT_001_admin_ve_todos(
-    client: AsyncClient, client_admin: AsyncClient
-) -> None:
-    """REQ-REPORT-001: el administrador visualiza los despliegues de TODOS
-    los equipos sin restricción de membresía."""
-    _, _, equipo, ajeno, _, _ = await _setup_reportes(client, client_admin)
-
-    resp = await client_admin.get("/api/v1/reportes/despliegues")
-    assert resp.status_code == 200
-    equipos = {d["equipo_id"] for d in resp.json()["despliegues"]}
-    assert equipo["equipo_id"] in equipos
-    assert ajeno["equipo_id"] in equipos
-
-
-async def test_REQ_REPORT_001_equipo_id_foraneo_403(
-    client: AsyncClient, client_admin: AsyncClient
-) -> None:
-    """REQ-REPORT-001: pedir explícitamente el equipo de otro actor exige
-    membresía → 403."""
-    _, _, _, ajeno, _, _ = await _setup_reportes(client, client_admin)
-
-    resp = await client.get(
-        "/api/v1/reportes/despliegues",
-        params={"equipo_id": ajeno["equipo_id"]},
-    )
-    assert resp.status_code == 403
-
-
-async def test_REQ_REPORT_001_filtros_fechas(
-    client: AsyncClient, client_admin: AsyncClient
-) -> None:
-    """REQ-REPORT-001: los filtros desde/hasta se aplican sobre
-    despliegues.fecha (rango inclusivo)."""
-    _, _, equipo, _, _, _ = await _setup_reportes(client, client_admin)
-    hoy = date.today().isoformat()
-    ayer = (date.today() - timedelta(days=1)).isoformat()
-
-    resp = await client.get(
-        "/api/v1/reportes/despliegues", params={"desde": hoy, "hasta": hoy}
-    )
-    assert resp.status_code == 200
-    assert len(resp.json()["despliegues"]) == 2
-
-    resp = await client.get(
-        "/api/v1/reportes/despliegues",
-        params={"desde": "2000-01-01", "hasta": ayer},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["despliegues"] == []
-
-
-async def test_REQ_REPORT_001_fecha_invalida_422(client: AsyncClient) -> None:
-    """REQ-REPORT-001: una fecha mal formada viola el tipo de query param
-    (date ISO) → 422."""
-    resp = await client.get(
-        "/api/v1/reportes/despliegues", params={"desde": "no-es-fecha"}
-    )
+    resp = await client.get(f"/api/v1/reportes/{ruta}?formato=csv")
     assert resp.status_code == 422
+
+
+async def test_ruta_legacy_reportes_despliegues_eliminada(
+    client: AsyncClient,
+) -> None:
+    assert (await client.get("/api/v1/reportes/despliegues")).status_code == 404
+    assert (
+        await client.get("/api/v1/reportes/despliegues?format=csv")
+    ).status_code == 404
+
+
+@pytest.mark.parametrize("ruta", ["entrega", "consumo"])
+async def test_xlsx_sin_actas_devuelve_404(client: AsyncClient, ruta: str) -> None:
+    resp = await client.get(f"/api/v1/reportes/{ruta}?formato=normal")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["message"] == "No hay actas para los filtros indicados"
+
+
+# ── Aislamiento por equipo y filtros ───────────────────────────────────────
+
+
+@pytest.mark.critical
+async def test_aislamiento_actor_regular_solo_ve_sus_equipos(
+    client: AsyncClient, client_admin: AsyncClient
+) -> None:
+    await _entrega(client, equipo_nombre="Equipo Propio")
+    # El equipo ajeno lo opera el administrador (qa no es integrante).
+    _, ajeno, _ = await _entrega(
+        client_admin,
+        equipo_nombre="Equipo Ajeno",
+        integrantes=["otro"],
+        descripcion="Ajeno",
+    )
+
+    propios = (await client.get("/api/v1/reportes/entrega")).json()["actas"]
+    assert [a["equipo_nombre"] for a in propios] == ["Equipo Propio"]
+
+    # Equipo ajeno explícito -> 403 (pertenencia exigida).
+    resp = await client.get(f"/api/v1/reportes/entrega?equipo_id={ajeno['equipo_id']}")
+    assert resp.status_code == 403
+    # El XLSX tampoco filtra datos ajenos.
+    ws = _xlsx(await client.get("/api/v1/reportes/entrega?formato=normal"))
+    assert ws["B10"].value != "Ajeno"
+
+    # El administrador ve todos los equipos.
+    todos = (await client_admin.get("/api/v1/reportes/entrega")).json()["actas"]
+    assert {a["equipo_nombre"] for a in todos} == {"Equipo Propio", "Equipo Ajeno"}
+
+
+async def test_acta_id_de_equipo_ajeno_no_es_exportable(
+    client: AsyncClient, client_admin: AsyncClient
+) -> None:
+    """El aislamiento aplica también al exportar un acta por id: un actor
+    regular no puede obtener (ni listar) el acta de un equipo ajeno."""
+    await _entrega(client, equipo_nombre="Equipo Propio")
+    await _entrega(
+        client_admin,
+        equipo_nombre="Equipo Ajeno",
+        integrantes=["otro"],
+        descripcion="Ajeno",
+    )
+    ajena = next(
+        a
+        for a in (await client_admin.get("/api/v1/reportes/entrega")).json()["actas"]
+        if a["equipo_nombre"] == "Equipo Ajeno"
+    )
+    base = f"/api/v1/reportes/entrega?acta_id={ajena['acta_id']}"
+    assert (await client.get(base)).json()["actas"] == []
+    assert (await client.get(base + "&formato=normal")).status_code == 404
+    # El administrador sí puede exportarla.
+    ws = _xlsx(await client_admin.get(base + "&formato=normal"))
+    assert ws["B10"].value == "Ajeno"
+
+
+async def test_actor_sin_equipos_ve_reporte_vacio(
+    client: AsyncClient, client_factory
+) -> None:
+    await _entrega(client)
+    extraño = client_factory("extrano")
+    try:
+        resp = await extraño.get("/api/v1/reportes/consumo")
+        assert resp.status_code == 200
+        assert resp.json()["actas"] == []
+        assert (await extraño.get("/api/v1/reportes/entrega")).json()["actas"] == []
+    finally:
+        await extraño.aclose()
+
+
+async def test_filtros_equipo_y_rango_de_fechas(client: AsyncClient) -> None:
+    _, e1, _ = await _entrega(client, equipo_nombre="Equipo A", descripcion="Mat A")
+    _, e2, _ = await _entrega(client, equipo_nombre="Equipo B", descripcion="Mat B")
+
+    solo_b = (
+        await client.get(f"/api/v1/reportes/entrega?equipo_id={e2['equipo_id']}")
+    ).json()["actas"]
+    assert [a["equipo_nombre"] for a in solo_b] == ["Equipo B"]
+
+    hoy = date.today()
+    en_rango = (
+        await client.get(
+            f"/api/v1/reportes/entrega?desde={hoy.isoformat()}&hasta={hoy.isoformat()}"
+        )
+    ).json()["actas"]
+    assert len(en_rango) == 2
+    futuro = (
+        await client.get(
+            f"/api/v1/reportes/entrega?desde={(hoy + timedelta(days=1)).isoformat()}"
+        )
+    ).json()["actas"]
+    assert futuro == []
+    pasado = (
+        await client.get(
+            f"/api/v1/reportes/entrega?hasta={(hoy - timedelta(days=1)).isoformat()}"
+        )
+    ).json()["actas"]
+    assert pasado == []
+    assert e1["equipo_id"] != e2["equipo_id"]
+
+
+async def test_documento_consolidado_concatena_lineas_sin_agregar(
+    client: AsyncClient,
+) -> None:
+    """Varias actas en un mismo XLSX: las líneas se concatenan sin sumar ni
+    recalcular cantidades (cero aritmética en Python)."""
+    await _entrega(client, equipo_nombre="Equipo A", descripcion="Mat A", cantidad=3)
+    await _entrega(client, equipo_nombre="Equipo B", descripcion="Mat B", cantidad=4)
+    ws = _xlsx(await client.get("/api/v1/reportes/entrega?formato=normal"))
+    filas = {
+        (ws.cell(row=r, column=2).value, ws.cell(row=r, column=1).value)
+        for r in (10, 11)
+    }
+    assert filas == {("Mat A", 3), ("Mat B", 4)}
+
+
+async def test_descripcion_maliciosa_no_se_escribe_como_formula(
+    client: AsyncClient,
+) -> None:
+    await _entrega(client, descripcion="=cmd|' /C calc'!A0")
+    ws = _xlsx(await client.get("/api/v1/reportes/entrega?formato=normal"))
+    assert ws["B10"].data_type == "s"
+    assert ws["B10"].value.startswith("'=")

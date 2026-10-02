@@ -14,6 +14,18 @@ dependencies = [
     "fastapi>=0.115",
     "pyotp>=2.9",
     "cryptography>=44",
+    # ── Reportes corporativos XLSX (cambio 2026-10-01-reportes-consumo-management)
+    # Versiones FIJADAS (dictamen @arq-reviewer, ajuste alto 8): el backend
+    # inyecta datos sobre las plantillas corporativas con openpyxl (licencia
+    # MIT) y NUNCA genera workbooks desde cero (REQ-P2-REP-001).
+    "openpyxl==3.1.5",
+    # Pillow (licencia MIT-CMU, variante SPDX de la histórica HPND del PIL
+    # original; verificada en el METADATA del wheel) es REQUISITO para que
+    # openpyxl CONSERVE la imagen embebida (company_logobrand.png) al guardar
+    # el workbook: sin Pillow, openpyxl descarta silenciosamente las imágenes
+    # (drawing1.xml no se reescribe) y las plantillas pierden el logo. Un test
+    # del servicio de reportes FALLA si Pillow no está instalado.
+    "Pillow==11.3.0",
 ]
 
 [project.optional-dependencies]

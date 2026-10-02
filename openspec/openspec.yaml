@@ -20,9 +20,42 @@ domain_rules:
       - "fn_ajustar_stock_almacen"
       - "fn_ajustar_stock_fibra"
       - "fn_eliminar_inventario_fibra"
-      - "fn_crear_despliegue"
-      - "fn_cerrar_despliegue"
+      - "fn_crear_seguimiento"
+      - "fn_cerrar_seguimiento"
+      - "fn_sumar_cantidad"
+      - "fn_mover_material"
+      - "fn_agregar_todo_seguimiento"
     prohibition: "Cálculos matemáticos de stock prohibidos en Python/FastAPI."
+  nomenclature_glossary:
+    required: true
+    description: "Glosario para evitar falsos positivos de drift tras el renombre DESPLIEGUE -> CONSUMO (renombre físico completo, sin alias legacy)."
+    terms:
+      CONSUMO: "Dominio funcional visible en UI y reportes (antes DESPLIEGUE)."
+      seguimiento: "Entidad de API/BD (tablas seguimientos/seguimiento_items; antes despliegue). 'Crear Despliegue' pasa a 'Crear Seguimiento'."
+      entrega: "Acta generada por la confirmación del flujo TEAMS (Acta de Entrega)."
+  audit_ledger_immutability:
+    required: true
+    description: "auditoria_eventos es append-only. El renombre no actualiza filas históricas: los eventos DESPLIEGUE_CREADO/DESPLIEGUE_CERRADO históricos conservan su valor legacy; los nuevos eventos usan SEGUIMIENTO_CREADO/SEGUIMIENTO_CERRADO."
+    events:
+      - "SEGUIMIENTO_CREADO"
+      - "SEGUIMIENTO_CERRADO"
+      - "AGREGAR_TODO"
+      - "SUMA_CANTIDAD"
+      - "MOVIMIENTO_INVENTARIO"
+      - "ACTA_ENTREGA_GENERADA"
+      - "ACTA_CONSUMO_GENERADA"
+  quick_operator_semantics:
+    required: true
+    description: "+Cantidad (SUMA_CANTIDAD) es una vía de mutación DISTINTA de los ajustes (AJUSTE_INVENTARIO / AJUSTE_INVENTARIO_FO, que fijan un nuevo stock con motivo obligatorio): suma una cantidad directa al stock existente. Mover (MOVIMIENTO_INVENTARIO) transfiere cantidad parcial entre Inventario General y módulos FO bajo el modelo disperso: la fila destino se crea solo con stock > 0 y la fila origen que llega a 0 se conserva."
+  idempotency:
+    required: true
+    description: "fn_sumar_cantidad, fn_mover_material y fn_agregar_todo_seguimiento aceptan clave_idempotencia (tabla operaciones_idempotencia). Un reenvío con la misma clave responde 200 con el resultado original (reenvio_idempotente=true) sin duplicar efectos sobre stock ni auditoría."
+  official_reports:
+    required: true
+    description: "Los reportes oficiales son XLSX inyectados sobre las plantillas corporativas (nunca generados desde cero) conservando estilo, celdas combinadas y logo. El CSV legacy queda descartado. Las actas son snapshots jsonb (actas_reportes) escritos por PostgreSQL en la transacción del evento."
+    milestones:
+      entrega: "Acta de Entrega: trigger tg_acta_entrega en la MISMA transacción SQL que confirma el movimiento TEAMS (estado transaccional real CONFIRMADO; COMPLETED no existe en el esquema)."
+      consumo: "Acta de Consumo: registrada por fn_cerrar_seguimiento al cerrar el seguimiento (CANT. = cantidad consumida calculada en SQL)."
   classification_schema:
     legacy_removed: "TIPO"
     fields:
@@ -47,7 +80,7 @@ paths:
                   type: integer
       responses:
         "200":
-          description: "Movimiento procesado exitosamente vía fn_procesar_movimiento"
+          description: "Movimiento procesado exitosamente vía fn_procesar_movimiento (estado CONFIRMADO). Si es TEAMS, el trigger tg_acta_entrega registra el Acta de Entrega con snapshot jsonb en la misma transacción (evento ACTA_ENTREGA_GENERADA)"
         "400":
           description: "Stock insuficiente o movimiento en estado no válido"
   /api/v1/movimientos/{movimiento_id}/cancelar:
@@ -181,43 +214,63 @@ paths:
           description: "Configuración local actualizada (evento CONFIG_EQUIPO_MODIFICADA)"
         "422":
           description: "Campos no permitidos (stock_actual, codigo, descripcion) o valores inválidos"
-  /api/v1/equipos/{equipo_id}/despliegues:
+  /api/v1/equipos/{equipo_id}/seguimientos:
     post:
-      summary: "Crear lista de despliegue para un equipo"
-      operationId: "crearDespliegue"
+      summary: "Crear seguimiento de CONSUMO para un equipo ('Crear Seguimiento'; antes 'Crear Despliegue')"
+      operationId: "crearSeguimiento"
       responses:
         "201":
-          description: "Despliegue creado en estado ABIERTA vía fn_crear_despliegue"
+          description: "Seguimiento creado en estado ABIERTA vía fn_crear_seguimiento (evento SEGUIMIENTO_CREADO)"
         "409":
-          description: "El equipo ya posee un despliegue abierto"
+          description: "El equipo ya posee un seguimiento abierto"
     get:
-      summary: "Listar despliegues de un equipo"
-      operationId: "listarDesplieguesEquipo"
+      summary: "Listar seguimientos de CONSUMO de un equipo"
+      operationId: "listarSeguimientosEquipo"
       responses:
         "200":
-          description: "Lista de despliegues del equipo"
-  /api/v1/equipos/{equipo_id}/despliegues/{despliegue_id}:
+          description: "Lista de seguimientos del equipo"
+  /api/v1/equipos/{equipo_id}/seguimientos/{seguimiento_id}:
     get:
-      summary: "Obtener un despliegue del equipo (verifica pertenencia)"
-      operationId: "obtenerDespliegue"
+      summary: "Obtener un seguimiento del equipo (verifica pertenencia)"
+      operationId: "obtenerSeguimiento"
       responses:
         "200":
-          description: "Despliegue del equipo"
+          description: "Seguimiento del equipo"
         "404":
-          description: "Despliegue no encontrado o no pertenece al equipo"
-  /api/v1/equipos/{equipo_id}/despliegues/{despliegue_id}/cerrar:
+          description: "Seguimiento no encontrado o no pertenece al equipo"
+  /api/v1/equipos/{equipo_id}/seguimientos/{seguimiento_id}/agregar-todo:
     post:
-      summary: "Cerrar despliegue registrando sobrantes y ajustando stock del equipo"
-      operationId: "cerrarDespliegue"
+      summary: "'Agregar todo': cargar al seguimiento todo el inventario del equipo con existencias"
+      operationId: "agregarTodoSeguimiento"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                clave_idempotencia:
+                  type: string
       responses:
         "200":
-          description: "Despliegue cerrado vía fn_cerrar_despliegue (auditoría por línea)"
+          description: "Líneas agregadas vía fn_agregar_todo_seguimiento (atómica e idempotente: una segunda invocación no duplica líneas; evento AGREGAR_TODO solo si hubo líneas nuevas). Un reenvío con la misma clave devuelve el resultado original"
+        "404":
+          description: "Seguimiento no encontrado o no pertenece al equipo"
+        "409":
+          description: "El seguimiento no se encuentra en estado ABIERTA"
+  /api/v1/equipos/{equipo_id}/seguimientos/{seguimiento_id}/cerrar:
+    post:
+      summary: "Cerrar seguimiento registrando sobrantes, ajustando stock del equipo y registrando el Acta de Consumo"
+      operationId: "cerrarSeguimiento"
+      responses:
+        "200":
+          description: "Seguimiento cerrado vía fn_cerrar_seguimiento (auditoría SEGUIMIENTO_CERRADO por línea y Acta de Consumo ACTA_CONSUMO_GENERADA con snapshot jsonb en la misma transacción)"
         "400":
           description: "Sobrante mayor a tomada, negativo o stock de equipo insuficiente"
         "404":
-          description: "Despliegue no encontrado"
+          description: "Seguimiento no encontrado"
         "409":
-          description: "Despliegue no se encuentra en estado ABIERTA (doble cierre)"
+          description: "Seguimiento no se encuentra en estado ABIERTA (doble cierre)"
   /api/v1/inventario/secciones/transferibles:
     get:
       summary: "Secciones válidas como origen/destino de transferencias (GENERAL activas + manejadores FO)"
@@ -225,10 +278,98 @@ paths:
       responses:
         "200":
           description: "Lista de secciones transferibles"
-  /api/v1/reportes/despliegues:
+  /api/v1/inventario/sumar-cantidad:
+    post:
+      summary: "+Cantidad: sumar una cantidad directa al stock existente (Inventario General o módulos FO)"
+      operationId: "sumarCantidad"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - destino
+                - material_id
+                - cantidad
+              properties:
+                destino:
+                  type: string
+                  enum: [GENERAL, FO]
+                modulo:
+                  type: string
+                  enum: [PAQUETE, EN_USO]
+                  description: "Obligatorio cuando destino = FO"
+                material_id:
+                  type: integer
+                cantidad:
+                  type: integer
+                clave_idempotencia:
+                  type: string
+      responses:
+        "200":
+          description: "Stock incrementado vía fn_sumar_cantidad (evento inmutable SUMA_CANTIDAD, distinto de AJUSTE_*). Reenvío con la misma clave: resultado original con reenvio_idempotente=true"
+        "400":
+          description: "Cantidad menor o igual a cero"
+        "403":
+          description: "Actor sin alcance"
+        "404":
+          description: "Material inexistente/inactivo o sin registro de inventario previo (requiere carga inicial)"
+        "409":
+          description: "Más de una sección GENERAL activa con el material (destino no determinable)"
+        "422":
+          description: "Payload inválido (módulo FO ausente o no aplicable)"
+  /api/v1/inventario/mover:
+    post:
+      summary: "Mover: transferencia directa de cantidad parcial entre Inventario General y módulos FO"
+      operationId: "moverMaterial"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - origen
+                - destino
+                - material_id
+                - cantidad
+              properties:
+                origen:
+                  type: string
+                  enum: [GENERAL, FO]
+                origen_modulo:
+                  type: string
+                  enum: [PAQUETE, EN_USO]
+                destino:
+                  type: string
+                  enum: [GENERAL, FO]
+                destino_modulo:
+                  type: string
+                  enum: [PAQUETE, EN_USO]
+                material_id:
+                  type: integer
+                cantidad:
+                  type: integer
+                clave_idempotencia:
+                  type: string
+      responses:
+        "200":
+          description: "Material movido vía fn_mover_material (evento inmutable MOVIMIENTO_INVENTARIO; fila destino creada solo con stock > 0; fila origen en 0 conservada). Reenvío con la misma clave: resultado original con reenvio_idempotente=true"
+        "400":
+          description: "Cantidad menor o igual a cero o stock insuficiente en el origen (ningún inventario queda modificado)"
+        "403":
+          description: "Actor sin alcance"
+        "404":
+          description: "Material inexistente/inactivo o sin registro de inventario en el origen"
+        "409":
+          description: "Más de una sección GENERAL activa o ninguna activa (destino/origen no determinable)"
+        "422":
+          description: "Destino igual al origen o payload inválido (módulo FO ausente o no aplicable)"
+  /api/v1/reportes/entrega:
     get:
-      summary: "Reporte de actividad de despliegues (JSON o CSV)"
-      operationId: "reporteDespliegues"
+      summary: "Acta(s) de Entrega (hito A: generadas al confirmar TEAMS) en JSON o XLSX sobre la plantilla corporativa"
+      operationId: "reporteEntrega"
       parameters:
         - name: equipo_id
           in: query
@@ -245,15 +386,68 @@ paths:
           required: false
           schema:
             type: string
-        - name: format
+        - name: acta_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: formato
+          in: query
+          required: false
+          description: "json (listado, por defecto) | normal (plantilla '1 ACTA DE REPORTE NORMAL.xlsx') | extenso (plantilla '2 ACTA DE REPORTE EXTENSO.xlsx'). El CSV legacy queda descartado"
+          schema:
+            type: string
+            enum: [json, normal, extenso]
+      responses:
+        "200":
+          description: "json: listado de actas (snapshot jsonb). normal|extenso: adjunto application/vnd.openxmlformats-officedocument.spreadsheetml.sheet generado inyectando datos con OpenPyXL en la plantilla corporativa (estilo, celdas combinadas y logo conservados)"
+        "403":
+          description: "equipo_id al que el actor no pertenece"
+        "404":
+          description: "Formato XLSX solicitado sin actas para los filtros indicados"
+        "422":
+          description: "Formato no soportado (p. ej. csv)"
+  /api/v1/reportes/consumo:
+    get:
+      summary: "Acta(s) de Consumo (hito B: generadas al cerrar el seguimiento) en JSON o XLSX sobre la plantilla corporativa"
+      operationId: "reporteConsumo"
+      parameters:
+        - name: equipo_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: desde
           in: query
           required: false
           schema:
             type: string
-            enum: [json, csv]
+        - name: hasta
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: acta_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: formato
+          in: query
+          required: false
+          description: "json (listado, por defecto) | normal | extenso. En XLSX el título es 'ACTA DE CONSUMO' y CANT. es la cantidad consumida (calculada en SQL); las líneas sin consumo se omiten. El CSV legacy queda descartado"
+          schema:
+            type: string
+            enum: [json, normal, extenso]
       responses:
         "200":
-          description: "Reporte de despliegues; format=csv devuelve text/csv streamed"
+          description: "json: listado de actas (snapshot jsonb). normal|extenso: adjunto XLSX sobre la plantilla corporativa"
+        "403":
+          description: "equipo_id al que el actor no pertenece"
+        "404":
+          description: "Formato XLSX solicitado sin actas para los filtros indicados"
+        "422":
+          description: "Formato no soportado (p. ej. csv)"
   /api/v1/fibra/{modulo}/materiales/{material_id}:
     patch:
       summary: "Modificar material del inventario FO (catálogo + stock ajustado y auditado)"

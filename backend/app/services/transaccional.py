@@ -18,7 +18,7 @@ from app.errors import (
     MovimientoNotFoundError,
     MovimientoStateError,
 )
-from app.models import CatalogoMaterial, Despliegue, Equipo, MovimientoCabecera, Seccion
+from app.models import CatalogoMaterial, Equipo, MovimientoCabecera, Seccion, Seguimiento
 
 _SQL_PROCESS_MOVEMENT = text("SELECT fn_procesar_movimiento(:movimiento_id)")
 _SQL_CANCEL_MOVEMENT = text(
@@ -42,14 +42,38 @@ _SQL_ELIMINAR_INVENTARIO_FIBRA = text(
 _SQL_AJUSTAR_STOCK_GENERAL = text(
     "SELECT fn_ajustar_stock_general(:material_id, :nuevo_stock, :motivo)"
 )
-_SQL_CREAR_DESPLIEGUE = text(
-    "SELECT fn_crear_despliegue("
+_SQL_CREAR_SEGUIMIENTO = text(
+    "SELECT fn_crear_seguimiento("
     ":equipo_id, :observaciones, CAST(:items AS JSONB), :usuario)"
 )
-_SQL_CERRAR_DESPLIEGUE = text(
-    "SELECT fn_cerrar_despliegue("
-    ":despliegue_id, CAST(:sobrantes AS JSONB), :usuario, :observaciones_cierre)"
+_SQL_CERRAR_SEGUIMIENTO = text(
+    "SELECT fn_cerrar_seguimiento("
+    ":seguimiento_id, CAST(:sobrantes AS JSONB), :usuario, :observaciones_cierre)"
 )
+_SQL_AGREGAR_TODO_SEGUIMIENTO = text(
+    "SELECT fn_agregar_todo_seguimiento("
+    ":seguimiento_id, :equipo_id, :usuario, :clave_idempotencia)"
+)
+_SQL_SUMAR_CANTIDAD = text(
+    "SELECT fn_sumar_cantidad("
+    ":destino, :modulo, :material_id, :cantidad, :usuario, :clave_idempotencia)"
+)
+_SQL_MOVER_MATERIAL = text(
+    "SELECT fn_mover_material("
+    ":origen, :origen_modulo, :destino, :destino_modulo, "
+    ":material_id, :cantidad, :usuario, :clave_idempotencia)"
+)
+# Lectura (solo SELECT) del resultado original de una operación idempotente
+# (REQ-P2-INV-007). La guarda y la escritura de `resultado` viven en el SP.
+_SQL_RESULTADO_IDEMPOTENTE = text(
+    "SELECT resultado FROM operaciones_idempotencia "
+    "WHERE tipo_operacion = :tipo AND clave = :clave"
+)
+
+# Código de error de dominio para el reenvío de una clave de idempotencia ya
+# confirmada (el router lo traduce a una respuesta 200 con el resultado
+# original; jamás se duplican efectos sobre stock ni auditoría).
+IDEMPOTENT_REPLAY = "IDEMPOTENT_REPLAY"
 
 
 def _sqlstate(exc: DBAPIError) -> str | None:
@@ -108,14 +132,31 @@ async def _mapear_raise_exception(exc: DBAPIError) -> Exception:
     if "motivo" in mensaje.lower():
         return BusinessRuleError(mensaje, status_code=422)
 
-    # ── Mapeos del flujo DESPLIEGUE (fn_crear/fn_cerrar_despliegue) ──────
+    # ── Idempotencia (REQ-P2-INV-007): reenvío de una clave ya confirmada ─
+    if "ya fue ejecutada" in mensaje and "idempotencia" in mensaje:
+        return BusinessRuleError(
+            mensaje, code=IDEMPOTENT_REPLAY, status_code=409
+        )
+
+    # ── Operadores rápidos (fn_sumar_cantidad / fn_mover_material) ───────
+    if "debe ser mayor que cero" in mensaje:
+        return BusinessRuleError(mensaje, status_code=400)
+
+    if "No existe una sección GENERAL activa" in mensaje:
+        return BusinessRuleError(mensaje, status_code=409)
+
+    # ── Flujo CONSUMO (fn_crear/cerrar/agregar_todo_seguimiento) ─────────
     if "no se encuentra en estado ABIERTA" in mensaje:
         return BusinessRuleError(mensaje, status_code=409)
 
-    if "ya posee un despliegue abierto" in mensaje:
+    if "ya posee un seguimiento abierto" in mensaje:
         return BusinessRuleError(mensaje, status_code=409)
 
-    if "Despliegue ID" in mensaje and "no encontrado" in mensaje:
+    if "Seguimiento ID" in mensaje and "no encontrado" in mensaje:
+        return BusinessRuleError(mensaje, status_code=404)
+
+    # Pertenencia seguimiento<->equipo: 404 (misma semántica que el GET).
+    if "no pertenece al equipo" in mensaje:
         return BusinessRuleError(mensaje, status_code=404)
 
     if "no existe o se encuentra inactivo" in mensaje:
@@ -127,7 +168,7 @@ async def _mapear_raise_exception(exc: DBAPIError) -> Exception:
     if "duplicado" in mensaje:
         return BusinessRuleError(mensaje, status_code=400)
 
-    if "no pertenece a este despliegue" in mensaje:
+    if "no pertenece a este seguimiento" in mensaje:
         return BusinessRuleError(mensaje, status_code=400)
 
     if "Sobrante inválido" in mensaje:
@@ -192,7 +233,7 @@ async def _prechequear_material(
 async def _prechequear_equipo(
     session: AsyncSession, *, equipo_id: int
 ) -> None:
-    """Pre-chequeo del flujo DESPLIEGUE: el equipo debe existir y estar
+    """Pre-chequeo del flujo CONSUMO: el equipo debe existir y estar
     activo (clasificación temprana 404 antes de invocar la función)."""
     equipo = await session.get(Equipo, equipo_id)
     if equipo is None or not equipo.is_active:
@@ -207,29 +248,29 @@ async def prechequear_equipo(
     session: AsyncSession, *, equipo_id: int
 ) -> None:
     """Alias público del pre-chequeo de equipo para los routers del flujo
-    DESPLIEGUE (evita accesos privados entre módulos)."""
+    CONSUMO (evita accesos privados entre módulos)."""
     await _prechequear_equipo(session, equipo_id=equipo_id)
 
 
-async def _prechequear_despliegue(
-    session: AsyncSession, *, despliegue_id: int
+async def _prechequear_seguimiento(
+    session: AsyncSession, *, seguimiento_id: int
 ) -> None:
-    """Clasificación temprana 404/409 del cierre de despliegue: el
-    despliegue debe existir (404) y estar ABIERTA (409 en otro caso). La
-    validación autoritativa permanece en fn_cerrar_despliegue."""
-    despliegue = await session.get(Despliegue, despliegue_id)
-    if despliegue is None:
+    """Clasificación temprana 404/409 del cierre de seguimiento: el
+    seguimiento debe existir (404) y estar ABIERTA (409 en otro caso). La
+    validación autoritativa permanece en fn_cerrar_seguimiento."""
+    seguimiento = await session.get(Seguimiento, seguimiento_id)
+    if seguimiento is None:
         raise BusinessRuleError(
-            "Despliegue no encontrado",
-            coordinates=[{"despliegue_id": despliegue_id}],
+            "Seguimiento no encontrado",
+            coordinates=[{"seguimiento_id": seguimiento_id}],
             status_code=404,
         )
-    if despliegue.estado != "ABIERTA":
+    if seguimiento.estado != "ABIERTA":
         raise BusinessRuleError(
-            f"El despliegue ID {despliegue_id} no se encuentra en estado "
+            f"El seguimiento ID {seguimiento_id} no se encuentra en estado "
             "ABIERTA.",
             coordinates=[
-                {"despliegue_id": despliegue_id, "estado": despliegue.estado}
+                {"seguimiento_id": seguimiento_id, "estado": seguimiento.estado}
             ],
             status_code=409,
         )
@@ -244,7 +285,7 @@ async def _ejecutar(
       * 23503/23505 (FK/unicidad, SEC-012) → 409 conflicto de integridad.
 
     Con `scalar=True` devuelve el valor escalar de la función (p.ej. el id
-    generado por fn_crear_despliegue)."""
+    generado por fn_crear_seguimiento)."""
     try:
         result = await session.execute(stmt, params)
         return result.scalar_one() if scalar else None
@@ -578,7 +619,7 @@ async def ajustar_stock_general(
     )
 
 
-async def crear_despliegue(
+async def crear_seguimiento(
     session: AsyncSession,
     *,
     equipo_id: int,
@@ -586,17 +627,17 @@ async def crear_despliegue(
     items: list[dict],
     usuario: str,
 ) -> int:
-    """fn_crear_despliegue: apertura de despliegue (ABIERTA) 100 % en
+    """fn_crear_seguimiento: apertura de seguimiento (ABIERTA) 100 % en
     PostgreSQL. `items` es una lista de {"material_id", "cantidad_tomada"}
     serializada a JSON. Devuelve el id generado por la función.
 
     CERO aritmética de stock en Python: validación de materiales, unicidad
-    de despliegue abierto por equipo y auditoría ('DESPLIEGUE_CREADO') viven
-    íntegros en la stored function."""
+    de seguimiento abierto por equipo y auditoría ('SEGUIMIENTO_CREADO')
+    viven íntegros en la stored function."""
     await _prechequear_equipo(session, equipo_id=equipo_id)
     return await _ejecutar(
         session,
-        _SQL_CREAR_DESPLIEGUE,
+        _SQL_CREAR_SEGUIMIENTO,
         {
             "equipo_id": equipo_id,
             "observaciones": observaciones,
@@ -607,28 +648,127 @@ async def crear_despliegue(
     )
 
 
-async def cerrar_despliegue(
+async def cerrar_seguimiento(
     session: AsyncSession,
     *,
-    despliegue_id: int,
+    seguimiento_id: int,
     sobrantes: list[dict],
     usuario: str,
     observaciones_cierre: str | None,
 ) -> None:
-    """fn_cerrar_despliegue: cierre con sobrantes 100 % en PostgreSQL.
+    """fn_cerrar_seguimiento: cierre con sobrantes 100 % en PostgreSQL.
     `sobrantes` es una lista de {"material_id", "cantidad_sobrante"}
     serializada a JSON (vacía si no hay sobrantes: las líneas omitidas se
-    cierran con sobrante 0). El descuento del inventario del equipo y la
-    auditoría ('DESPLIEGUE_CERRADO' por línea) ocurren dentro de la
-    función bajo FOR UPDATE."""
-    await _prechequear_despliegue(session, despliegue_id=despliegue_id)
+    cierran con sobrante 0). El descuento del inventario del equipo, la
+    auditoría ('SEGUIMIENTO_CERRADO' por línea) y el registro del Acta de
+    Consumo (snapshot jsonb, 'ACTA_CONSUMO_GENERADA') ocurren dentro de la
+    función bajo FOR UPDATE, en la misma transacción."""
+    await _prechequear_seguimiento(session, seguimiento_id=seguimiento_id)
     await _ejecutar(
         session,
-        _SQL_CERRAR_DESPLIEGUE,
+        _SQL_CERRAR_SEGUIMIENTO,
         {
-            "despliegue_id": despliegue_id,
+            "seguimiento_id": seguimiento_id,
             "sobrantes": json.dumps(sobrantes),
             "usuario": usuario,
             "observaciones_cierre": observaciones_cierre,
         },
+    )
+
+
+async def resultado_idempotente(
+    session: AsyncSession, *, tipo: str, clave: str
+) -> dict | None:
+    """Resultado original de una operación idempotente ya confirmada
+    (SOLO LECTURA de `operaciones_idempotencia`; None si la clave no
+    existe). Lo escribe el propio SP en su transacción."""
+    result = await session.execute(
+        _SQL_RESULTADO_IDEMPOTENTE, {"tipo": tipo, "clave": clave}
+    )
+    fila = result.first()
+    return None if fila is None else fila[0]
+
+
+async def agregar_todo_seguimiento(
+    session: AsyncSession,
+    *,
+    seguimiento_id: int,
+    equipo_id: int,
+    usuario: str,
+    clave_idempotencia: str | None,
+) -> int:
+    """fn_agregar_todo_seguimiento: carga atómica e idempotente de TODAS las
+    líneas con stock del inventario del equipo en el seguimiento ABIERTA.
+    Devuelve las líneas agregadas (calculadas por la función)."""
+    return await _ejecutar(
+        session,
+        _SQL_AGREGAR_TODO_SEGUIMIENTO,
+        {
+            "seguimiento_id": seguimiento_id,
+            "equipo_id": equipo_id,
+            "usuario": usuario,
+            "clave_idempotencia": clave_idempotencia,
+        },
+        scalar=True,
+    )
+
+
+async def sumar_cantidad(
+    session: AsyncSession,
+    *,
+    destino: str,
+    modulo: str | None,
+    material_id: int,
+    cantidad: int,
+    usuario: str,
+    clave_idempotencia: str | None,
+) -> int:
+    """fn_sumar_cantidad (+Cantidad): suma directa al stock actual y evento
+    inmutable 'SUMA_CANTIDAD' en una única transacción PostgreSQL. Devuelve
+    el nuevo stock calculado por la función. CERO aritmética en Python."""
+    return await _ejecutar(
+        session,
+        _SQL_SUMAR_CANTIDAD,
+        {
+            "destino": destino,
+            "modulo": modulo,
+            "material_id": material_id,
+            "cantidad": cantidad,
+            "usuario": usuario,
+            "clave_idempotencia": clave_idempotencia,
+        },
+        scalar=True,
+    )
+
+
+async def mover_material(
+    session: AsyncSession,
+    *,
+    origen: str,
+    origen_modulo: str | None,
+    destino: str,
+    destino_modulo: str | None,
+    material_id: int,
+    cantidad: int,
+    usuario: str,
+    clave_idempotencia: str | None,
+) -> dict:
+    """fn_mover_material (Mover): descuento del origen, acreditación del
+    destino y evento inmutable 'MOVIMIENTO_INVENTARIO' atómicos en
+    PostgreSQL. Devuelve {"stock_origen", "stock_destino"} calculados por
+    la función. CERO aritmética en Python."""
+    return await _ejecutar(
+        session,
+        _SQL_MOVER_MATERIAL,
+        {
+            "origen": origen,
+            "origen_modulo": origen_modulo,
+            "destino": destino,
+            "destino_modulo": destino_modulo,
+            "material_id": material_id,
+            "cantidad": cantidad,
+            "usuario": usuario,
+            "clave_idempotencia": clave_idempotencia,
+        },
+        scalar=True,
     )

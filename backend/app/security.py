@@ -104,7 +104,7 @@ async def assert_equipo_access(
     session: AsyncSession,
     equipo_id: int,
 ) -> None:
-    """Aislamiento por equipo (flujo DESPLIEGUE y configuración local): el
+    """Aislamiento por equipo (flujo CONSUMO/seguimiento y configuración local): el
     administrador pasa directo; el actor regular debe ser integrante del
     equipo (`equipos_integrantes`). En caso contrario 403."""
     if actor_ctx.es_admin:

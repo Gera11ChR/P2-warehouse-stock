@@ -7,12 +7,12 @@ from app.api.v1 import (
     auditoria,
     cancelaciones,
     catalog,
-    despliegues,
     equipos,
     fibra,
     inventario,
     movimientos,
     reportes,
+    seguimientos,
 )
 from app.errors import (
     AuthorizationError,
@@ -41,7 +41,7 @@ app.include_router(ajustes.router, prefix="/api/v1")
 app.include_router(equipos.router, prefix="/api/v1")
 app.include_router(fibra.router, prefix="/api/v1")
 app.include_router(auditoria.router, prefix="/api/v1")
-app.include_router(despliegues.router, prefix="/api/v1")
+app.include_router(seguimientos.router, prefix="/api/v1")
 app.include_router(reportes.router, prefix="/api/v1")
 
 

@@ -1,38 +1,46 @@
-"""DTOs del reporte de despliegues (REQ: reportes de campo).
+"""DTOs de los reportes oficiales de Entrega y Consumo (actas).
 
-Esquema plano por línea de material con los nombres de catálogo resueltos
-(categoría y U.M.), orientado tanto al payload JSON como a la exportación
-CSV con sanitización anti-inyección de fórmulas.
+Reemplazan al reporte legacy de despliegues (CSV descartado). Cada acta es
+un SNAPSHOT jsonb persistido por PostgreSQL en el momento del evento
+(REQ-P2-REP-003/004): el payload JSON y el XLSX se derivan de ese snapshot,
+nunca del stock mutable actual. Los números (incl. `cantidad_consumida`)
+vienen calculados por SQL; Python solo los transporta.
 """
 
-from datetime import date, datetime
+from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
+ActaTipo = Literal["ENTREGA", "CONSUMO"]
 
-class ReporteDespliegueItemOut(BaseModel):
+
+class ActaItemOut(BaseModel):
     material_id: int
-    codigo: str | None
+    codigo: str | None = None
     descripcion: str
-    categoria: str | None
-    um: str | None
-    cantidad_tomada: int
-    cantidad_sobrante: int | None
-    cantidad_consumida: int | None
+    categoria: str | None = None
+    u_m: str | None = None
+    # ENTREGA: cantidad entregada al equipo.
+    cantidad: int | None = None
+    # CONSUMO: tomada / sobrante / consumida (calculadas en SQL).
+    cantidad_tomada: int | None = None
+    cantidad_sobrante: int | None = None
+    cantidad_consumida: int | None = None
 
 
-class ReporteDespliegueOut(BaseModel):
-    despliegue_id: int
-    equipo_id: int
-    equipo_nombre: str
-    fecha: date
-    estado: str
-    usuario: str
-    observaciones: str | None
-    created_at: datetime
-    closed_at: datetime | None
-    items: list[ReporteDespliegueItemOut]
+class ActaOut(BaseModel):
+    acta_id: int
+    tipo: ActaTipo
+    movimiento_id: int | None = None
+    seguimiento_id: int | None = None
+    equipo_id: int | None = None
+    equipo_nombre: str | None = None
+    usuario: str | None = None
+    observaciones: str | None = None
+    fecha: datetime
+    items: list[ActaItemOut]
 
 
-class ReporteDespliegueListOut(BaseModel):
-    despliegues: list[ReporteDespliegueOut]
+class ActaListOut(BaseModel):
+    actas: list[ActaOut]
