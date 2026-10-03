@@ -320,6 +320,17 @@ async def actualizar_equipo(
         if "descripcion" in update:
             equipo.descripcion = update["descripcion"]
         if payload.integrantes is not None:
+            # FIX BUG uq_equipos_integrantes_usuario (generalizado): el
+            # reemplazo directo de la colección insertaba los nuevos
+            # integrantes ANTES de retirar los previos, colisionando con la
+            # restricción de unicidad cuando la lista enviada mantiene o
+            # repite integrantes existentes. Sincronización atómica en la
+            # MISMA transacción: se eliminan los registros anteriores y se
+            # ejecuta flush OBLIGATORIO para materializar los DELETE antes
+            # de insertar la lista actualizada (preservando su orden).
+            for integrante in list(equipo.integrantes):
+                await session.delete(integrante)
+            await session.flush()
             equipo.integrantes = [
                 EquipoIntegrante(usuario=u) for u in payload.integrantes
             ]

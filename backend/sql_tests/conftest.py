@@ -81,7 +81,7 @@ TABLAS_DOMINIO = [
 
 
 def pytest_configure(config: object) -> None:
-    """Aplica la cadena de migraciones completa (0001 -> 0021) sobre
+    """Aplica la cadena de migraciones completa (0001 -> 0022) sobre
     p2_test antes de recolectar las pruebas — valida las migraciones de la
     Fase 1 en cada ejecución."""
     env = {**os.environ, "P2_DATABASE_URL": TEST_DB_URL}

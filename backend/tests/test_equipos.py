@@ -54,6 +54,66 @@ async def test_patch_nombre_e_integrantes(client: AsyncClient) -> None:
     assert resp.json()["integrantes"] == ["pedro"]
 
 
+async def test_patch_integrantes_manteniendo_y_agregando(client: AsyncClient) -> None:
+    """BUG uq_equipos_integrantes_usuario: mantener los integrantes actuales
+    y añadir uno nuevo NO debe colisionar con la restricción de unicidad."""
+    equipo = await crear_equipo(client, nombre="Cuadrilla Solapada")
+    resp = await client.patch(
+        f"/api/v1/equipos/{equipo['equipo_id']}",
+        json={"integrantes": ["qa", "nuevo-integrante"]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["integrantes"] == ["qa", "nuevo-integrante"]
+
+
+async def test_patch_integrantes_reemplazo_con_solape(client: AsyncClient) -> None:
+    """Reemplazar la lista por otra que conserva parte de los integrantes
+    no debe fallar por unicidad en ningún equipo."""
+    equipo = await crear_equipo(
+        client, nombre="Cuadrilla Reemplazo", integrantes=["juan", "ana", "qa"]
+    )
+    resp = await client.patch(
+        f"/api/v1/equipos/{equipo['equipo_id']}",
+        json={"integrantes": ["ana", "pedro"]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["integrantes"] == ["ana", "pedro"]
+
+
+async def test_patch_integrantes_vacio_limpia_todos(client: AsyncClient) -> None:
+    equipo = await crear_equipo(
+        client, nombre="Cuadrilla Limpia", integrantes=["juan", "ana", "qa"]
+    )
+    resp = await client.patch(
+        f"/api/v1/equipos/{equipo['equipo_id']}",
+        json={"integrantes": []},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["integrantes"] == []
+
+
+async def test_patch_integrantes_duplicados_422(client: AsyncClient) -> None:
+    """La lista de integrantes debe rechazar duplicados en el payload (422)."""
+    equipo = await crear_equipo(client, nombre="Cuadrilla Duplicada")
+    resp = await client.patch(
+        f"/api/v1/equipos/{equipo['equipo_id']}",
+        json={"integrantes": ["ana", "ana"]},
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_patch_solo_nombre_no_toca_integrantes(client: AsyncClient) -> None:
+    equipo = await crear_equipo(
+        client, nombre="Cuadrilla Nombre", integrantes=["juan", "ana", "qa"]
+    )
+    resp = await client.patch(
+        f"/api/v1/equipos/{equipo['equipo_id']}",
+        json={"nombre": "Cuadrilla Renombrada"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert set(resp.json()["integrantes"]) == {"juan", "ana", "qa"}
+
+
 async def test_delete_soft_delete(client: AsyncClient) -> None:
     equipo = await crear_equipo(client, nombre="Cuadrilla C")
     resp = await client.delete(f"/api/v1/equipos/{equipo['equipo_id']}")

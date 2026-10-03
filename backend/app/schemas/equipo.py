@@ -10,6 +10,12 @@ class EquipoCreate(BaseModel):
     descripcion: str | None = Field(default=None, max_length=500)
     integrantes: list[str] = Field(default_factory=list, max_length=50)
 
+    @model_validator(mode="after")
+    def _check_integrantes_unicos(self) -> "EquipoCreate":
+        if len(set(self.integrantes)) != len(self.integrantes):
+            raise ValueError("integrantes con usuario duplicado.")
+        return self
+
 
 class EquipoUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -18,6 +24,14 @@ class EquipoUpdate(BaseModel):
     descripcion: str | None = Field(default=None, max_length=500)
     integrantes: list[str] | None = Field(default=None, max_length=50)
     is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def _check_integrantes_unicos(self) -> "EquipoUpdate":
+        if self.integrantes is not None and len(set(self.integrantes)) != len(
+            self.integrantes
+        ):
+            raise ValueError("integrantes con usuario duplicado.")
+        return self
 
 
 class EquipoConfigLocalUpdate(BaseModel):

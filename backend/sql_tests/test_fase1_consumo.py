@@ -248,13 +248,15 @@ def test_renombre_fisico_sin_objetos_legacy(conn):
 
 
 def test_auditoria_eventos_sin_vias_de_escritura(conn):
-    """Ledger inmutable: cero triggers/reglas UPDATE/DELETE sobre
-    auditoria_eventos; las filas se insertan y persisten tal cual."""
-    assert _valor(
+    """Ledger inmutable (endurecido en 0022): el ÚNICO trigger sobre
+    auditoria_eventos es el guard que bloquea UPDATE/DELETE; el INSERT
+    sigue funcionando y las filas persisten tal cual."""
+    guard = _todos(
         conn,
-        "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+        "SELECT t.tgname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
         "WHERE c.relname = 'auditoria_eventos' AND NOT t.tgisinternal",
-    ) == 0
+    )
+    assert guard == [("tg_ledger_auditoria_inmutable",)]
     assert _valor(
         conn,
         "SELECT count(*) FROM pg_rules "
@@ -270,6 +272,47 @@ def test_auditoria_eventos_sin_vias_de_escritura(conn):
         "SELECT tipo_accion, resultado FROM auditoria_eventos WHERE usuario = 'legacy'",
     )
     assert fila == ("DESPLIEGUE_CREADO", "EXITO")
+
+    # El guard bloquea UPDATE y DELETE de filas del ledger.
+    assert "UPDATE y DELETE están prohibidos" in _falla(
+        conn,
+        "UPDATE auditoria_eventos SET resultado = 'X' WHERE usuario = 'legacy'",
+    )
+    assert "UPDATE y DELETE están prohibidos" in _falla(
+        conn,
+        "DELETE FROM auditoria_eventos WHERE usuario = 'legacy'",
+    )
+
+
+def test_actas_reportes_inmutables(conn):
+    """La tabla de actas (nueva en este cambio) también queda protegida:
+    solo el guard, cero reglas, INSERT permitido y UPDATE/DELETE bloqueados."""
+    guard = _todos(
+        conn,
+        "SELECT t.tgname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+        "WHERE c.relname = 'actas_reportes' AND NOT t.tgisinternal",
+    )
+    assert guard == [("tg_ledger_actas_inmutable",)]
+    assert _valor(
+        conn,
+        "SELECT count(*) FROM pg_rules "
+        "WHERE schemaname = 'public' AND tablename = 'actas_reportes'",
+    ) == 0
+    # Acta REAL registrada por el trigger tg_acta_entrega al confirmar un
+    # TEAMS (así se respetan las FKs y el CHECK ck_actas_extremos).
+    material = crear_material(conn, descripcion="Acta inmutabilidad")
+    stockear_equipo_teams(conn, material, 10)
+    acta_id = _valor(conn, "SELECT id FROM actas_reportes WHERE tipo = 'ENTREGA'")
+    assert "UPDATE y DELETE están prohibidos" in _falla(
+        conn,
+        "UPDATE actas_reportes SET tipo = 'CONSUMO' WHERE id = %s",
+        (acta_id,),
+    )
+    assert "UPDATE y DELETE están prohibidos" in _falla(
+        conn,
+        "DELETE FROM actas_reportes WHERE id = %s",
+        (acta_id,),
+    )
 
 
 # ================================================================

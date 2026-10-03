@@ -192,6 +192,55 @@ paths:
       responses:
         "204":
           description: "U.M. desactivada (is_active=false, evento UM_ELIMINADA)"
+  /api/v1/equipos/{equipo_id}:
+    patch:
+      summary: "Modificar un equipo (nombre, descripción, integrantes, actividad)"
+      operationId: "actualizarEquipo"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nombre:
+                  type: string
+                descripcion:
+                  type: string
+                integrantes:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: string
+                  description: "Lista COMPLETA de integrantes (reemplaza la anterior, sin duplicados)"
+                is_active:
+                  type: boolean
+      responses:
+        "200":
+          description: "Equipo actualizado (sincronización atómica de integrantes: los previos se eliminan y se insertan los nuevos en la misma transacción)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  equipo_id:
+                    type: integer
+                  nombre:
+                    type: string
+                  descripcion:
+                    type: [string, "null"]
+                  is_active:
+                    type: boolean
+                  integrantes:
+                    type: array
+                    items:
+                      type: string
+        "403":
+          description: "Actor sin acceso: solo el administrador o un integrante actual del equipo puede modificarlo"
+        "404":
+          description: "Equipo no encontrado o inactivo"
+        "422":
+          description: "Payload inválido (integrantes duplicados, más de 50, nombre vacío)"
   /api/v1/equipos/{equipo_id}/inventario/{material_id}:
     patch:
       summary: "Configurar parámetros locales de inventario de equipo"
@@ -254,6 +303,53 @@ paths:
       responses:
         "200":
           description: "Líneas agregadas vía fn_agregar_todo_seguimiento (atómica e idempotente: una segunda invocación no duplica líneas; evento AGREGAR_TODO solo si hubo líneas nuevas). Un reenvío con la misma clave devuelve el resultado original"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lineas_agregadas, seguimiento]
+                properties:
+                  lineas_agregadas:
+                    type: integer
+                    description: "Cantidad de líneas nuevas calculada por la función SQL"
+                  seguimiento:
+                    type: object
+                    required: [id, equipo_id, fecha, usuario, estado, created_at, updated_at, items]
+                    properties:
+                      id:
+                        type: integer
+                      equipo_id:
+                        type: integer
+                      fecha:
+                        type: string
+                      observaciones:
+                        type: [string, "null"]
+                      usuario:
+                        type: string
+                      estado:
+                        type: string
+                        enum: [ABIERTA, CERRADA]
+                      created_at:
+                        type: string
+                      updated_at:
+                        type: string
+                      closed_at:
+                        type: [string, "null"]
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: integer
+                            material_id:
+                              type: integer
+                            cantidad_tomada:
+                              type: integer
+                            cantidad_sobrante:
+                              type: [integer, "null"]
+                            cantidad_consumida:
+                              type: [integer, "null"]
         "404":
           description: "Seguimiento no encontrado o no pertenece al equipo"
         "409":

@@ -15,6 +15,10 @@ import io
 import re
 from datetime import date, timedelta
 
+from sqlalchemy import select
+
+from app.models import AuditoriaEvento
+
 import pytest
 from httpx import AsyncClient
 from openpyxl import load_workbook
@@ -79,6 +83,18 @@ async def _consumo(
     )
     assert resp.status_code == 200, resp.text
     return resp.json()
+
+
+async def _eventos_acta(session, tipo: str) -> list[AuditoriaEvento]:
+    return list(
+        (
+            await session.execute(
+                select(AuditoriaEvento)
+                .where(AuditoriaEvento.tipo_accion == tipo)
+                .order_by(AuditoriaEvento.id)
+            )
+        ).scalars()
+    )
 
 
 def _xlsx(resp) -> object:
@@ -437,6 +453,52 @@ async def test_REQ_P2_REP_001_cap_de_lineas_xlsx_422(
     assert "límite de líneas" in resp.json()["error"]["message"]
     monkeypatch.undo()
     assert (await client.get("/api/v1/reportes/entrega?formato=normal")).status_code == 200
+
+
+# ── Atribución de los eventos de acta (auditoría final) ─────────────────────
+
+
+async def test_acta_entrega_atribuida_a_quien_confirma(
+    client: AsyncClient, client_admin: AsyncClient, session
+) -> None:
+    """El evento ACTA_ENTREGA_GENERADA queda atribuido al actor que
+    CONFIRMA (set_config('app.actor')), no al creador del borrador."""
+    material = await crear_material(client, descripcion="Atribucion entrega")
+    equipo = await crear_equipo(client, nombre="Equipo Atribucion")
+    await carga_inicial(client, material_id=material["id_lista"], cantidad=100)
+    b = await borrador_teams(
+        client,
+        almacen_id=1,
+        equipo_id=equipo["equipo_id"],
+        material_id=material["id_lista"],
+        cantidad=10,
+    )
+    await procesar(client_admin, b["id"])
+
+    eventos = await _eventos_acta(session, "ACTA_ENTREGA_GENERADA")
+    assert len(eventos) == 1
+    evento = eventos[0]
+    assert evento.usuario == "admin-qa"  # quien confirma, no 'qa'
+    assert evento.detalles["movimiento_id"] == b["id"]
+    assert isinstance(evento.detalles["acta_id"], int)
+    assert evento.equipo_destino_id == equipo["equipo_id"]
+
+
+async def test_acta_consumo_atribuida_al_actor_del_cierre(
+    client: AsyncClient, session
+) -> None:
+    """El evento ACTA_CONSUMO_GENERADA queda atribuido al actor que cierra
+    el seguimiento, con la referencia del acta y del seguimiento."""
+    material, equipo, _ = await _entrega(client)
+    await _consumo(client, material, equipo, tomada=20, sobrante=5)
+
+    eventos = await _eventos_acta(session, "ACTA_CONSUMO_GENERADA")
+    assert len(eventos) == 1
+    evento = eventos[0]
+    assert evento.usuario == "qa"
+    assert isinstance(evento.detalles["acta_id"], int)
+    assert isinstance(evento.detalles["seguimiento_id"], int)
+    assert evento.detalles["equipo_id"] == equipo["equipo_id"]
 
 
 async def test_descripcion_maliciosa_no_se_escribe_como_formula(

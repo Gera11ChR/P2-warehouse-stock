@@ -538,7 +538,7 @@ async def mapear_error_delete_fibra(
         reporta cuando un DELETE viola una FK ON DELETE RESTRICT desde
         dentro de una stored function (fo_report_1.md).
       * 42883 (función inexistente): la migración 0015
-        (`fn_eliminar_inventario_fibra`) no fue aplicada en el despliegue
+        (`fn_eliminar_inventario_fibra`) no fue aplicada en el entorno
         → 409 con mensaje operativo.
       * Cualquier otro error de BD → 409 controlado con el mensaje de
         PostgreSQL (fallback fail-closed, jamás 500)."""
@@ -555,7 +555,7 @@ async def mapear_error_delete_fibra(
     if sqlstate == "42883":
         return BusinessRuleError(
             "La eliminación de inventario FO no está disponible en este "
-            "despliegue (función de base de datos no aplicada); contacte "
+            "instalación (función de base de datos no aplicada); contacte "
             "al administrador del sistema",
             code="FO_DELETE_UNAVAILABLE",
             coordinates=coordinates,

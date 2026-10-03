@@ -31,6 +31,9 @@ app.add_middleware(
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
+    # Descarga de actas XLSX: expone el nombre del adjunto para que el
+    # frontend pueda leer Content-Disposition también en origen cruzado.
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(catalog.router, prefix="/api/v1")

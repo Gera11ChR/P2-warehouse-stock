@@ -263,6 +263,47 @@ Flujo **Backend First** y **estrictamente secuencial**.
 - Test de atribución/payload de `ACTA_ENTREGA_GENERADA` y `ACTA_CONSUMO_GENERADA`.
 - Cambiar el homónimo "despliegue" (*deployment*) de `transaccional.py:558`.
 
+
+## Corrección posterior a la Fase 5 — bug equipos + recomendaciones de auditoría
+
+### BUG SISTEMÁTICO corregido: PATCH /api/v1/equipos/{id} devolvía 500 en TODOS los equipos
+
+- **Causa raíz:** `actualizar_equipo` reemplazaba la colección de integrantes sin retirar
+  primero los registros previos; el flush insertaba los nuevos ANTES de eliminar los viejos,
+  colisionando con `uq_equipos_integrantes_usuario` cuando la lista enviada mantiene o repite
+  integrantes existentes (reproducido: `UniqueViolation Key (equipo_id, usuario)=(1, qa)`).
+- **Solución genérica:** sincronización atómica en la misma transacción — DELETE de los
+  integrantes previos + `session.flush()` OBLIGATORIO + INSERT de la lista nueva (preserva
+  orden). Aplica a cualquier equipo.
+- **Validación añadida:** `EquipoUpdate` y `EquipoCreate` rechazan integrantes duplicados
+  en el payload con 422.
+- **Regresión (rojo → verde):** 5 tests nuevos en `tests/test_equipos.py`
+  (mantener+agregar, reemplazo con solape, lista vacía, duplicados 422, solo-nombre);
+  capturaron el 500 con el `IntegrityError` antes de la corrección.
+
+### Recomendaciones de la auditoría final aplicadas
+
+- **CORS:** `expose_headers=["Content-Disposition"]` en el `CORSMiddleware` (descarga XLSX
+  legible también en origen cruzado).
+- **Contrato:** formalizado el schema 200 de `agregar-todo` (`AgregarTodoOut`) y añadido
+  `PATCH /api/v1/equipos/{equipo_id}` (payload `EquipoUpdate` + `EquipoOut`) en
+  `openspec.yaml`.
+- **Inmutabilidad endurecida en BD (migración 0022):** triggers
+  `tg_ledger_auditoria_inmutable` y `tg_ledger_actas_inmutable` que bloquean UPDATE/DELETE
+  sobre `auditoria_eventos` y `actas_reportes` (el `REVOKE` no detiene al owner). TRUNCATE
+  no se bloquea a propósito (los fixtures de pytest dependen de él).
+- **Atribución de actas:** 2 tests verifican que `ACTA_ENTREGA_GENERADA` queda atribuida a
+  QUIEN CONFIRMA (admin confirma borrador de qa -> usuario='admin-qa') y
+  `ACTA_CONSUMO_GENERADA` al actor del cierre.
+- **Homónimo:** "despliegue" (sentido *deployment*) reemplazado por "instalación" en
+  `transaccional.py`.
+
+### Verificación
+
+- pytest backend: **296 passed** (app) + **25 passed** (`sql_tests`), secuenciales.
+- Zero-Drift: 18/18 rutas del contrato implementadas en OpenAPI; schemas de `EquipoUpdate`
+  y `AgregarTodoOut` coinciden entre contrato y app.
+
 ## Definición de Terminado (DoD)
 
 - [ ] Renombre físico CONSUMO/seguimiento completo en BD, API y UI, con objetos dependientes
