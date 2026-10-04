@@ -7,7 +7,7 @@
 [![Backend Tests](https://img.shields.io/badge/Pytest-303%2F303_Passed-success.svg)](#8-quality-assurance)
 [![Frontend Tests](https://img.shields.io/badge/Vitest-341%2F341_Passed-success.svg)](#8-quality-assurance)
 [![Types](https://img.shields.io/badge/Mypy-56_Errors_73_files-yellow.svg)](#8-quality-assurance)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](#license)
+[![License](https://img.shields.io/badge/License-Proprietary_All_Rights_Reserved-red.svg)](#license)
 
 Enterprise **fiber-optic logistics and fleet inventory platform** built on **FastAPI + PostgreSQL 18** with a **React 19** console. Designed under the principles of transactional atomicity, immutable auditability and strict specification-driven governance.
 
@@ -172,7 +172,7 @@ Authority is layered in five levels (`.agents.md`): **L1** `docs/constitution.md
 | 2026-09-02 | Inter-site warehouse stock transfer model | Establish atomic transfers, RBAC by site and idempotency (`2026-09-02-warehouse-inter-site-stock-transfer`) |
 | 2026-09-04 | First WMS inventory dashboard (React + Tailwind) | Operators needed visibility: KPIs, filters, detail drawer, fleet and fiber modules (`2026-09-04-wms-inventory-dashboard`) |
 | 2026-09-11 | Manual stock correction + **official 53-item catalog** | Replace demo SKUs with the real DMS catalog; allow justified manual corrections with ledger entries |
-| 2026-09-14 | Professional README v1.0.0 + MIT license | Public-facing project baseline |
+| 2026-09-14 | Professional README v1.0.0 + MIT license *(relicenciado a propietario el 2026-10-04)* | Public-facing project baseline |
 | 2026-09-23 | **Repository consolidation into a single root** | Merge legacy sub-repositories into one linear history (`docs/adr-2026-09-23-consolidacion-repositorio.md`) |
 | 2026-09-24 | Operational flow + agent governance refresh | Codify phases 0–13 and the 11-agent responsibility matrix |
 | 2026-09-25 | **Frontend–backend alignment** (129 tests) | Kill phantom materials, hide `ID Lista`, isolate inventories per crew/FO, readable audit, admin RBAC (`2026-09-22-frontend-backend-alignment`) |
@@ -183,6 +183,7 @@ Authority is layered in five levels (`.agents.md`): **L1** `docs/constitution.md
 | 2026-10-01 | **CONSUMO rename + official reports** | Physical `DESPLIEGUE` → `CONSUMO`/seguimiento rename, quick operators (`+Cantidad`/`Mover`), idempotency keys, Actas de Entrega/Consumo as XLSX on corporate templates (`2026-10-01-reportes-consumo-management`) |
 | 2026-10-04 | **Operative ergonomics & UI cleanup** | Optional justification in adjustments/transfers; bulk search removed from Sección General; clean breadcrumbs without the "Dashboard /" prefix (`2026-10-04-ergonomia-justificacion-opcional`, `2026-10-04-eliminar-buscador-a-granel`, `2026-10-04-eliminar-breadcrumb-dashboard`) |
 | 2026-10-04 | **Forensic credential purge** | PostgreSQL credentials surgically purged from the entire Git history via `git filter-repo` (`***REDACTED***`), zero traces verified (see [§4.5.4](#454-forensic-credential-purge-of-git-history)) |
+| 2026-10-04 | **Proprietary relicensing** | MIT license replaced by a proprietary license reserving all rights to Gerardo Chávez Rodríguez (LFDA/LFPPI) — see [License](#license) |
 
 Seven change packages are archived under `openspec/changes/archive/`; six are implemented and awaiting archival.
 
@@ -498,4 +499,14 @@ Delivered scope is priced against 2026 market bands for a single-site custom WMS
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+**Proprietary — All Rights Reserved.**
+
+Copyright (c) 2026 Gerardo Chávez Rodríguez. All rights reserved. Software propietario bajo reserva exclusiva de su autor.
+
+This software is **not** open source, **not** free software and **not** in the public domain. Gerardo Chávez Rodríguez is the sole author and exclusive holder of all economic and moral rights over the source code, binaries, architecture, database models (DDL/PL-pgSQL), interfaces and documentation, under Mexico's Federal Copyright Law (LFDA) and Federal Industrial Property Protection Law (LFPPI).
+
+Copying, reproduction, modification, commercial exploitation, sublicensing, assignment, rental, public communication, decompilation or reverse engineering is strictly prohibited without an explicit license agreement signed by the author. Business logic and algorithms are protected trade secrets (LFPPI Arts. 82-84). The software is provided "AS IS" with no warranties, and liability is excluded to the fullest extent permitted by law. Applicable law: laws of the United Mexican States; exclusive jurisdiction of the Federal Courts of Mexico.
+
+Copies previously distributed under the MIT License remain governed by that license.
+
+Full terms: [`LICENSE`](LICENSE).

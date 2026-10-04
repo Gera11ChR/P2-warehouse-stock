@@ -1,21 +1,143 @@
-MIT License
+CONTRATO DE LICENCIA PROPIETARIA DE SOFTWARE
+DMS-TELECOM — PROYECTO P2
+===========================================
 
-Copyright (c) 2026 Gerardo Chávez Rodríguez
+Copyright (c) 2026 Gerardo Chávez Rodríguez. Todos los derechos reservados.
+Copyright (c) 2026 Gerardo Chávez Rodríguez. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+-------------------------------------------------------------
+1. TITULARIDAD Y AUTORÍA
+-------------------------------------------------------------
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Gerardo Chávez Rodríguez, persona física, es el ÚNICO autor y titular
+EXCLUSIVO de los derechos patrimoniales y del derecho moral sobre la
+totalidad del software "DMS-TELECOM" (Proyecto P2), conforme a la Ley
+Federal del Derecho de Autor (LFDA, Artículos 18 a 24 y 101 a 114), y
+sobre los secretos industriales asociados, conforme a la Ley Federal de
+Protección a la Propiedad Industrial (LFPPI).
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+La titularidad exclusiva comprende, sin limitación:
+
+  a) El código fuente y los binarios compilados.
+  b) La arquitectura del sistema y su diseño técnico.
+  c) Los modelos de base de datos, incluidos el DDL canónico
+     (backend/db/ddl.sql), las funciones PL/pgSQL, los disparadores
+     (triggers) y las migraciones de esquema (Alembic).
+  d) Las interfaces de usuario y de programación (API), sus esquemas y
+     contratos.
+  e) La documentación técnica, operativa y de gobernanza.
+  f) Los algoritmos, reglas de negocio, procedimientos de auditoría
+     inmutable y demás conocimientos técnicos incorporados al software.
+
+Este software NO es de dominio público, NO es software libre y NO es
+software de código abierto. No pertenece a ninguna corporación,
+sociedad o tercero.
+
+-------------------------------------------------------------
+2. PROHIBICIÓN DE USO LIBRE Y DE DISTRIBUCIÓN
+-------------------------------------------------------------
+
+Queda ABSOLUTAMENTE PROHIBIDO a cualquier persona física o moral, sin
+un contrato de licencia explícito firmado de forma AUTÓGRAFA por
+Gerardo Chávez Rodríguez:
+
+  a) Copiar, reproducir o duplicar el software, total o parcialmente.
+  b) Modificar, adaptar, traducir o crear obras derivadas.
+  c) Explotar comercialmente el software por cualquier medio.
+  d) Sublicenciar, ceder, transmitir, alquilar, arrendar o prestar.
+  e) Comunicar públicamente, publicar, distribuir o poner a disposición
+     de terceros el software o cualquiera de sus componentes.
+  f) Usar el software fuera del alcance expresamente autorizado por
+     escrito.
+
+La mera recepción, visualización o descarga de este software NO otorga
+licencia alguna, expresa o implícita, sobre ninguno de los elementos
+protegidos.
+
+-------------------------------------------------------------
+3. PROHIBICIÓN DE INGENIERÍA INVERSA Y SECRETO INDUSTRIAL
+-------------------------------------------------------------
+
+Queda ESTRICTAMENTE PROHIBIDO descompilar, desensamblar, realizar
+ingeniería inversa o intentar extraer, mediante cualquier técnica, los
+algoritmos, la lógica de negocio, las funciones de base de datos o
+cualquier elemento técnico del software.
+
+Dichos algoritmos, reglas y lógica constituyen un SECRETO INDUSTRIAL
+protegido a nombre de Gerardo Chávez Rodríguez conforme a la LFPPI
+(Artículos 82 a 84), y su apropiación, uso o divulgación no autorizados
+podrá ser perseguida por las vías civil y penal correspondientes.
+
+-------------------------------------------------------------
+4. EXCLUSIÓN DE GARANTÍAS
+-------------------------------------------------------------
+
+El software se proporciona "TAL CUAL" (AS IS), sin garantía de ningún
+tipo, expresa o implícita, incluyendo de manera enunciativa más no
+limitativa, las garantías de comerciabilidad, idoneidad para un fin
+particular y no infracción de derechos de terceros.
+
+-------------------------------------------------------------
+5. LIMITACIÓN DE RESPONSABILIDAD
+-------------------------------------------------------------
+
+Ninguna parte o tercero podrá reclamar indemnización, daños o perjuicios
+— directos, indirectos, incidentales, consecuentes o especiales — a
+Gerardo Chávez Rodríguez, por el uso o la imposibilidad de uso del
+software, aun cuando se hubiere advertido de la posibilidad de tales
+daños.
+
+-------------------------------------------------------------
+6. NO RETROACTIVIDAD
+-------------------------------------------------------------
+
+Las copias del software distribuidas con anterioridad bajo la licencia
+MIT conservan los términos bajo los cuales fueron obtenidas. La presente
+licencia propietaria rige, de manera exclusiva, para las versiones
+actuales y futuras del software y no otorga derechos retroactivos
+distintos a los ya adquiridos por terceros conforme a dicha licencia
+anterior.
+
+-------------------------------------------------------------
+7. LEY APLICABLE Y JURISDICCIÓN
+-------------------------------------------------------------
+
+El presente instrumento se sustenta en la legislación de la República
+Mexicana, en particular en la Ley Federal del Derecho de Autor (LFDA) y
+la Ley Federal de Protección a la Propiedad Industrial (LFPPI).
+
+Para la interpretación y cumplimiento de esta licencia, las partes se
+someten a la jurisdicción de los Tribunales Federales de México,
+renunciando expresamente a cualquier otro fuero que pudiera
+corresponderles por razón de domicilio presente o futuro.
+
+-------------------------------------------------------------
+8. VIGENCIA Y TERMINACIÓN
+-------------------------------------------------------------
+
+Esta reserva de derechos es de vigencia indefinida. Los derechos morales
+son perpetuos, inalienables e imprescriptibles. Cualquier uso no
+autorizado del software faculta al titular para ejercer las acciones
+legales procedentes.
+
+-------------------------------------------------------------
+LEGAL SUMMARY (ENGLISH)
+-------------------------------------------------------------
+
+DMS-TELECOM (Project P2) is PROPRIETARY SOFTWARE owned exclusively by
+Gerardo Chávez Rodríguez (natural person), sole author and holder of all
+economic and moral rights under Mexico's Federal Copyright Law (LFDA)
+and Federal Industrial Property Protection Law (LFPPI). This software is
+NOT public domain, NOT free software and NOT open source. Any copying,
+reproduction, modification, commercial exploitation, sublicensing,
+assignment, rental, public communication, decompilation or reverse
+engineering is strictly prohibited without an explicit written license
+agreement signed by the author. Business logic and algorithms are
+protected trade secrets (LFPPI Arts. 82-84). The software is provided
+"AS IS" with no warranties; liability is excluded to the fullest extent
+permitted by law. Copies previously distributed under the MIT License
+remain governed by that license. Applicable law: laws of the United
+Mexican States; exclusive jurisdiction of the Federal Courts of Mexico.
+
+Copyright (c) 2026 Gerardo Chávez Rodríguez. Todos los derechos
+reservados. All rights reserved.

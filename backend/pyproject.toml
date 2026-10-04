@@ -7,6 +7,9 @@ name = "p2-backend"
 version = "0.1.0"
 description = "Project P2 - Enterprise Fiber Optic Logistics & Fleet Inventory System (backend)"
 requires-python = ">=3.12"
+authors = [{ name = "Gerardo Chávez Rodríguez" }]
+license = { text = "Proprietary / All Rights Reserved (c) 2026 Gerardo Chávez Rodríguez" }
+classifiers = ["License :: Other/Proprietary License"]
 dependencies = [
     "sqlalchemy[asyncio]>=2.0.41",
     "alembic>=1.16",
