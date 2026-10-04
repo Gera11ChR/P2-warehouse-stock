@@ -24,8 +24,6 @@ export default function Header({ breadcrumb, onSearch }: HeaderProps) {
   return (
     <header className="flex h-16 items-center justify-between gap-4 border-b border-slate-200 bg-white px-6">
       <nav className="text-sm text-slate-500">
-        <span>Dashboard</span>
-        <span className="mx-2 text-slate-300">/</span>
         <span className="font-medium text-slate-800">{breadcrumb}</span>
       </nav>
       <div className="relative w-full max-w-md">
