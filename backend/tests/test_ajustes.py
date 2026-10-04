@@ -130,21 +130,37 @@ async def test_ajuste_sin_registro_previo_404(client: AsyncClient) -> None:
     ]
 
 
-async def test_ajuste_motivo_vacio_422(client: AsyncClient) -> None:
+async def test_ajuste_motivo_vacio_200(client: AsyncClient) -> None:
+    """REQ-ERG-005: ajuste administrativo con motivo vacío, omitido o null
+    se acepta (200): el ledger inmutable sigue auditando el evento
+    AJUSTE_INVENTARIO con el motivo tal como llega."""
     material = await crear_material(client, descripcion="Ajuste 3")
     await carga_inicial(
         client, material_id=material["id_lista"], cantidad=10
     )
-    resp = await client.post(
-        "/api/v1/ajustes/stock-almacen",
-        json={
+    for payload in (
+        {
             "almacen_id": 1,
             "material_id": material["id_lista"],
             "nuevo_stock": 5,
             "motivo": "",
         },
-    )
-    assert resp.status_code == 422
+        {
+            "almacen_id": 1,
+            "material_id": material["id_lista"],
+            "nuevo_stock": 5,
+        },
+        {
+            "almacen_id": 1,
+            "material_id": material["id_lista"],
+            "nuevo_stock": 5,
+            "motivo": None,
+        },
+    ):
+        resp = await client.post("/api/v1/ajustes/stock-almacen", json=payload)
+        assert resp.status_code == 200, resp.text
+
+    assert await stock_seccion(client, 1) == {material["id_lista"]: 5}
 
 
 async def test_ajuste_no_muta_inventario_equipos(

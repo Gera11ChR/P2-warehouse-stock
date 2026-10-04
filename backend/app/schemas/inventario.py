@@ -102,15 +102,17 @@ class FibraCargaInicialRequest(BaseModel):
 
 
 class FibraAjusteRequest(BaseModel):
-    """Ajuste administrativo de stock FO con `motivo` obligatorio y no vacío
-    (Constitution 2.4: ledger inmutable; toda corrección queda auditada)."""
+    """Ajuste administrativo de stock FO. Ergonomía
+    `justificacion_opcional` (REQ-ERG-005): `motivo` es OPCIONAL — se acepta
+    `null`, cadena vacía o campo omitido; el evento AJUSTE_INVENTARIO_FO
+    registra el motivo tal como llega (Constitution 2.4: ledger inmutable)."""
 
     model_config = ConfigDict(extra="forbid")
 
     modulo: FibraModulo
     material_id: int = Field(gt=0, description="Referencia a id_lista inmutable")
     nuevo_stock: int = Field(ge=0)
-    motivo: str = Field(min_length=1, max_length=500)
+    motivo: str | None = Field(default=None, max_length=500)
 
 
 class FibraOperacionOut(BaseModel):
@@ -129,11 +131,16 @@ class FibraMaterialUpdateRequest(BaseModel):
     Espejo de `MaterialUpdate` (schemas/material.py) adaptado a Fibra
     Óptica: sin `is_active` y sin el campo legacy `tipo`. El stock NO se
     actualiza por ORM: si `stock_actual` viene en el payload, el servicio
-    enruta el ajuste a `fn_ajustar_stock_fibra` con `motivo` obligatorio y
-    no vacío (el diferencial, el bloqueo FOR UPDATE y la auditoría
-    'AJUSTE_INVENTARIO_FO' viven en PostgreSQL — Constitution 2.4, jamás
-    UPDATE directo de stock). Selector dual de categorías: `categoria_id`
-    (rama A) o `nueva_categoria` (rama B), mutuamente excluyentes."""
+    enruta el ajuste a `fn_ajustar_stock_fibra` (el diferencial, el bloqueo
+    FOR UPDATE y la auditoría 'AJUSTE_INVENTARIO_FO' viven en PostgreSQL —
+    Constitution 2.4, jamás UPDATE directo de stock). Selector dual de
+    categorías: `categoria_id` (rama A) o `nueva_categoria` (rama B),
+    mutuamente excluyentes.
+
+    Ergonomía `justificacion_opcional` (REQ-ERG-004): `motivo` es OPCIONAL
+    incluso cuando se envía `stock_actual` — se acepta `null`, cadena vacía
+    o campo omitido, y el evento AJUSTE_INVENTARIO_FO registra el motivo
+    tal como llega (NULL permitido)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -152,21 +159,6 @@ class FibraMaterialUpdateRequest(BaseModel):
             raise ValueError(
                 "Use solo una rama del selector dual: categoria_id o nueva_categoria."
             )
-        return self
-
-    @model_validator(mode="after")
-    def _check_stock_motivo(self) -> "FibraMaterialUpdateRequest":
-        """REQ-STOCK-001: si se envía `stock_actual`, el `motivo` es
-        obligatorio y no vacío; todo ajuste de stock debe quedar trazado en
-        el ledger de Auditoría (espejo de `_check_stock_motivo` de
-        MaterialUpdate)."""
-        if self.stock_actual is not None:
-            if self.motivo is None or not self.motivo.strip():
-                raise ValueError(
-                    "motivo es obligatorio y no puede estar vacío cuando se "
-                    "modifica stock_actual: todo ajuste de stock debe quedar "
-                    "trazado en el ledger de Auditoría."
-                )
         return self
 
 

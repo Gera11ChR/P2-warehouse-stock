@@ -54,11 +54,11 @@ export interface MaterialUpdatePayload {
    * REQ-API-002/003 (alcance Inventario General, REQ-UI-004): si se envía
    * `stock_actual`, el backend calcula el delta y lo enruta a
    * `fn_ajustar_stock_almacen` con auditoría; NUNCA hay UPDATE directo de
-   * stock. `motivo` es OBLIGATORIO y no vacío cuando viene `stock_actual`
-   * (el backend responde 422 si falta).
+   * stock. Ergonomía `justificacion_opcional` (REQ-ERG-003): `motivo` es
+   * OPCIONAL — vacío se envía como `null`.
    */
   stock_actual?: number
-  motivo?: string
+  motivo?: string | null
 }
 
 export interface CategoriaCreatePayload {

@@ -1,11 +1,12 @@
 """Edición de stock y SKU desde el formulario de material (Inventario
-General) — REQ-API-002/003, REQ-UI-004, Constitution 2.4/6.2.
+General) — REQ-API-002/003, REQ-UI-004, REQ-ERG-003, Constitution 2.4/6.2.
 
 El stock JAMÁS se actualiza por ORM: el delta se enruta a
-fn_ajustar_stock_general → fn_ajustar_stock_almacen con `motivo`
-obligatorio; la atomicidad garantiza que un ajuste fallido revierte también
-la edición del material. La edición aislada del SKU emite el evento
-MATERIAL_MODIFICADO (migración 0013).
+fn_ajustar_stock_general → fn_ajustar_stock_almacen; la atomicidad garantiza
+que un ajuste fallido revierte también la edición del material. Ergonomía
+`justificacion_opcional`: `motivo` es opcional (null/vacío permitido; el
+evento AJUSTE_INVENTARIO registra el motivo tal como llega). La edición
+aislada del SKU emite el evento MATERIAL_MODIFICADO (migración 0013).
 """
 
 import pytest
@@ -34,20 +35,35 @@ async def _material_con_stock(
 
 
 @pytest.mark.critical
-async def test_stock_actual_sin_motivo_422(client: AsyncClient) -> None:
-    """REQ-API-003: stock_actual sin motivo (o motivo vacío) es rechazado en
-    el schema con 422 — jamás llega a PostgreSQL."""
+async def test_stock_actual_sin_motivo_200(
+    client: AsyncClient, session
+) -> None:
+    """REQ-ERG-003: stock_actual con motivo omitido, null o vacío se acepta
+    (200): fn_ajustar_stock_general → fn_ajustar_stock_almacen audita
+    AJUSTE_INVENTARIO con el motivo tal como llega (NULL permitido)."""
     material = await _material_con_stock(client)
 
     for payload in (
         {"stock_actual": 80},
+        {"stock_actual": 80, "motivo": None},
         {"stock_actual": 80, "motivo": ""},
-        {"stock_actual": 80, "motivo": "   "},
     ):
         resp = await patch_material(client, material["id_lista"], **payload)
-        assert resp.status_code == 422
+        assert resp.status_code == 200, resp.text
 
-    assert await stock_seccion(client, 1) == {material["id_lista"]: 100}
+    assert await stock_seccion(client, 1) == {material["id_lista"]: 80}
+
+    eventos = (
+        await session.execute(
+            select(AuditoriaEvento).where(
+                AuditoriaEvento.tipo_accion == "AJUSTE_INVENTARIO"
+            )
+        )
+    ).scalars().all()
+    assert len(eventos) == 3
+    motivos = [(e.detalles or {}).get("motivo") for e in eventos]
+    assert motivos == [None, None, ""]
+    assert all((e.detalles or {})["stock_nuevo"] == 80 for e in eventos)
 
 
 @pytest.mark.critical

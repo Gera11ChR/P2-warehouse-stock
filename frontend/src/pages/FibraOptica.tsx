@@ -421,7 +421,8 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
       />
 
       {/* Modal de edición (REQ-CATFO-001, REQ-STOCK-001): FibraMaterialForm
-          con catálogo dinámico y STOCK ACTUAL con motivo obligatorio. */}
+          con catálogo dinámico y STOCK ACTUAL con motivo opcional
+          (ergonomía `justificacion_opcional`). */}
       <Modal
         open={editOpen && selected !== null}
         title="Modificar Material"

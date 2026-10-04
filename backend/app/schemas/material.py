@@ -102,11 +102,16 @@ class MaterialUpdate(BaseModel):
 
     El stock NO se actualiza por ORM: si `stock_actual` viene en el payload,
     el servicio calcula el delta (Nuevo − Actual) y lo enruta a
-    `fn_ajustar_stock_almacen` (vía `fn_ajustar_stock_general`) con
-    `motivo` obligatorio y no vacío, de modo que PostgreSQL registre el
-    ajuste como evento de Auditoría (Constitution 2.4: ledger inmutable;
-    jamás UPDATE directo de stock). Este campo solo aplica al Inventario
-    General, nunca a inventarios de Equipos ni de Fibra Óptica."""
+    `fn_ajustar_stock_almacen` (vía `fn_ajustar_stock_general`), de modo que
+    PostgreSQL registre el ajuste como evento de Auditoría (Constitution 2.4:
+    ledger inmutable; jamás UPDATE directo de stock). Este campo solo aplica
+    al Inventario General, nunca a inventarios de Equipos ni de Fibra
+    Óptica.
+
+    Ergonomía `justificacion_opcional` (REQ-ERG-003): `motivo` es OPCIONAL
+    incluso cuando se envía `stock_actual` — se acepta `null`, cadena vacía
+    o campo omitido, y el evento AJUSTE_INVENTARIO registra el motivo tal
+    como llega (NULL permitido)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -126,19 +131,6 @@ class MaterialUpdate(BaseModel):
             raise ValueError(
                 "Use solo una rama del selector dual: categoria_id o nueva_categoria."
             )
-        return self
-
-    @model_validator(mode="after")
-    def _check_stock_motivo(self) -> "MaterialUpdate":
-        """REQ-API-003: si se envía `stock_actual`, el `motivo` es
-        obligatorio y no vacío; el ajuste debe quedar trazado en el ledger."""
-        if self.stock_actual is not None:
-            if self.motivo is None or not self.motivo.strip():
-                raise ValueError(
-                    "motivo es obligatorio y no puede estar vacío cuando se "
-                    "modifica stock_actual: todo ajuste de stock debe quedar "
-                    "trazado en el ledger de Auditoría."
-                )
         return self
 
 

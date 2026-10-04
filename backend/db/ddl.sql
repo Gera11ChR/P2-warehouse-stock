@@ -432,9 +432,9 @@ BEGIN
         RAISE EXCEPTION 'El stock final ajustado no puede ser negativo (%).', p_nuevo_stock;
     END IF;
 
-    IF p_motivo IS NULL OR TRIM(p_motivo) = '' THEN
-        RAISE EXCEPTION 'Es obligatorio proporcionar un motivo justificado para realizar un ajuste manual de inventario.';
-    END IF;
+    -- Ergonomía `justificacion_opcional` (REQ-ERG-003/005): el motivo es
+    -- OPCIONAL — null o vacío se acepta y se audita tal como llega.
+    -- El ledger inmutable (Constitution 2.4) sigue registrando el evento.
 
     -- Bloqueo FOR UPDATE para prevenir condiciones de carrera durante la lectura del stock actual
     SELECT stock_actual INTO v_stock_anterior
@@ -574,9 +574,9 @@ DECLARE
     v_stock_anterior INT;
     v_diferencia INT;
 BEGIN
-    IF p_motivo IS NULL OR TRIM(p_motivo) = '' THEN
-        RAISE EXCEPTION 'Es obligatorio proporcionar un motivo justificado para realizar un ajuste manual de inventario de Fibra Óptica.';
-    END IF;
+    -- Ergonomía `justificacion_opcional` (REQ-ERG-004/005): el motivo es
+    -- OPCIONAL — null o vacío se acepta y se audita tal como llega.
+    -- El ledger inmutable (Constitution 2.4) sigue registrando el evento.
 
     IF p_nuevo_stock < 0 THEN
         RAISE EXCEPTION 'El stock final ajustado no puede ser negativo (%).', p_nuevo_stock;

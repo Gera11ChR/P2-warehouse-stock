@@ -289,9 +289,9 @@ async def actualizar_material(
                 status_code=404,
             )
         if payload.stock_actual is not None:
-            # El validator del schema (_check_stock_motivo) garantiza motivo
-            # no vacío cuando stock_actual está presente.
-            assert payload.motivo is not None
+            # Ergonomía `justificacion_opcional` (REQ-ERG-003): motivo
+            # opcional — puede venir None/vacío y el evento AJUSTE_INVENTARIO
+            # lo registra tal como llega.
             await transaccional.ajustar_stock_general(
                 session,
                 material_id=material.id_lista,

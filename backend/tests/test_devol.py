@@ -2,7 +2,9 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from app.models import AuditoriaEvento
 from tests.helpers.fabrica import (
     borrador_devol,
     borrador_teams,
@@ -131,3 +133,39 @@ async def test_devol_multi_detalle(client: AsyncClient) -> None:
     stock = await stock_seccion(client, 1)
     assert stock[m1["id_lista"]] == 20
     assert stock[m2["id_lista"]] == 15
+
+
+@pytest.mark.critical
+@pytest.mark.parametrize(
+    "observaciones", [None, "", "  "], ids=["omitida", "vacia", "espacios"]
+)
+async def test_REQ_ERG_006_devol_observaciones_opcionales(
+    client: AsyncClient, session, observaciones: str | None
+) -> None:
+    """REQ-ERG-006: borrador DEVOL con observaciones omitida, vacía o en
+    blanco se crea (201) y procesa (200); el evento DEVOL_DEVOLUCION
+    registra `observaciones` tal como llega (NULL permitido)."""
+    material, equipo = await _equipo_con_stock(client, cantidad=50)
+
+    payload: dict = {
+        "tipo_movimiento": "DEVOL",
+        "origen_equipo_id": equipo["equipo_id"],
+        "destino_almacen_id": 1,
+        "detalle": [{"material_id": material["id_lista"], "cantidad": 10}],
+    }
+    if observaciones is not None:
+        payload["observaciones"] = observaciones
+    resp = await client.post("/api/v1/movimientos", json=payload)
+    assert resp.status_code == 201, resp.text
+
+    resultado = await procesar(client, resp.json()["id"])
+    assert resultado["estado"] == "CONFIRMADO"
+
+    evento = (
+        await session.execute(
+            select(AuditoriaEvento).where(
+                AuditoriaEvento.tipo_accion == "DEVOL_DEVOLUCION"
+            )
+        )
+    ).scalars().one()
+    assert (evento.detalles or {}).get("observaciones") == observaciones

@@ -234,6 +234,42 @@ async def test_patch_confirmado_409(client: AsyncClient) -> None:
 
 
 @pytest.mark.critical
+@pytest.mark.parametrize(
+    "observaciones", [None, "", "  "], ids=["omitida", "vacia", "espacios"]
+)
+async def test_REQ_ERG_006_teams_observaciones_opcionales(
+    client: AsyncClient, session, observaciones: str | None
+) -> None:
+    """REQ-ERG-006: borrador TEAMS con observaciones omitida, vacía o en
+    blanco se crea (201) y procesa (200); el evento TEAMS_TRANSFERENCIA
+    registra `observaciones` tal como llega (NULL permitido)."""
+    material, equipo = await _setup_stock(client, cantidad=100)
+
+    payload: dict = {
+        "tipo_movimiento": "TEAMS",
+        "origen_almacen_id": 1,
+        "destino_equipo_id": equipo["equipo_id"],
+        "detalle": [{"material_id": material["id_lista"], "cantidad": 10}],
+    }
+    if observaciones is not None:
+        payload["observaciones"] = observaciones
+    resp = await client.post("/api/v1/movimientos", json=payload)
+    assert resp.status_code == 201, resp.text
+
+    resultado = await procesar(client, resp.json()["id"])
+    assert resultado["estado"] == "CONFIRMADO"
+
+    evento = (
+        await session.execute(
+            select(AuditoriaEvento).where(
+                AuditoriaEvento.tipo_accion == "TEAMS_TRANSFERENCIA"
+            )
+        )
+    ).scalars().one()
+    assert (evento.detalles or {}).get("observaciones") == observaciones
+
+
+@pytest.mark.critical
 async def test_teams_cantidad_exacta_luego_devol_total_elimina_fila(
     client: AsyncClient,
 ) -> None:

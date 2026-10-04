@@ -392,9 +392,12 @@ async def ajustar_stock_almacen(
     almacen_id: int,
     material_id: int,
     nuevo_stock: int,
-    motivo: str,
+    motivo: str | None,
 ) -> None:
-    """fn_ajustar_stock_almacen: ajuste administrativo con motivo obligatorio."""
+    """fn_ajustar_stock_almacen: ajuste administrativo. Ergonomía
+    `justificacion_opcional` (REQ-ERG-005): motivo opcional (null/vacío
+    permitido; el evento AJUSTE_INVENTARIO registra el motivo tal como
+    llega)."""
     await _prechequear_seccion(session, almacen_id=almacen_id)
     await _prechequear_material(session, material_id=material_id)
     await _ejecutar(
@@ -507,10 +510,11 @@ async def ajustar_stock_fibra(
     modulo: str,
     material_id: int,
     nuevo_stock: int,
-    motivo: str,
+    motivo: str | None,
 ) -> None:
-    """fn_ajustar_stock_fibra: ajuste administrativo FO con motivo
-    obligatorio. Diferencial, FOR UPDATE y auditoría
+    """fn_ajustar_stock_fibra: ajuste administrativo FO. Ergonomía
+    `justificacion_opcional` (REQ-ERG-004/005): motivo opcional (null/vacío
+    permitido). Diferencial, FOR UPDATE y auditoría
     ('AJUSTE_INVENTARIO_FO') calculados en PostgreSQL."""
     await _prechequear_material(session, material_id=material_id)
     await _ejecutar(
@@ -631,12 +635,13 @@ async def ajustar_stock_general(
     *,
     material_id: int,
     nuevo_stock: int,
-    motivo: str,
+    motivo: str | None,
 ) -> None:
     """fn_ajustar_stock_general: edición de stock desde Inventario General
     (REQ-API-002/003). Localiza en PostgreSQL la fila del material en la
     sección GENERAL activa y delega en fn_ajustar_stock_almacen: el
-    diferencial y la auditoría viven íntegros en la base de datos."""
+    diferencial y la auditoría viven íntegros en la base de datos.
+    Ergonomía `justificacion_opcional` (REQ-ERG-003): motivo opcional."""
     await _prechequear_material(session, material_id=material_id)
     await _ejecutar(
         session,

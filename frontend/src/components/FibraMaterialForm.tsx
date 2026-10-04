@@ -32,9 +32,9 @@ interface FibraMaterialFormProps {
  * del MaterialForm de Inventario General. Edita Descripción, STOCK ACTUAL
  * (con proyección visual del diferencial), Stock Mínimo, U.M., Código/SKU
  * y Categoría (selector dual). Si el operador cambia el STOCK ACTUAL, el
- * motivo es OBLIGATORIO: el frontend envía SOLO stock_actual + motivo
- * (NUNCA el delta) y el backend calcula el diferencial en PostgreSQL con
- * auditoría 'AJUSTE_INVENTARIO_FO'.
+ * motivo es OPCIONAL (ergonomía `justificacion_opcional`, REQ-ERG-004): el
+ * frontend envía SOLO stock_actual + motivo (NUNCA el delta) y el backend
+ * calcula el diferencial en PostgreSQL con auditoría 'AJUSTE_INVENTARIO_FO'.
  */
 export default function FibraMaterialForm({
   initial,
@@ -63,12 +63,12 @@ export default function FibraMaterialForm({
 
   // Edición de STOCK ACTUAL (REQ-STOCK-001): el input arranca con el valor
   // registrado; SOLO si el usuario lo cambia se incluye stock_actual en el
-  // payload, y entonces el motivo es obligatorio.
+  // payload. Ergonomía `justificacion_opcional` (REQ-ERG-004): el motivo es
+  // opcional.
   const [stockActualEditado, setStockActualEditado] = useState(
     String(stockActual),
   )
   const [motivo, setMotivo] = useState('')
-  const [motivoError, setMotivoError] = useState<string | null>(null)
   const [stockError, setStockError] = useState<string | null>(null)
 
   // Proyección UX (simulación visual previa al commit). El diferencial NO se
@@ -119,18 +119,12 @@ export default function FibraMaterialForm({
         setStockError('El Stock Actual no puede ser negativo.')
         return
       }
-      const motivoLimpio = motivo.trim()
-      if (!motivoLimpio) {
-        setMotivoError(
-          'El motivo del ajuste es obligatorio al modificar el Stock Actual: todo ajuste queda registrado en Auditoría.',
-        )
-        return
-      }
       // REQ-STOCK-002: el backend calcula el delta y lo enruta a
       // fn_ajustar_stock_fibra. El frontend NO envía el diferencial:
-      // solo stock_actual + motivo.
+      // solo stock_actual + motivo. Ergonomía REQ-ERG-004: el motivo es
+      // OPCIONAL — vacío se envía como null.
       payload.stock_actual = stockEditado
-      payload.motivo = motivoLimpio
+      payload.motivo = motivo.trim() || null
     }
 
     onSubmit(payload)
@@ -163,14 +157,13 @@ export default function FibraMaterialForm({
           onChange={(event) => {
             setStockActualEditado(event.target.value)
             setStockError(null)
-            setMotivoError(null)
           }}
           className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
         {!stockModificado && (
           <p className="mt-1 text-xs text-slate-500">
-            Si modificas este valor deberás indicar un motivo: el backend
-            calcula el diferencial y registra el ajuste en Auditoría.
+            Si modificas este valor podrás indicar un motivo opcional: el
+            backend calcula el diferencial y registra el ajuste en Auditoría.
           </p>
         )}
         {stockModificado && diferencial !== null && (
@@ -190,29 +183,20 @@ export default function FibraMaterialForm({
         {stockModificado && (
           <div className="mt-3">
             <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Motivo del ajuste *
+              Motivo del ajuste (opcional)
             </label>
             <textarea
               value={motivo}
-              onChange={(event) => {
-                setMotivo(event.target.value)
-                if (motivoError) setMotivoError(null)
-              }}
+              onChange={(event) => setMotivo(event.target.value)}
               maxLength={500}
               rows={2}
               placeholder="Ej. Conteo físico, corrección de captura, ajuste administrativo"
-              className={`mt-1 w-full rounded-md border px-3 py-2 text-sm ${
-                motivoError ? 'border-red-400' : 'border-slate-300'
-              }`}
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
             />
             <div className="mt-1 flex items-center justify-between">
-              <p
-                className={`text-xs ${
-                  motivoError ? 'font-medium text-red-600' : 'text-slate-500'
-                }`}
-              >
-                {motivoError ??
-                  'Obligatorio al modificar el Stock Actual (máx. 500 caracteres).'}
+              <p className="text-xs text-slate-500">
+                Opcional (máx. 500 caracteres). El ajuste queda registrado en
+                Auditoría.
               </p>
               <span className="text-xs text-slate-400">
                 {motivo.length}/500

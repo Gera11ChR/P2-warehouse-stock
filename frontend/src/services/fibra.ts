@@ -44,9 +44,10 @@ export async function cargarStockInicialFibra(
   return data
 }
 
-/** POST /fibra/ajuste — ajuste administrativo con `motivo` OBLIGATORIO.
- *  El diferencial, el bloqueo FOR UPDATE y la auditoría
- *  ('AJUSTE_INVENTARIO_FO') se calculan en PostgreSQL. */
+/** POST /fibra/ajuste — ajuste administrativo con `motivo` OPCIONAL
+ *  (ergonomía `justificacion_opcional`, REQ-ERG-005). El diferencial, el
+ *  bloqueo FOR UPDATE y la auditoría ('AJUSTE_INVENTARIO_FO') se calculan
+ *  en PostgreSQL. */
 export async function ajustarStockFibra(
   payload: FibraAjustePayload,
 ): Promise<FibraOperacionOut> {
@@ -56,10 +57,11 @@ export async function ajustarStockFibra(
 
 /** PATCH /fibra/{modulo}/materiales/{id} — edición de material desde una
  *  sección FO (REQ-CATFO-001). Si `stock_actual` viene en el payload, el
- *  backend exige `motivo` no vacío (422) y enruta el ajuste a
- *  `fn_ajustar_stock_fibra` dentro del MISMO session.begin() con auditoría
- *  'AJUSTE_INVENTARIO_FO' (REQ-STOCK-002/003): el frontend envía SOLO
- *  stock_actual + motivo, NUNCA el diferencial. */
+ *  backend enruta el ajuste a `fn_ajustar_stock_fibra` dentro del MISMO
+ *  session.begin() con auditoría 'AJUSTE_INVENTARIO_FO' (REQ-STOCK-002/003).
+ *  Ergonomía `justificacion_opcional` (REQ-ERG-004): `motivo` es OPCIONAL —
+ *  vacío se envía como `null`. El frontend envía SOLO stock_actual +
+ *  motivo, NUNCA el diferencial. */
 export async function updateFibraMaterial(
   modulo: FibraModulo,
   id: number,

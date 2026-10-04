@@ -121,10 +121,10 @@ async def ajuste_fibra(
 ) -> FibraOperacionOut:
     """Ajuste administrativo de stock FO.
 
-    Motivo obligatorio y no vacío (validator del schema); el diferencial,
-    el bloqueo FOR UPDATE y la auditoría ('AJUSTE_INVENTARIO_FO') se
-    calculan en PostgreSQL vía `fn_ajustar_stock_fibra`
-    (Constitution 2.4: ledger inmutable)."""
+    Ergonomía `justificacion_opcional` (REQ-ERG-005): motivo opcional; el
+    diferencial, el bloqueo FOR UPDATE y la auditoría
+    ('AJUSTE_INVENTARIO_FO') se calculan en PostgreSQL vía
+    `fn_ajustar_stock_fibra` (Constitution 2.4: ledger inmutable)."""
     assert_authenticated(actor_ctx)
     async with session.begin():
         await transaccional.ajustar_stock_fibra(
@@ -200,9 +200,9 @@ async def actualizar_material_fibra(
             )
 
         if payload.stock_actual is not None:
-            # El validator del schema (_check_stock_motivo, REQ-STOCK-001)
-            # garantiza motivo no vacío cuando stock_actual está presente.
-            assert payload.motivo is not None
+            # Ergonomía `justificacion_opcional` (REQ-ERG-004): motivo
+            # opcional — puede venir None/vacío y el evento
+            # AJUSTE_INVENTARIO_FO lo registra tal como llega.
             await transaccional.ajustar_stock_fibra(
                 session,
                 modulo=modulo,

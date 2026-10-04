@@ -331,12 +331,12 @@ export interface FibraCargaInicialPayload {
 }
 
 /** POST /api/v1/fibra/ajuste — ajuste administrativo.
- *  `nuevo_stock` >= 0; `motivo` OBLIGATORIO y no vacío (422 si falta). */
+ *  `nuevo_stock` >= 0; `motivo` OPCIONAL (ergonomía `justificacion_opcional`). */
 export interface FibraAjustePayload {
   modulo: FibraModulo
   material_id: number
   nuevo_stock: number
-  motivo: string
+  motivo?: string | null
 }
 
 /** Eco mínimo de una operación FO (FibraOperacionOut). */
@@ -349,9 +349,9 @@ export interface FibraOperacionOut {
  * PATCH /api/v1/fibra/{modulo}/materiales/{material_id} — edición FO
  * (REQ-CATFO-001/002, REQ-STOCK-001/002/003). Espejo de
  * `FibraMaterialUpdateRequest` del backend: `stock_actual` SOLO si el
- * operador cambió el valor registrado, y en ese caso `motivo` es
- * OBLIGATORIO y no vacío (el backend responde 422 si falta). El frontend
- * NUNCA envía el diferencial: el delta, el bloqueo FOR UPDATE y la
+ * operador cambió el valor registrado. Ergonomía `justificacion_opcional`
+ * (REQ-ERG-004): `motivo` es OPCIONAL — vacío se envía como `null`. El
+ * frontend NUNCA envía el diferencial: el delta, el bloqueo FOR UPDATE y la
  * auditoría 'AJUSTE_INVENTARIO_FO' los calcula PostgreSQL.
  */
 export interface FibraMaterialUpdatePayload {
@@ -362,7 +362,7 @@ export interface FibraMaterialUpdatePayload {
   u_m?: string | null
   stock_minimo?: number | null
   stock_actual?: number
-  motivo?: string
+  motivo?: string | null
 }
 
 /**

@@ -15,6 +15,7 @@ import {
   listMovimientos,
   crearBorrador,
   procesarMovimiento,
+  cancelarMovimiento,
 } from '../../services/movimientos'
 
 vi.mock('../../hooks/useToasts', () => ({
@@ -348,6 +349,92 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
         'actas',
         'entrega',
       ]),
+    )
+  })
+
+  it('REQ-ERG-007: Confirmar TEAMS permanece habilitado con el motivo vacío y envía observaciones null', async () => {
+    const user = userEvent.setup()
+    renderConQueryClient()
+
+    const combos = await screen.findAllByRole('combobox')
+    await user.selectOptions(combos[0], '2') // Origen FO_PAQUETE
+    await user.selectOptions(combos[1], '5') // Equipo destino
+    await user.click(await screen.findByRole('button', { name: /Agregar/ }))
+
+    const confirmar = screen.getByRole('button', { name: 'Confirmar TEAMS' })
+    expect(confirmar).toBeEnabled()
+    await user.click(confirmar)
+
+    await waitFor(() => expect(crearBorrador).toHaveBeenCalledTimes(1))
+    const payload = (crearBorrador as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(payload.observaciones).toBeNull()
+  })
+
+  it('REQ-ERG-007: Confirmar DEVOL permanece habilitado con el motivo vacío y envía observaciones null', async () => {
+    const user = userEvent.setup()
+    ;(inventarioEquipo as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        equipo_id: 5,
+        material_id: 1,
+        codigo: 'FO-1',
+        descripcion: 'Cable FO',
+        u_m: 'PZ',
+        stock_minimo: null,
+        stock_actual: 3,
+        alerta_stock: false,
+        ultimo_movimiento_id: null,
+      },
+    ])
+    renderConQueryClient()
+
+    await user.click(screen.getByRole('button', { name: 'DEVOL' }))
+    const combos = await screen.findAllByRole('combobox')
+    await user.selectOptions(combos[0], '5') // Equipo origen
+    await user.selectOptions(combos[1], '1') // Sección destino GENERAL
+    await user.click(await screen.findByRole('button', { name: /Agregar/ }))
+
+    const confirmar = screen.getByRole('button', { name: 'Confirmar DEVOL' })
+    expect(confirmar).toBeEnabled()
+    await user.click(confirmar)
+
+    await waitFor(() => expect(crearBorrador).toHaveBeenCalledTimes(1))
+    const payload = (crearBorrador as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(payload.tipo_movimiento).toBe('DEVOL')
+    expect(payload.observaciones).toBeNull()
+  })
+
+  it('REQ-ERG-008: cancelación con motivo vacío permanece habilitada y envía motivo null', async () => {
+    const user = userEvent.setup()
+    ;(listMovimientos as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 9,
+        tipo_movimiento: 'TEAMS',
+        estado: 'CONFIRMADO',
+        usuario: 'demo-operador',
+        origen_almacen_id: 1,
+        destino_almacen_id: null,
+        origen_equipo_id: null,
+        destino_equipo_id: 5,
+        observaciones: null,
+        detalle: [{ material_id: 1, cantidad: 1 }],
+      },
+    ])
+    ;(cancelarMovimiento as ReturnType<typeof vi.fn>).mockResolvedValue({
+      movimiento_id: 9,
+      estado: 'CANCELADO',
+    })
+    renderConQueryClient()
+
+    await user.click(await screen.findByRole('button', { name: 'Cancelar' }))
+
+    const confirmar = screen.getByRole('button', {
+      name: 'Confirmar Cancelación',
+    })
+    expect(confirmar).toBeEnabled()
+    await user.click(confirmar)
+
+    await waitFor(() =>
+      expect(cancelarMovimiento).toHaveBeenCalledWith(9, null),
     )
   })
 })

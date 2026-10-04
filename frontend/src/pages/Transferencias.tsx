@@ -286,11 +286,10 @@ export default function Transferencias() {
       return !Number.isFinite(c) || c <= 0
     })
 
-  // Trazabilidad total: motivo obligatorio en TODO movimiento (TEAMS/DEVOL)
-  // y en toda cancelación. La UI exige no vacío; el backend conserva su
-  // contrato (el borrador lo recibe como `observaciones`).
-  const motivoValido = observaciones.trim().length > 0
-  const motivoCancelacionValido = motivoCancelacion.trim().length > 0
+  // Ergonomía `justificacion_opcional` (REQ-ERG-006/008): el motivo es
+  // OPCIONAL en TODO movimiento (TEAMS/DEVOL) y en toda cancelación. La UI
+  // envía `null` cuando el texto está vacío; el backend conserva su contrato
+  // (el borrador lo recibe como `observaciones`).
 
   // --- Simulación UX de stock (solo proyección visual) ----------------------
   // Aritmética del CARRITO (suma de cantidades tecleadas), NUNCA stock
@@ -317,16 +316,16 @@ export default function Transferencias() {
   // CONTRATO (REQ-API-009, EARS v1.1): el backend valida el borrador con un
   // modelo extra="forbid". El ÚNICO campo válido para el motivo en el payload
   // del borrador es `observaciones` — inventar un campo `motivo` aquí
-  // produciría un 422. La obligatoriedad la garantiza esta UI (motivoValido),
-  // sin redefinir el contrato TEAMS/DEVOL.
+  // produciría un 422. El campo es OPCIONAL (REQ-ERG-006): vacío se envía
+  // como `null`, sin redefinir el contrato TEAMS/DEVOL.
   const payload: MovimientoBorradorCreatePayload | null =
-    extremosValidos && !carritoInvalido && !bloqueoPorStock && motivoValido
+    extremosValidos && !carritoInvalido && !bloqueoPorStock
       ? tab === 'TEAMS'
         ? {
             tipo_movimiento: 'TEAMS',
             origen_almacen_id: seccionOrigen,
             destino_equipo_id: equipoDestino,
-            observaciones: observaciones.trim(),
+            observaciones: observaciones.trim() || null,
             detalle: carrito.map((l) => ({
               material_id: l.material_id,
               cantidad: l[field] ?? 0,
@@ -336,7 +335,7 @@ export default function Transferencias() {
             tipo_movimiento: 'DEVOL',
             origen_equipo_id: equipoOrigen,
             destino_almacen_id: seccionDestino,
-            observaciones: observaciones.trim(),
+            observaciones: observaciones.trim() || null,
             detalle: carrito.map((l) => ({
               material_id: l.material_id,
               cantidad: l[field] ?? 0,
@@ -459,12 +458,13 @@ export default function Transferencias() {
 
   const confirmarCancelacion = () => {
     // Contrato REQ-API-009 intacto: cancelar recibe `motivo` (string, campo
-    // ya existente). La UI garantiza no vacío; el backend lo exige
-    // (RAISE on NULL/empty en fn_cancelar_movimiento).
-    if (movimientoACancelar && motivoCancelacionValido) {
+    // ya existente). Ergonomía `justificacion_opcional` (REQ-ERG-008): la UI
+    // envía `null` cuando el texto está vacío; el backend ya tolera el
+    // motivo nulo (default en fn_cancelar_movimiento).
+    if (movimientoACancelar) {
       cancelarMut.mutate({
         id: movimientoACancelar.id,
-        motivo: motivoCancelacion.trim(),
+        motivo: motivoCancelacion.trim() || null,
       })
     }
   }
@@ -668,7 +668,7 @@ export default function Transferencias() {
             htmlFor="transferencias-motivo"
             className="block text-sm font-medium text-slate-700"
           >
-            Motivo / Observaciones (obligatorio)
+            Motivo / Observaciones (opcional)
           </label>
           <input
             id="transferencias-motivo"
@@ -676,20 +676,9 @@ export default function Transferencias() {
             value={observaciones}
             onChange={(e) => setObservaciones(e.target.value)}
             maxLength={2000}
-            required
-            placeholder="Motivo de la operación — obligatorio para trazabilidad"
-            aria-invalid={!motivoValido && carrito.length > 0}
-            className={`mt-1 w-full rounded-md border px-3 py-2 text-sm ${
-              !motivoValido && (carrito.length > 0 || observaciones.length > 0)
-                ? 'border-red-400'
-                : 'border-slate-300'
-            }`}
+            placeholder="Motivo de la operación (opcional)"
+            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
-          {!motivoValido && (carrito.length > 0 || observaciones.length > 0) && (
-            <p className="mt-1 text-xs text-red-600">
-              El motivo es obligatorio para confirmar {tab}.
-            </p>
-          )}
         </div>
       </div>
 
@@ -858,16 +847,13 @@ export default function Transferencias() {
               carritoInvalido ||
               !extremosValidos ||
               bloqueoPorStock ||
-              !motivoValido ||
               crearBorradorMut.isPending ||
               procesarMut.isPending
             }
             title={
-              !motivoValido
-                ? 'El motivo es obligatorio para confirmar'
-                : bloqueoPorStock
-                  ? 'Hay líneas con saldo estimado negativo (proyección visual)'
-                  : undefined
+              bloqueoPorStock
+                ? 'Hay líneas con saldo estimado negativo (proyección visual)'
+                : undefined
             }
             className="flex items-center gap-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
@@ -1002,7 +988,7 @@ export default function Transferencias() {
               htmlFor="cancelacion-motivo"
               className="block text-sm font-medium text-slate-700"
             >
-              Motivo (obligatorio)
+              Motivo (opcional)
             </label>
             <textarea
               id="cancelacion-motivo"
@@ -1010,22 +996,9 @@ export default function Transferencias() {
               onChange={(e) => setMotivoCancelacion(e.target.value)}
               rows={3}
               maxLength={500}
-              required
-              placeholder="Motivo de la cancelación — obligatorio para trazabilidad"
-              aria-invalid={
-                !motivoCancelacionValido && motivoCancelacion.length > 0
-              }
-              className={`mt-1 w-full rounded-md border px-3 py-2 text-sm focus:border-blue-500 focus:outline-none ${
-                !motivoCancelacionValido && motivoCancelacion.length > 0
-                  ? 'border-red-400'
-                  : 'border-slate-300'
-              }`}
+              placeholder="Motivo de la cancelación (opcional)"
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             />
-            {!motivoCancelacionValido && motivoCancelacion.length > 0 && (
-              <p className="mt-1 text-xs text-red-600">
-                El motivo es obligatorio para confirmar la cancelación.
-              </p>
-            )}
           </div>
           <div className="flex justify-end gap-2">
             <button
@@ -1038,12 +1011,7 @@ export default function Transferencias() {
             <button
               type="button"
               onClick={confirmarCancelacion}
-              disabled={cancelarMut.isPending || !motivoCancelacionValido}
-              title={
-                !motivoCancelacionValido
-                  ? 'El motivo es obligatorio para cancelar'
-                  : undefined
-              }
+              disabled={cancelarMut.isPending}
               className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
             >
               {cancelarMut.isPending ? 'Cancelando…' : 'Confirmar Cancelación'}

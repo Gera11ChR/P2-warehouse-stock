@@ -189,7 +189,7 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['categorias'] })
   })
 
-  it('REQ-STOCK-001: cambiar Stock Actual sin motivo muestra el error y NO llama updateFibraMaterial', async () => {
+  it('REQ-ERG-004: cambiar Stock Actual sin motivo NO bloquea y llama updateFibraMaterial con motivo null', async () => {
     const user = userEvent.setup()
     renderConQueryClient()
 
@@ -201,17 +201,20 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
     await user.clear(stockInput)
     await user.type(stockInput, '25')
 
-    // Al modificar el stock aparece el motivo obligatorio del ajuste.
+    // Al modificar el stock aparece el campo opcional del motivo.
     expect(
       screen.getByPlaceholderText(/Conteo físico/),
     ).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Guardar' }))
 
-    expect(
-      screen.getByText(/El motivo del ajuste es obligatorio/i),
-    ).toBeInTheDocument()
-    expect(updateFibraMaterial).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(updateFibraMaterial).toHaveBeenCalledWith(
+        'PAQUETE',
+        1,
+        expect.objectContaining({ stock_actual: 25, motivo: null }),
+      )
+    })
   })
 
   it('REQ-DEL-004/REQ-TRF-INV-002: eliminar con stock exige motivo; con motivo llama eliminarFibraMaterial e invalida', async () => {

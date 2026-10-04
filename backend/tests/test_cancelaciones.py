@@ -105,6 +105,28 @@ async def test_cancelar_cancelado_409(client: AsyncClient) -> None:
     assert resp.status_code == 409
 
 
+async def test_REQ_ERG_008_cancelacion_sin_motivo_200(
+    client: AsyncClient, session
+) -> None:
+    """REQ-ERG-008: cancelación con motivo omitido se acepta (200); el
+    evento MOVIMIENTO_CANCELADO registra `motivo_cancelacion` nulo."""
+    _, _, borrador = await _teams_confirmado(client, cantidad=40)
+
+    resultado = await cancelar(client, borrador["id"])
+    assert resultado["estado"] == "CANCELADO"
+
+    evento = (
+        await session.execute(
+            select(AuditoriaEvento).where(
+                AuditoriaEvento.tipo_accion == "MOVIMIENTO_CANCELADO"
+            )
+        )
+    ).scalars().one()
+    detalles = evento.detalles or {}
+    assert detalles.get("motivo_cancelacion") is None
+    assert detalles["movimiento_id"] == borrador["id"]
+
+
 async def test_cancelar_inexistente_404(client: AsyncClient) -> None:
     resp = await client.post(
         "/api/v1/movimientos/9999/cancelar", json={}

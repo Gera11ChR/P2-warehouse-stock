@@ -2,8 +2,9 @@
 (REQ-DOMAIN-003/004/005/006, REQ-API-001).
 
 Cubre el contrato del router /api/v1/fibra: carga inicial idempotente,
-ajuste auditado con motivo obligatorio, esquema estándar gobernado por U.M.
-y cero fantasmas de materiales inactivos.
+ajuste auditado con motivo opcional (ergonomía `justificacion_opcional`),
+esquema estándar gobernado por U.M. y cero fantasmas de materiales
+inactivos.
 """
 
 import pytest
@@ -137,8 +138,8 @@ async def test_carga_inicial_fibra_modulo_invalido_422(
 async def test_ajuste_fibra_ok_con_motivo_y_diferencial_auditado(
     client: AsyncClient, session
 ) -> None:
-    """REQ-DOMAIN-003: ajuste administrativo OK con motivo obligatorio;
-    el evento AJUSTE_INVENTARIO_FO registra modulo, diferencial y motivo."""
+    """REQ-DOMAIN-003: ajuste administrativo OK con motivo; el evento
+    AJUSTE_INVENTARIO_FO registra modulo, diferencial y motivo."""
     material = await _material_fo(
         client, descripcion="Cable Ajuste", u_m="CARRETE (5 KM)"
     )
@@ -175,7 +176,12 @@ async def test_ajuste_fibra_ok_con_motivo_y_diferencial_auditado(
     assert detalles["motivo"] == "Conteo físico FO"
 
 
-async def test_ajuste_fibra_sin_motivo_422(client: AsyncClient) -> None:
+async def test_ajuste_fibra_sin_motivo_200(
+    client: AsyncClient, session
+) -> None:
+    """REQ-ERG-005: ajuste administrativo FO con motivo omitido o vacío se
+    acepta (200) y audita AJUSTE_INVENTARIO_FO con el motivo tal como
+    llega (NULL permitido)."""
     material = await _material_fo(client, descripcion="Cable Mot", u_m="PZ")
     await fibra_carga_inicial(
         client,
@@ -190,7 +196,20 @@ async def test_ajuste_fibra_sin_motivo_422(client: AsyncClient) -> None:
          "nuevo_stock": 5},
     ):
         resp = await client.post("/api/v1/fibra/ajuste", json=payload)
-        assert resp.status_code == 422
+        assert resp.status_code == 200, resp.text
+
+    filas = await _stock_fibra(client, MODULO_PAQUETE)
+    assert filas[material["id_lista"]]["stock_actual"] == 5
+
+    eventos = (
+        await session.execute(
+            select(AuditoriaEvento).where(
+                AuditoriaEvento.tipo_accion == "AJUSTE_INVENTARIO_FO"
+            )
+        )
+    ).scalars().all()
+    assert len(eventos) == 2
+    assert [(e.detalles or {}).get("motivo") for e in eventos] == ["", None]
 
 
 async def test_ajuste_fibra_nuevo_stock_negativo_422(
@@ -354,13 +373,13 @@ async def test_REQ_CATFO_001_patch_catalogo_edita_sin_tocar_stock_y_sin_ajuste(
     assert ajustes == []
 
 
-async def test_REQ_STOCK_001_patch_stock_actual_sin_motivo_422_sin_cambios(
+async def test_REQ_ERG_004_patch_stock_actual_sin_motivo_200(
     client: AsyncClient, session
 ) -> None:
-    """REQ-STOCK-001: cambiar `stock_actual` SIN motivo (ausente o en blanco)
-    es rechazado por el validator del schema con 422 sin aplicar cambios en
-    el catálogo ni en el inventario. El stock negativo también lo rechaza el
-    validator (ge=0) antes de tocar la base."""
+    """REQ-ERG-004: cambiar `stock_actual` SIN motivo (ausente, null o en
+    blanco) se acepta (200): fn_ajustar_stock_fibra audita
+    AJUSTE_INVENTARIO_FO con el motivo tal como llega. El stock negativo
+    lo sigue rechazando el validator (ge=0) antes de tocar la base."""
     material = await _material_fo(client, descripcion="Cable StockMot", u_m="PZ")
     await fibra_carga_inicial(
         client,
@@ -372,26 +391,36 @@ async def test_REQ_STOCK_001_patch_stock_actual_sin_motivo_422_sin_cambios(
     for payload in (
         {"stock_actual": 10},
         {"descripcion": "Editado que revierte", "stock_actual": 10, "motivo": "   "},
-        {"stock_actual": -5, "motivo": "Negativo rechazado por el schema"},
+        {"stock_actual": 12, "motivo": None},
     ):
         resp = await client.patch(
             f"/api/v1/fibra/{MODULO_PAQUETE}/materiales/{material['id_lista']}",
             json=payload,
         )
-        assert resp.status_code == 422, resp.text
+        assert resp.status_code == 200, resp.text
+
+    resp = await client.patch(
+        f"/api/v1/fibra/{MODULO_PAQUETE}/materiales/{material['id_lista']}",
+        json={"stock_actual": -5, "motivo": "Negativo rechazado por el schema"},
+    )
+    assert resp.status_code == 422
 
     filas = await _stock_fibra(client, MODULO_PAQUETE)
-    assert filas[material["id_lista"]]["stock_actual"] == 25
-    assert filas[material["id_lista"]]["descripcion"] == "Cable StockMot"
+    assert filas[material["id_lista"]]["stock_actual"] == 12
 
-    ajustes = (
+    eventos = (
         await session.execute(
             select(AuditoriaEvento).where(
                 AuditoriaEvento.tipo_accion == "AJUSTE_INVENTARIO_FO"
             )
         )
     ).scalars().all()
-    assert ajustes == []
+    assert len(eventos) == 3
+    assert [(e.detalles or {}).get("motivo") for e in eventos] == [
+        None,
+        "   ",
+        None,
+    ]
 
 
 @pytest.mark.critical

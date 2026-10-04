@@ -173,11 +173,21 @@ class TestExtremosMovimiento:
 
 
 class TestAjustes:
-    def test_motivo_obligatorio_en_ajuste(self) -> None:
-        with pytest.raises(ValidationError):
+    def test_motivo_opcional_en_ajuste(self) -> None:
+        """REQ-ERG-005: AjusteStockAlmacenRequest acepta motivo ausente,
+        null o vacío."""
+        assert (
             AjusteStockAlmacenRequest(
                 almacen_id=1, material_id=1, nuevo_stock=5, motivo=""
-            )
+            ).motivo
+            == ""
+        )
+        assert (
+            AjusteStockAlmacenRequest(
+                almacen_id=1, material_id=1, nuevo_stock=5
+            ).motivo
+            is None
+        )
 
     def test_carga_inicial_cantidad_negativa_rechazada(self) -> None:
         with pytest.raises(ValidationError):

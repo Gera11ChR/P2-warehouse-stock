@@ -79,7 +79,7 @@ describe('MaterialForm STOCK ACTUAL', () => {
     expect(payload.motivo).toBeUndefined()
   })
 
-  it('exige motivo al editar el stock: no llama onSubmit y muestra error', async () => {
+  it('REQ-ERG-003: editar el stock sin motivo NO bloquea el envío y despacha motivo null', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(
@@ -103,10 +103,13 @@ describe('MaterialForm STOCK ACTUAL', () => {
 
     await user.click(screen.getByRole('button', { name: 'Guardar' }))
 
-    expect(onSubmit).not.toHaveBeenCalled()
-    expect(
-      screen.getByText(/El motivo del ajuste es obligatorio/i),
-    ).toBeInTheDocument()
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stock_actual: 60,
+        motivo: null,
+      }),
+    )
   })
 
   it('envía stock_actual + motivo cuando se edita el stock con motivo válido', async () => {

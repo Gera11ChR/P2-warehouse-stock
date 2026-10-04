@@ -50,6 +50,9 @@ domain_rules:
   idempotency:
     required: true
     description: "fn_sumar_cantidad, fn_mover_material y fn_agregar_todo_seguimiento aceptan clave_idempotencia (tabla operaciones_idempotencia, ligada al ACTOR desde la migración 0021). Un reenvío del MISMO actor con la misma clave responde 200 con el resultado original (reenvio_idempotente=true) sin duplicar efectos sobre stock ni auditoría; la clave de OTRO actor se rechaza con 409 sin divulgar el resultado original. La clave de idempotencia nunca se persiste en auditoria_eventos."
+  justificacion_opcional:
+    required: true
+    description: "Ergonomía 2026-10-04: el campo de justificación (motivo/observaciones) es OPCIONAL en la modificación de materiales, los ajustes administrativos de stock (POST /ajustes/stock-almacen y POST /fibra/ajuste), los borradores TEAMS/DEVOL y la cancelación de movimientos. Se acepta null, cadena vacía o campo omitido; el ledger inmutable sigue auditando cada mutación con el motivo tal como llega (NULL permitido). Excepción: la eliminación FO con stock > 0 conserva motivo obligatorio (REQ-DEL-004)."
   official_reports:
     required: true
     description: "Los reportes oficiales son XLSX inyectados sobre las plantillas corporativas (nunca generados desde cero) conservando estilo, celdas combinadas y logo. El CSV legacy queda descartado. Las actas son snapshots jsonb (actas_reportes) escritos por PostgreSQL en la transacción del evento."
@@ -145,7 +148,6 @@ paths:
                 - almacen_id
                 - material_id
                 - nuevo_stock
-                - motivo
               properties:
                 almacen_id:
                   type: integer
@@ -155,11 +157,12 @@ paths:
                   type: integer
                 motivo:
                   type: string
+                  description: "Opcional (ergonomía justificacion_opcional): se acepta null, cadena vacía o campo omitido"
       responses:
         "200":
           description: "Stock ajustado vía fn_ajustar_stock_almacen"
         "400":
-          description: "Stock final negativo o motivo vacío"
+          description: "Stock final negativo"
         "404":
           description: "Sin registro de inventario previo (requiere carga inicial)"
   /api/v1/catalogo/categorias/{categoria_id}:
@@ -573,13 +576,14 @@ paths:
                   type: integer
                 motivo:
                   type: string
+                  description: "Opcional (ergonomía justificacion_opcional): se acepta null, cadena vacía o campo omitido"
       responses:
         "200":
           description: "Material FO actualizado: edición de catálogo auditada (trigger) y ajuste AJUSTE_INVENTARIO_FO vía fn_ajustar_stock_fibra en una única transacción atómica"
         "404":
           description: "Material no encontrado (catálogo inexistente/inactivo) o sin fila en el módulo FO"
         "422":
-          description: "U.M. inexistente en el maestro ums, selector dual de categoría inválido o stock_actual sin motivo no vacío"
+          description: "U.M. inexistente en el maestro ums o selector dual de categoría inválido"
     delete:
       summary: "Eliminar fila de inventario FO del módulo (auditada ELIMINACION_FO)"
       operationId: "eliminarMaterialFibra"
