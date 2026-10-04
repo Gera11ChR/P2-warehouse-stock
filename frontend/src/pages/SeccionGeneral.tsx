@@ -6,7 +6,6 @@ import FilterToolbar from '../components/FilterToolbar'
 import type { FilterState } from '../components/FilterToolbar'
 import InventoryTable from '../components/InventoryTable'
 import MaterialDetailDrawer from '../components/MaterialDetailDrawer'
-import BulkSearch from '../components/BulkSearch'
 import Modal from '../components/Modal'
 import MaterialForm from '../components/MaterialForm'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -65,7 +64,6 @@ export default function SeccionGeneral({
   // se re-deriva de la query de stock (`selected`, más abajo), de modo que tras
   // +Cantidad/Mover el panel de detalle refleja el stock PERSISTIDO.
   const [selectedSnapshot, setSelected] = useState<InventoryRow | null>(null)
-  const [tab, setTab] = useState<'buscador' | 'granel'>('buscador')
   const [page, setPage] = useState(1)
   const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -247,8 +245,8 @@ export default function SeccionGeneral({
     mutationFn: deleteMaterial,
     onSuccess: () => {
       // REQ-UI-003 (F.2): el material eliminado debe desaparecer de TODAS
-      // las vistas activas — stock de sección, catálogo (Buscador a granel,
-      // Reportes y join de categoría), inventario autónomo de equipos e
+      // las vistas activas — stock de sección, catálogo (Reportes y join de
+      // categoría), inventario autónomo de equipos e
       // inventarios FO. El backend ya lo omite en las respuestas; estas
       // invalidaciones fuerzan el refetch para reflejarlo sin ghost records.
       queryClient.invalidateQueries({ queryKey: ['stock', effectiveAlmacenId] })
@@ -350,70 +348,39 @@ export default function SeccionGeneral({
       />
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex border-b border-slate-200">
-          <button
-            type="button"
-            onClick={() => setTab('buscador')}
-            className={`px-4 py-3 text-sm font-medium ${
-              tab === 'buscador'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            1 Buscador
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('granel')}
-            className={`px-4 py-3 text-sm font-medium ${
-              tab === 'granel'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            2 Buscador a granel
-          </button>
-        </div>
-
         <div className="p-4">
-          {tab === 'buscador' ? (
-            <>
-              <InventoryTable
-                rows={paginatedRows}
-                selectedCodigo={selected?.codigo ?? null}
-                onSelect={setSelected}
-                categoriaPorMaterial={categoriaPorMaterial}
-              />
-              <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
-                <span>
-                  Mostrando {paginatedRows.length} de {filteredRows.length} registros
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => p - 1)}
-                    className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40"
-                  >
-                    Anterior
-                  </button>
-                  <span>
-                    Página {page} de {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage((p) => p + 1)}
-                    className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40"
-                  >
-                    Siguiente
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <BulkSearch />
-          )}
+          <InventoryTable
+            rows={paginatedRows}
+            selectedCodigo={selected?.codigo ?? null}
+            onSelect={setSelected}
+            categoriaPorMaterial={categoriaPorMaterial}
+          />
+          <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+            <span>
+              Mostrando {paginatedRows.length} de {filteredRows.length} registros
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+                className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40"
+              >
+                Anterior
+              </button>
+              <span>
+                Página {page} de {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

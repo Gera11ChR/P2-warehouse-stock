@@ -29,8 +29,7 @@ export interface Material {
 /**
  * Respuesta de GET /api/v1/catalogo (contrato real MaterialListOut).
  * `start_index` es el ordinal 1-indexed de la primera fila del rango
- * (REQ-API-006): el frontend numera filas continuas SIN descargar el
- * catálogo completo.
+ * (REQ-API-006) devuelto por el backend.
  */
 export interface MaterialList {
   start_index: number

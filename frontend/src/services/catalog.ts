@@ -8,20 +8,8 @@ import type { Categoria, Material, MaterialList, Ums } from '../types'
 export interface CatalogFilters {
   buscar?: string
   categoria_id?: number
-  /**
-   * Rango ordinal 1-indexed del Buscador a granel (REQ-API-006).
-   * El posicionamiento determinista (ORDER BY descripcion ASC, id_lista ASC,
-   * OFFSET/LIMIT) y el `start_index` de la respuesta se resuelven 100 % en
-   * backend.
-   */
-  desde_numero_lista?: number
-  hasta_numero_lista?: number
-  /** Rango determinista por descripción (REQ-API-007). */
-  desde_descripcion?: string
-  hasta_descripcion?: string
   /** @deprecated La UI dejó de enviar estos filtros legacy (rango por PK).
-   *  El backend los conserva por compatibilidad; el frontend usa los rangos
-   *  ordinales/textuales nuevos. */
+   *  El backend los conserva por compatibilidad. */
   desde_id_lista?: number
   /** @deprecated (ver desde_id_lista) */
   hasta_id_lista?: number
