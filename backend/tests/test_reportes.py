@@ -14,6 +14,7 @@ bajo demanda inyectando datos sobre las plantillas corporativas.
 import io
 import re
 from datetime import date, timedelta
+from typing import Any, cast
 
 from sqlalchemy import select
 
@@ -22,6 +23,7 @@ from app.models import AuditoriaEvento
 import pytest
 from httpx import AsyncClient
 from openpyxl import load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
 
 from app.services.plantilla_reporte import MEDIA_TYPE_XLSX
 from tests.helpers.fabrica import (
@@ -97,9 +99,9 @@ async def _eventos_acta(session, tipo: str) -> list[AuditoriaEvento]:
     )
 
 
-def _xlsx(resp) -> object:
+def _xlsx(resp) -> Worksheet:
     assert resp.status_code == 200, resp.text
-    return load_workbook(io.BytesIO(resp.content)).active
+    return cast(Worksheet, load_workbook(io.BytesIO(resp.content)).active)
 
 
 # ── Hito A: Acta de Entrega ────────────────────────────────────────────────
@@ -186,7 +188,7 @@ async def test_REQ_P2_REP_002_entrega_xlsx_sobre_plantilla_corporativa(
     assert ws.cell(row=primera_fila, column=1).value == 50
     assert ws.cell(row=primera_fila, column=2).value == "CABLE FIBRA OPTICA ADSS 12 HILOS"
     assert ws.cell(row=primera_fila, column=5).value == "METRO (M)"
-    assert len(ws._images) == 1  # logo corporativo conservado
+    assert len(cast(Any, ws)._images) == 1  # logo corporativo conservado
 
 
 async def test_entrega_xlsx_por_acta_individual(client: AsyncClient) -> None:
@@ -262,7 +264,7 @@ async def test_REQ_P2_REP_004_consumo_xlsx_titulo_y_cantidad_consumida(
     assert ws["A2"].value == "ACTA DE CONSUMO"
     assert ws.cell(row=primera_fila, column=1).value == 15  # CANT. = consumida
     assert ws.cell(row=primera_fila, column=2).value == "CABLE FIBRA OPTICA ADSS 12 HILOS"
-    assert len(ws._images) == 1
+    assert len(cast(Any, ws)._images) == 1
 
 
 async def test_consumo_xlsx_omite_lineas_sin_consumo(client: AsyncClient) -> None:
@@ -479,8 +481,9 @@ async def test_acta_entrega_atribuida_a_quien_confirma(
     assert len(eventos) == 1
     evento = eventos[0]
     assert evento.usuario == "admin-qa"  # quien confirma, no 'qa'
-    assert evento.detalles["movimiento_id"] == b["id"]
-    assert isinstance(evento.detalles["acta_id"], int)
+    detalles = evento.detalles or {}
+    assert detalles["movimiento_id"] == b["id"]
+    assert isinstance(detalles["acta_id"], int)
     assert evento.equipo_destino_id == equipo["equipo_id"]
 
 
@@ -496,9 +499,10 @@ async def test_acta_consumo_atribuida_al_actor_del_cierre(
     assert len(eventos) == 1
     evento = eventos[0]
     assert evento.usuario == "qa"
-    assert isinstance(evento.detalles["acta_id"], int)
-    assert isinstance(evento.detalles["seguimiento_id"], int)
-    assert evento.detalles["equipo_id"] == equipo["equipo_id"]
+    detalles = evento.detalles or {}
+    assert isinstance(detalles["acta_id"], int)
+    assert isinstance(detalles["seguimiento_id"], int)
+    assert detalles["equipo_id"] == equipo["equipo_id"]
 
 
 async def test_descripcion_maliciosa_no_se_escribe_como_formula(

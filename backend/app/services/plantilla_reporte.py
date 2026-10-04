@@ -25,7 +25,7 @@ from copy import copy
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -176,7 +176,7 @@ def _desplazar_filas(ws: Worksheet, desde_fila: int, n: int) -> None:
     # 5) Imágenes ancladas en o bajo el punto de inserción (el logo de las
     #    plantillas está en la fila 0, por lo que normalmente no se mueve;
     #    el re-anclado se mantiene para cualquier imagen posterior).
-    for imagen in ws._images:
+    for imagen in cast(Any, ws)._images:
         anchor = imagen.anchor
         marcador = getattr(anchor, "_from", None)
         if marcador is not None and marcador.row + 1 >= desde_fila:
@@ -198,7 +198,7 @@ def _insertar_filas_de_datos(
             origen = ws.cell(row=geo.fila_estilo, column=col)
             destino = ws.cell(row=fila, column=col)
             if origen.has_style:
-                destino._style = copy(origen._style)
+                cast(Any, destino)._style = copy(cast(Any, origen)._style)
         ws.merge_cells(
             start_row=fila,
             start_column=_COL_DESC,
@@ -219,7 +219,7 @@ def _uniformar_estilo_fila(ws: Worksheet, geo: _Geometria, fila: int) -> None:
         origen = ws.cell(row=geo.fila_estilo, column=col)
         destino = ws.cell(row=fila, column=col)
         if origen.has_style:
-            destino._style = copy(origen._style)
+            cast(Any, destino)._style = copy(cast(Any, origen)._style)
 
 
 # ── API pública ───────────────────────────────────────────────────────────
@@ -244,7 +244,7 @@ def generar_acta(
         raise ValueError(f"Formato de acta no soportado: {formato!r}")
     geo = _GEOMETRIA[formato]
     wb = load_workbook(TEMPLATES_DIR / _PLANTILLAS[formato])
-    ws = wb.active
+    ws = cast(Worksheet, wb.active)
 
     capacidad = geo.ultima_fila - geo.primera_fila + 1
     exceso = len(lineas) - capacidad

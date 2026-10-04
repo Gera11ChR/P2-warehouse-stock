@@ -11,13 +11,14 @@ calculadas por SQL: aquí solo se transportan (cero aritmética de stock).
 """
 
 from datetime import date, datetime
+from typing import cast
 
-from sqlalchemy import Date, Integer, cast, func, select
+from sqlalchemy import Date, Integer, cast as sa_cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ActaReporte
 from app.schemas.reporte import ActaItemOut, ActaOut
-from app.services.plantilla_reporte import LineaActa
+from app.services.plantilla_reporte import LineaActa, TipoActa
 
 # Límite defensivo de líneas por documento XLSX (B-1, dictamen sec-ops):
 # evita workbooks gigantes y el coste O(n) de la inserción de filas.
@@ -25,7 +26,7 @@ MAX_LINEAS_XLSX = 1000
 
 # Equipo de un acta: ENTREGA -> snapshot.destino_equipo.equipo_id;
 # CONSUMO -> snapshot.equipo_id (los tipos se filtran antes de consultar).
-_EQUIPO_ID = cast(
+_EQUIPO_ID = sa_cast(
     func.coalesce(
         ActaReporte.snapshot["destino_equipo"]["equipo_id"].astext,
         ActaReporte.snapshot["equipo_id"].astext,
@@ -58,7 +59,7 @@ def _a_acta_out(acta: ActaReporte) -> ActaOut:
         )
     return ActaOut(
         acta_id=acta.id,
-        tipo=acta.tipo,
+        tipo=cast(TipoActa, acta.tipo),
         movimiento_id=acta.movimiento_id,
         seguimiento_id=acta.seguimiento_id,
         equipo_id=equipo.get("equipo_id") if es_entrega else snap.get("equipo_id"),
@@ -94,9 +95,9 @@ async def consultar_actas(
     if solo_equipos is not None:
         stmt = stmt.where(_EQUIPO_ID.in_(solo_equipos))
     if desde is not None:
-        stmt = stmt.where(cast(ActaReporte.created_at, Date) >= desde)
+        stmt = stmt.where(sa_cast(ActaReporte.created_at, Date) >= desde)
     if hasta is not None:
-        stmt = stmt.where(cast(ActaReporte.created_at, Date) <= hasta)
+        stmt = stmt.where(sa_cast(ActaReporte.created_at, Date) <= hasta)
     stmt = stmt.order_by(ActaReporte.created_at.desc(), ActaReporte.id.desc())
     filas = (await session.execute(stmt)).scalars().all()
     return [_a_acta_out(a) for a in filas]

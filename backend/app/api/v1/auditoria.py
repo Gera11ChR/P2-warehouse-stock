@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -13,7 +13,6 @@ from app.security import (
     equipos_visibles,
     get_current_actor,
 )
-from sqlalchemy import and_, or_
 
 router = APIRouter(prefix="/auditoria", tags=["auditoria"])
 
@@ -61,7 +60,7 @@ async def list_eventos(
     if not actor_ctx.es_admin:
         scopes = set(actor_ctx.scoped_almacen_ids)
         equipos = await equipos_visibles(actor_ctx, session) or set()
-        condiciones = [
+        condiciones: list[ColumnElement[bool]] = [
             AuditoriaEvento.almacen_origen_id.is_(None),
             AuditoriaEvento.almacen_destino_id.is_(None),
             AuditoriaEvento.equipo_origen_id.is_(None),

@@ -9,10 +9,12 @@ import hashlib
 import io
 import zipfile
 from datetime import date
+from typing import Any, cast
 
 import pytest
 from openpyxl import load_workbook
 from openpyxl.worksheet.cell_range import CellRange
+from openpyxl.worksheet.worksheet import Worksheet
 
 from app.services import plantilla_reporte as pr
 from app.services.plantilla_reporte import LineaActa
@@ -24,16 +26,24 @@ FORMATOS = {
 }
 
 
-def _plantilla(formato: str):
-    return load_workbook(pr.TEMPLATES_DIR / pr._PLANTILLAS[formato]).active
+def _plantilla(formato: str) -> Worksheet:
+    return cast(
+        Worksheet,
+        load_workbook(pr.TEMPLATES_DIR / pr._PLANTILLAS[formato]).active,
+    )
 
 
-def _generar(formato: str, n: int, tipo: str = "ENTREGA") -> tuple[bytes, object]:
+def _generar(
+    formato: str, n: int, tipo: str = "ENTREGA"
+) -> tuple[bytes, Worksheet]:
     lineas = [LineaActa(i + 1, f"MATERIAL {i}", "PZ") for i in range(n)]
     data = pr.generar_acta(
-        tipo=tipo, formato=formato, fecha=date(2026, 10, 2), lineas=lineas
+        tipo=cast(pr.TipoActa, tipo),
+        formato=cast(pr.FormatoActa, formato),
+        fecha=date(2026, 10, 2),
+        lineas=lineas,
     )
-    return data, load_workbook(io.BytesIO(data)).active
+    return data, cast(Worksheet, load_workbook(io.BytesIO(data)).active)
 
 
 def test_pillow_instalado_requisito_para_conservar_el_logo() -> None:
@@ -42,7 +52,7 @@ def test_pillow_instalado_requisito_para_conservar_el_logo() -> None:
     import PIL  # noqa: F401
 
     _, ws = _generar("normal", 1)
-    assert len(ws._images) == 1
+    assert len(cast(Any, ws)._images) == 1
 
 
 @pytest.mark.parametrize("formato", ["normal", "extenso"])
@@ -86,9 +96,9 @@ def test_inyeccion_sobre_plantilla_conserva_estilo_merges_y_logo(
     # Logo embebido conservado (archivo de media + ancla).
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         assert any(n.startswith("xl/media/") and n.endswith(".png") for n in z.namelist())
-    assert len(ws._images) == 1
-    ancla = ws._images[0].anchor
-    oancla = orig._images[0].anchor
+    assert len(cast(Any, ws)._images) == 1
+    ancla = cast(Any, ws)._images[0].anchor
+    oancla = cast(Any, orig)._images[0].anchor
     assert (ancla._from.col, ancla._from.row) == (oancla._from.col, oancla._from.row)
     assert (ancla.ext.width, ancla.ext.height) == (oancla.ext.width, oancla.ext.height)
 
@@ -137,8 +147,11 @@ def test_desborde_inserta_filas_y_desplaza_firmas_merges_y_logo(
             assert c.alignment.horizontal == "center"
 
     # El logo sigue embebido y anclado en su posición original.
-    assert len(ws._images) == 1
-    assert ws._images[0].anchor._from.row == orig._images[0].anchor._from.row
+    assert len(cast(Any, ws)._images) == 1
+    assert (
+        cast(Any, ws)._images[0].anchor._from.row
+        == cast(Any, orig)._images[0].anchor._from.row
+    )
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         assert any(n.startswith("xl/media/") for n in z.namelist())
 
@@ -179,7 +192,7 @@ def test_celda_maliciosa_se_escribe_como_texto_no_como_formula() -> None:
     data = pr.generar_acta(
         tipo="ENTREGA", formato="normal", fecha=date(2026, 10, 2), lineas=lineas
     )
-    ws = load_workbook(io.BytesIO(data)).active
+    ws = cast(Worksheet, load_workbook(io.BytesIO(data)).active)
     for coord in ("B10", "E10"):
         assert ws[coord].data_type == "s"
         assert ws[coord].value.startswith("'")

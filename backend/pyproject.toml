@@ -39,6 +39,10 @@ dev = [
     "pytest-asyncio>=1.0",
     "httpx>=0.27",
     "mypy>=1.11",
+    # Stubs oficiales typeshed para openpyxl 3.1.5 (saneamiento mypy,
+    # impacto runtime CERO). Versión FIJADA, consistente con la política
+    # de pines del proyecto (cambio 2026-10-04-saneamiento-deuda-tecnica).
+    "types-openpyxl==3.1.5.20260827",
 ]
 
 [tool.setuptools.packages.find]

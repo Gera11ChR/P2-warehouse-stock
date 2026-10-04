@@ -6,7 +6,7 @@
 [![Database](https://img.shields.io/badge/PostgreSQL-18_PL%2FpgSQL-336791.svg)](#2-technology-stack)
 [![Backend Tests](https://img.shields.io/badge/Pytest-303%2F303_Passed-success.svg)](#8-quality-assurance)
 [![Frontend Tests](https://img.shields.io/badge/Vitest-341%2F341_Passed-success.svg)](#8-quality-assurance)
-[![Types](https://img.shields.io/badge/Mypy-56_Errors_73_files-yellow.svg)](#8-quality-assurance)
+[![Types](https://img.shields.io/badge/Mypy-0_Errors_73_files-brightgreen.svg)](#8-quality-assurance)
 [![License](https://img.shields.io/badge/License-Proprietary_All_Rights_Reserved-red.svg)](#license)
 
 Enterprise **fiber-optic logistics and fleet inventory platform** built on **FastAPI + PostgreSQL 18** with a **React 19** console. Designed under the principles of transactional atomicity, immutable auditability and strict specification-driven governance.
@@ -185,7 +185,7 @@ Authority is layered in five levels (`.agents.md`): **L1** `docs/constitution.md
 | 2026-10-04 | **Forensic credential purge** | PostgreSQL credentials surgically purged from the entire Git history via `git filter-repo` (`***REDACTED***`), zero traces verified (see [§4.5.4](#454-forensic-credential-purge-of-git-history)) |
 | 2026-10-04 | **Proprietary relicensing** | MIT license replaced by a proprietary license reserving all rights to Gerardo Chávez Rodríguez (LFDA/LFPPI) — see [License](#license) |
 
-Seven change packages are archived under `openspec/changes/archive/`; six are implemented and awaiting archival.
+Seven change packages were archived progressively through 2026-10-01; the six packages consolidated on 2026-10-04 raised the archive to thirteen (Fase 13, paquete `2026-10-04-saneamiento-deuda-tecnica`), leaving exactly one active change.
 
 ### 3.3 Architectural decisions that shaped the current system
 
@@ -258,7 +258,7 @@ cd backend
 | --- | --- | --- |
 | Backend suite | `.venv/bin/python -m pytest tests/ -q` | **303 passed in 42.25 s** (23 files) |
 | Frontend suite | `npm test` (`vitest run`) | **341 passed / 31 files in 18.95 s** |
-| Type checking | `.venv/bin/python -m mypy app/ tests/` | **5 errors in `app/` (3 files); 56 total across 5 of 73 checked files** — openpyxl stubs + XLSX acta-template typing debt (see [§10.2](#10-known-limitations--technical-debt)) |
+| Type checking | `.venv/bin/python -m mypy app/ tests/` | **0 errors across all 73 checked files** — `types-openpyxl` stubs pinned + XLSX acta-template annotations resolved (see [§10.2](#10-known-limitations--technical-debt)) |
 | Type + bundle build | `npm run build` (`tsc -b && vite build`) | **✓ built in ~1 s** (single chunk-size advisory, pre-existing) |
 | Lint | `npm run lint` (`eslint .`) | **✓ clean, zero findings** |
 
@@ -321,8 +321,9 @@ P2/
 │       └── test/setup.ts
 ├── openspec/
 │   ├── openspec.yaml          # Canonical architecture/API contract
-│   ├── changes/               # 6 active packages + archive/ (7 archived)
-│   └── specs/                 # Synced master specs (currently empty — see §10)
+│   ├── changes/               # 1 active package + archive/ (13 archived)
+│   └── specs/                 # Master specs sincronizados: 001_core_logistics,
+│                              #   002_stock_transfer, 003_inventory_dashboard
 ├── docs/                      # Constitution, operational flow, ADRs, NIS/FO reports, economic valuation
 ├── data/                      # Source DMS spreadsheets (catalog lineage)
 ├── .opencode/                 # 11 SDD agents, OpenSpec commands/skills
@@ -458,7 +459,7 @@ A change set may not be merged, deployed or archived unless: all mapped automate
 * **Workflow:** `docs/flujo_operacional.md` — phases **0–13**, from domain validation and architecture sign-off through database design, backend implementation, testing, contract freeze, frontend implementation, zero-drift QA, human acceptance, security audit, evidence and archival.
 * **Constitution:** `docs/constitution.md` — 8 non-negotiable sections (specification supremacy, domain invariants, zero-trust security, atomicity/idempotency, API governance, telemetry/audit, QA gates, amendment procedure).
 * **Agents:** 11 specialists in `.opencode/agents/` — `@arq-reviewer`, `@auditor`, `@dba-guard`, `@sec-ops`, `@coder`, `@tester`, `@qa-agent`, `@ui-agent`, `@ux-agent`, `@form-agent`, `@state-agent`, with a defined responsibility matrix per phase.
-* **Change packages:** active in `openspec/changes/` (6), completed ones in `openspec/changes/archive/` (7 archived).
+* **Change packages:** 1 active in `openspec/changes/`; 13 completed in `openspec/changes/archive/`.
 * **Operational reports:** business/field findings enter as documents (`docs/nis_report.md`, `docs/fo_report.md`, `docs/fo_report_1.md`) and are converted into proposals — this is the documented bridge between operations and engineering.
 
 ---
@@ -468,11 +469,11 @@ A change set may not be merged, deployed or archived unless: all mapped automate
 Tracked explicitly so that no document overstates the current state:
 
 1. **Authentication / authorization.** There is no external identity provider. The acting user arrives in the `X-Actor` header (the frontend sends a fixed `demo-operador`), and authorization is enforced exclusively server-side via warehouse scopes (`actor_almacen_scopes`) plus the `administradores` table. MFA/TOTP primitives (`pyotp`, `cryptography`) are wired but not user-facing. **OAuth2/JWT integration is planned.**
-2. **Mypy reports real findings (default configuration).** There is no `[tool.mypy] strict = true`; the current run reports **56 errors across 5 of 73 checked files** (`app/` alone: 5 errors in 3 files). The bulk comes from untyped `openpyxl` stubs and `object` indexing/attributes in the XLSX acta templates (`app/services/plantilla_reporte.py`, `app/services/reportes.py`) and their tests — typing cleanup pending.
-3. **`openspec/specs/` is empty.** Master specs have not been synchronized from the change packages (`opsx-sync` pending).
-4. **Six packages are implemented but not yet archived:** `2026-09-28-nis-catalog-fixes`, `2026-09-29-fo-delete-fix`, `2026-10-01-reportes-consumo-management`, `2026-10-04-ergonomia-justificacion-opcional`, `2026-10-04-eliminar-buscador-a-granel`, `2026-10-04-eliminar-breadcrumb-dashboard` (Fase 13 pending). Additionally, `openspec validate --all --strict` reports one pre-existing failure for `2026-10-01-reportes-consumo-management` (missing `.openspec.yaml`/deltas), unrelated to the other five.
-5. **Seeding script has no automated test coverage.** `seed_catalogo_oficial.py` is exercised manually; its guarantees rely on UPSERT semantics and the final `== 53` assertion.
-6. **Unused / orphaned frontend assets.** `recharts` is declared in `package.json` but imported nowhere; `src/App.css` (Vite template residue) is not imported by any module.
+2. **Mypy — RESUELTO (2026-10-04, paquete `2026-10-04-saneamiento-deuda-tecnica`).** `mypy app/ tests/` now reports **0 errors across all 73 checked files**: `types-openpyxl==3.1.5.20260827` pinned in dev-deps (stubs typeshed) plus proper annotations for the XLSX acta templates (`app/services/plantilla_reporte.py`, `app/services/reportes.py`), `app/api/v1/auditoria.py` and their tests. There is still no `[tool.mypy] strict = true` — the honest default configuration remains, now clean.
+3. **`openspec/specs/` — RESUELTO (2026-10-04).** Master specs synced from the historical deltas of the archived packages (`001_core_logistics`, `002_stock_transfer`, `003_inventory_dashboard`); `openspec validate --specs --strict` passes with 0 violations.
+4. **Pending archival — RESUELTO (2026-10-04).** The six implemented packages (`2026-09-28-nis-catalog-fixes`, `2026-09-29-fo-delete-fix`, `2026-10-01-reportes-consumo-management`, `2026-10-04-ergonomia-justificacion-opcional`, `2026-10-04-eliminar-buscador-a-granel`, `2026-10-04-eliminar-breadcrumb-dashboard`) completed Fase 13 and were archived; the missing `.openspec.yaml` (`skip_specs: true`) of the reportes package was added. `openspec validate --all --strict` now reports 0 failures.
+5. **Seeding script — RESUELTO (2026-10-04).** `seed_catalogo_oficial.py` now has automated coverage (`tests/test_seed_catalogo.py`): idempotency across two runs (53 intact stock rows, exactly 53 `STOCK_INICIAL` events) and the final `== 53` assertion failure path — the script's internal logic was not modified.
+6. **Orphaned frontend assets — RESUELTO (2026-10-04).** `recharts` was removed from `package.json` (zero imports) and the orphan `src/App.css` was deleted; vitest/lint/build remain green.
 7. **No client-side router.** Navigation is application state (`useState` in `layouts/MainLayout.tsx`); there are no deep-linkable URLs.
 8. **FO audit attribution inconsistency (pre-existing).** `fn_ajustar_stock_fibra` / `fn_cargar_stock_inicial_fibra` attribute events to `CURRENT_USER` while `fn_eliminar_inventario_fibra` uses the correct `app.actor` session setting.
 9. **Scope enforcement on `/fibra/*` (pre-existing).** Warehouse-scope checks (`SEC-002`) are not applied to the fiber-optic routes — recorded as debt in the FO CRUD sign-off.
