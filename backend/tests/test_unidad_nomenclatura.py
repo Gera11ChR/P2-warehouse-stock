@@ -169,7 +169,7 @@ async def test_REQ_UNI_007_cierre_stock_insuficiente_400(
     sid = resp.json()["id"]
     resp = await client.post(
         f"/api/v1/equipos/{equipo['equipo_id']}/seguimientos/{sid}/cerrar",
-        json={"sobrantes": []},
+        json={"consumidos": [{"material_id": material["id_lista"], "cantidad_consumida": 50}]},
     )
     assert resp.status_code == 400
     assert "Stock insuficiente en la Unidad" in _mensaje(resp)

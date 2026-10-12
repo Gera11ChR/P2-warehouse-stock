@@ -12,9 +12,8 @@ import type {
 // SEGUIMIENTOS DE CONSUMO DE EQUIPO — contrato certificado
 // /api/v1/equipos/{equipo_id}/seguimientos   (openspec.yaml, sin alias legacy)
 //
-// Ciclo de vida: ABIERTA (apertura, 201) → CERRADA (cierre con sobrantes).
-// El backend calcula `cantidad_consumida` (tomada − sobrante), reintegra los
-// sobrantes al inventario del equipo y registra el Acta de Consumo en la misma
+// Ciclo de vida: ABIERTA (apertura, 201) → CERRADA (cierre con consumidos).
+// El backend descuenta lo consumido del inventario de la unidad y registra el Acta de Consumo en la misma
 // transacción PostgreSQL; el frontend NUNCA calcula ni escribe stock.
 //
 // FAIL-CLOSED: un error de API (404/409/422) se propaga como error —
@@ -55,8 +54,8 @@ export async function crearSeguimiento(
 }
 
 /** POST /equipos/{equipo_id}/seguimientos/{seguimiento_id}/cerrar — cierre.
- *  `sobrantes` solo requiere los materiales con devolución; los omitidos se
- *  cierran con sobrante 0 (resolución backend). */
+ *  `consumidos` exige UNA línea por material del seguimiento; el backend
+ *  responde 422 si falta alguna, sin tocar el inventario. */
 export async function cerrarSeguimiento(
   equipoId: number,
   seguimientoId: number,

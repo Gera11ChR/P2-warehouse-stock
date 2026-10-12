@@ -57,7 +57,7 @@ const abierto: Seguimiento = {
   updated_at: '',
   closed_at: null,
   items: [
-    { id: 1, material_id: 10, cantidad_tomada: 5, cantidad_sobrante: null, cantidad_consumida: null },
+    { id: 1, material_id: 10, cantidad_tomada: 5, cantidad_consumida: null },
   ],
 }
 
@@ -90,12 +90,13 @@ describe('SeguimientoPanel — flujo con hooks reales (/equipos/{id}/seguimiento
     mCerrar.mockResolvedValue({ ...abierto, estado: 'CERRADA' })
     const { claves } = renderPanel()
 
-    await user.click(await screen.findByRole('button', { name: 'Cerrar Seguimiento' }))
+    await user.type(await screen.findByLabelText('Consumido'), '2')
+    await user.click(screen.getByRole('button', { name: 'Cerrar Seguimiento' }))
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
     await waitFor(() => expect(mCerrar).toHaveBeenCalledTimes(1))
     expect(mCerrar).toHaveBeenCalledWith(1, 3, {
-      sobrantes: [{ material_id: 10, cantidad_sobrante: 0 }],
+      consumidos: [{ material_id: 10, cantidad_consumida: 2 }],
     })
     expect(await screen.findByText('Acta de Consumo generada')).toBeInTheDocument()
     expect(claves()).toEqual(
@@ -121,7 +122,8 @@ describe('SeguimientoPanel — flujo con hooks reales (/equipos/{id}/seguimiento
     })
     const { claves } = renderPanel()
 
-    await user.click(await screen.findByRole('button', { name: 'Cerrar Seguimiento' }))
+    await user.type(await screen.findByLabelText('Consumido'), '2')
+    await user.click(screen.getByRole('button', { name: 'Cerrar Seguimiento' }))
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
     await waitFor(() => expect(mCerrar).toHaveBeenCalled())

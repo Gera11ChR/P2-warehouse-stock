@@ -56,10 +56,10 @@ describe('services/seguimientos — contrato /equipos/{id}/seguimientos', () => 
     expect(post).toHaveBeenCalledWith('/equipos/1/seguimientos', payload)
   })
 
-  it('cerrarSeguimiento: POST .../{id}/cerrar con sobrantes', async () => {
+  it('cerrarSeguimiento: POST .../{id}/cerrar con consumidos', async () => {
     post.mockResolvedValue({ data: { ...seguimiento, estado: 'CERRADA' } })
     const payload = {
-      sobrantes: [{ material_id: 10, cantidad_sobrante: 1 }],
+      consumidos: [{ material_id: 10, cantidad_consumida: 1 }],
       observaciones_cierre: 'ok',
     }
     await cerrarSeguimiento(1, 3, payload)
@@ -71,7 +71,7 @@ describe('services/seguimientos — contrato /equipos/{id}/seguimientos', () => 
     post.mockResolvedValue({ data: seguimiento })
     await listSeguimientos(1)
     await crearSeguimiento(1, { items: [{ material_id: 1, cantidad_tomada: 1 }] })
-    await cerrarSeguimiento(1, 3, { sobrantes: [] })
+    await cerrarSeguimiento(1, 3, { consumidos: [{ material_id: 10, cantidad_consumida: 1 }] })
     await agregarTodoSeguimiento(1, 3)
     const urls = [...get.mock.calls, ...post.mock.calls].map((c) => String(c[0]))
     expect(urls.every((u) => !u.includes('despliegue'))).toBe(true)

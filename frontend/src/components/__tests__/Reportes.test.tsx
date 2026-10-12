@@ -45,7 +45,6 @@ const actaConsumo: Acta = {
       u_m: 'METRO (M)',
       cantidad: null,
       cantidad_tomada: 5,
-      cantidad_sobrante: 2,
       cantidad_consumida: 3,
     },
   ],
@@ -70,7 +69,6 @@ const actaEntrega: Acta = {
       u_m: 'PZ',
       cantidad: 40,
       cantidad_tomada: null,
-      cantidad_sobrante: null,
       cantidad_consumida: null,
     },
   ],
@@ -173,10 +171,10 @@ describe('Reportes — subsecciones Entrega y Consumo con datos reales (API mock
     expect(screen.getByText('Equipo Norte', { selector: 'td' })).toBeInTheDocument()
     expect(screen.getByText('#7')).toBeInTheDocument() // seguimiento
     expect(screen.getByText('Cables')).toBeInTheDocument()
-    // tomada / sobrante / consumida tal cual las calculó PostgreSQL.
+    // tomada / consumida tal cual las registró PostgreSQL (sin columna Sobrante).
     expect(screen.getByText('5')).toBeInTheDocument()
-    expect(screen.getByText('2')).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /sobrante/i })).not.toBeInTheDocument()
     expect(screen.getByText('demo-operador')).toBeInTheDocument()
     expect(mockedListarActas).toHaveBeenCalledWith('consumo', {})
   })

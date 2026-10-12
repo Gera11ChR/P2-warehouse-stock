@@ -27,9 +27,8 @@ class ActaItemOut(BaseModel):
     u_m: str | None = None
     # ENTREGA: cantidad entregada al equipo.
     cantidad: int | None = None
-    # CONSUMO: tomada / sobrante / consumida (calculadas en SQL).
+    # CONSUMO: tomada / consumida (registradas por fn_cerrar_seguimiento).
     cantidad_tomada: int | None = None
-    cantidad_sobrante: int | None = None
     cantidad_consumida: int | None = None
 
 

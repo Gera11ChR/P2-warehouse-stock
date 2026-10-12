@@ -41,32 +41,32 @@ export const seguimientoCreateSchema = z
 /** Payload validado de apertura (tipo inferido del schema). */
 export type SeguimientoCreateInput = z.infer<typeof seguimientoCreateSchema>
 
-/** Línea de sobrantes del payload de cierre (cantidad_sobrante >= 0). */
-const sobranteItemSchema = z.object({
+/** Línea de consumo del payload de cierre (cantidad_consumida >= 0). */
+const consumoItemSchema = z.object({
   material_id: z.number().int().positive(),
-  cantidad_sobrante: z.number().int().min(0),
+  cantidad_consumida: z.number().int().min(0),
 })
 
 /**
  * Payload de cierre de seguimiento:
- * - `sobrantes` (solo los materiales devueltos; los omitidos se consideran
- *   consumidos al 100 % — resolución backend);
+ * - `consumidos`: UNA línea por cada material del seguimiento (obligatorio,
+ *   al menos una; el backend rechaza con 422 las líneas faltantes);
  * - `observaciones_cierre` opcional;
  * - `material_id` SIN duplicados.
  */
 export const cerrarSeguimientoSchema = z
   .object({
-    sobrantes: z.array(sobranteItemSchema),
+    consumidos: z.array(consumoItemSchema).min(1),
     observaciones_cierre: z.string().optional(),
   })
   .superRefine((valor, ctx) => {
-    const ids = valor.sobrantes.map((i) => i.material_id)
+    const ids = valor.consumidos.map((i) => i.material_id)
     const duplicados = ids.filter((id, idx) => ids.indexOf(id) !== idx)
     if (duplicados.length > 0) {
       ctx.addIssue({
         code: 'custom',
-        message: `material_id duplicado en sobrantes: ${[...new Set(duplicados)].join(', ')}`,
-        path: ['sobrantes'],
+        message: `material_id duplicado en consumidos: ${[...new Set(duplicados)].join(', ')}`,
+        path: ['consumidos'],
       })
     }
   })

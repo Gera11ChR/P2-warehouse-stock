@@ -57,7 +57,7 @@ from app.schemas.seguimiento import (
     SeguimientoItemOut,
     SeguimientoListOut,
     SeguimientoOut,
-    SobranteLine,
+    ConsumoLine,
 )
 
 __all__ = [
@@ -67,6 +67,7 @@ __all__ = [
     "AgregarTodoOut",
     "AgregarTodoRequest",
     "CerrarSeguimientoRequest",
+    "ConsumoLine",
     "MoverMaterialOut",
     "MoverMaterialRequest",
     "SeguimientoCreate",
@@ -112,7 +113,6 @@ __all__ = [
     "ProcesarRequest",
     "SeccionOut",
     "SeccionStockOut",
-    "SobranteLine",
     "UmsCreate",
     "UmsOut",
     "UmsUpdate",

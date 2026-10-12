@@ -123,7 +123,7 @@ export default function SeguimientoPanel({
     )
   }
 
-  // ── Seguimiento ABIERTO: resumen + cierre con sobrantes ────────────────────
+  // ── Seguimiento ABIERTO: resumen + cierre con consumidos ────────────────────
 
   if (abierta) {
     return (
@@ -181,7 +181,7 @@ export default function SeguimientoPanel({
         <ConfirmDialog
           open={cierreConfirmOpen}
           title="Cerrar seguimiento"
-          message="Se registrarán los sobrantes y el consumo se descontará del inventario de la unidad. ¿Confirmar?"
+          message="Se registrará lo consumido y se descontará del inventario de la unidad. ¿Confirmar?"
           confirmLabel="Confirmar"
           onConfirm={() => {
             if (cierrePendiente) {

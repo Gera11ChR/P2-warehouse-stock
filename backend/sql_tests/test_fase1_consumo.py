@@ -16,8 +16,8 @@ Cobertura (100 % SQL, psycopg sobre p2_test, PostgreSQL 18.6):
   * fn_agregar_todo_seguimiento: carga completa, idempotencia (doble
     invocación no duplica), validaciones (404/409, pertenencia).
   * fn_cerrar_seguimiento extendido: Acta de Consumo con snapshot jsonb y
-    consumido = tomada - sobrante calculado en SQL; rollback total ante
-    sobrante inválido.
+    consumido registrado y descontado directamente en SQL; rollback total ante
+    consumo inválido o línea faltante.
   * Acta de Entrega: trigger tg_acta_entrega en la MISMA transacción de la
     confirmación TEAMS (CONFIRMADO, estado real del esquema), sin acta
     para DEVOL, sin duplicado ante UPDATE no-op, snapshot conservado tras
@@ -696,7 +696,11 @@ def test_agregar_todo_validaciones(conn):
     )
     assert "no pertenece a la unidad" in msg
 
-    _uno(conn, "SELECT fn_cerrar_seguimiento(%s, '[]'::jsonb, 'qa', NULL)", (seguimiento_id,))
+    _uno(
+        conn,
+        "SELECT fn_cerrar_seguimiento(%s, %s::jsonb, 'qa', NULL)",
+        (seguimiento_id, json.dumps([{"material_id": material_a, "cantidad_consumida": 1}])),
+    )
     msg = _falla(
         conn,
         "SELECT fn_agregar_todo_seguimiento(%s, %s, 'qa', NULL)",
@@ -712,8 +716,8 @@ def test_agregar_todo_validaciones(conn):
 
 
 def test_cerrar_seguimiento_acta_consumo(conn):
-    """REQ-P2-CON-005 / REQ-P2-REP-004: consumido = tomada - sobrante en
-    SQL, snapshot jsonb y evento ACTA_CONSUMO_GENERADA."""
+    """REQ-P2-CON-005 / REQ-P2-REP-004: el consumido se descuenta directamente
+    en SQL; snapshot jsonb y evento ACTA_CONSUMO_GENERADA."""
     material_a = crear_material(conn, descripcion="Material Consumo")
     equipo_id, _ = stockear_equipo_teams(conn, material_a, 50)
     seguimiento_id = crear_seguimiento(
@@ -728,11 +732,11 @@ def test_cerrar_seguimiento_acta_consumo(conn):
         "SELECT fn_cerrar_seguimiento(%s, %s::jsonb, 'qa', 'Cierre QA')",
         (
             seguimiento_id,
-            json.dumps([{"material_id": material_a, "cantidad_sobrante": 5}]),
+            json.dumps([{"material_id": material_a, "cantidad_consumida": 15}]),
         ),
     )
 
-    # Stock del equipo descontado por el CONSUMIDO (20 - 5 = 15).
+    # Stock de la unidad descontado por el CONSUMIDO (50 - 15 = 35).
     assert stock_equipo(conn, equipo_id, material_a) == 35
     estado = _valor(
         conn, "SELECT estado FROM seguimientos WHERE id = %s", (seguimiento_id,)
@@ -752,15 +756,15 @@ def test_cerrar_seguimiento_acta_consumo(conn):
     assert snapshot["observaciones_cierre"] == "Cierre QA"
     item = snapshot["items"][0]
     assert item["cantidad_tomada"] == 20
-    assert item["cantidad_sobrante"] == 5
-    assert item["cantidad_consumida"] == 15  # calculada en SQL
+    assert "cantidad_sobrante" not in item
+    assert item["cantidad_consumida"] == 15  # registrada por la función
 
     assert eventos(conn, "SEGUIMIENTO_CERRADO") == 1
     assert eventos(conn, "ACTA_CONSUMO_GENERADA") == 1
 
 
-def test_cerrar_seguimiento_rollback_sobrante_invalido(conn):
-    """Atomicidad: un sobrante inválido revierte TODA la transacción de
+def test_cerrar_seguimiento_rollback_consumo_invalido(conn):
+    """Atomicidad: un consumo inválido revierte TODA la transacción de
     cierre (estado, stock, acta y auditoría)."""
     material_a = crear_material(conn)
     equipo_id, _ = stockear_equipo_teams(conn, material_a, 50)
@@ -777,10 +781,10 @@ def test_cerrar_seguimiento_rollback_sobrante_invalido(conn):
         "SELECT fn_cerrar_seguimiento(%s, %s::jsonb, 'qa', NULL)",
         (
             seguimiento_id,
-            json.dumps([{"material_id": material_a, "cantidad_sobrante": 25}]),
+            json.dumps([{"material_id": material_a, "cantidad_consumida": 25}]),
         ),
     )
-    assert "Sobrante inválido" in msg
+    assert "Consumo inválido" in msg
 
     estado = _valor(
         conn, "SELECT estado FROM seguimientos WHERE id = %s", (seguimiento_id,)

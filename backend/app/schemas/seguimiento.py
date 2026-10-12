@@ -4,7 +4,7 @@ en 0016).
 Toda la aritmética de stock del seguimiento vive en PostgreSQL
 (`fn_crear_seguimiento` / `fn_cerrar_seguimiento` /
 `fn_agregar_todo_seguimiento`); estos DTOs solo transportan la lista de
-materiales, los sobrantes del cierre y los ecos de lectura.
+materiales, los consumos del cierre y los ecos de lectura.
 """
 
 from datetime import date, datetime
@@ -38,28 +38,30 @@ class SeguimientoCreate(BaseModel):
         return self
 
 
-class SobranteLine(BaseModel):
-    """Línea de sobrante del cierre (material devuelto al inventario)."""
+class ConsumoLine(BaseModel):
+    """Línea de consumo del cierre (cantidad consumida de un material)."""
 
     model_config = ConfigDict(extra="forbid")
 
     material_id: int = Field(gt=0)
-    cantidad_sobrante: int = Field(ge=0)
+    cantidad_consumida: int = Field(ge=0)
 
 
 class CerrarSeguimientoRequest(BaseModel):
-    """Cierre de seguimiento. Las líneas omitidas se cierran con sobrante 0."""
+    """Cierre de seguimiento: `consumidos` es OBLIGATORIO y debe traer una
+    línea por cada material del seguimiento (la completitud la valida
+    `fn_cerrar_seguimiento` antes de tocar el inventario)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    sobrantes: list[SobranteLine] = Field(default_factory=list)
+    consumidos: list[ConsumoLine] = Field(min_length=1)
     observaciones_cierre: str | None = Field(default=None, max_length=2000)
 
     @model_validator(mode="after")
-    def _check_sobrantes_unicos(self) -> "CerrarSeguimientoRequest":
-        ids = [line.material_id for line in self.sobrantes]
+    def _check_consumidos_unicos(self) -> "CerrarSeguimientoRequest":
+        ids = [line.material_id for line in self.consumidos]
         if len(ids) != len(set(ids)):
-            raise ValueError("sobrantes con material_id duplicado.")
+            raise ValueError("consumidos con material_id duplicado.")
         return self
 
 
@@ -69,7 +71,6 @@ class SeguimientoItemOut(BaseModel):
     id: int
     material_id: int
     cantidad_tomada: int
-    cantidad_sobrante: int | None
     cantidad_consumida: int | None
 
 

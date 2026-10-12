@@ -74,3 +74,36 @@ describe('Nomenclatura oficial: Unidad (REQ-UNI-021)', () => {
     expect(esTextoVisible('equipo_id')).toBe(false)
   })
 })
+
+// RF-14 / REQ-CONSUMO-014: el concepto "Sobrante" no debe quedar en la
+// interfaz (texto visible) ni en el código de producción: tipos, esquemas,
+// payloads y servicios tampoco usan `sobrante(s)`.
+describe('Sin rastro de "sobrante" (REQ-CONSUMO-014)', () => {
+  const SOBRANTE = /sobrante/i
+
+  it('ningún texto visible contiene "sobrante"', () => {
+    const ofensores: string[] = []
+    for (const [ruta, src] of Object.entries(fuentes)) {
+      if (/__tests__|\.test\.|\/test\//.test(ruta)) continue
+      for (const c of candidatos(src)) {
+        if (SOBRANTE.test(c)) ofensores.push(`${ruta}: ${c.trim()}`)
+      }
+    }
+    expect(ofensores).toEqual([])
+  })
+
+  it('ni el código de producción (identificadores, tipos, payloads) lo usa', () => {
+    const ofensores: string[] = []
+    for (const [ruta, src] of Object.entries(fuentes)) {
+      if (/__tests__|\.test\.|\/test\//.test(ruta)) continue
+      src.split('\n').forEach((linea, i) => {
+        if (SOBRANTE.test(linea)) ofensores.push(`${ruta}:${i + 1}: ${linea.trim()}`)
+      })
+    }
+    expect(ofensores).toEqual([])
+  })
+
+  it('el detector reconoce un texto visible con "Sobrante"', () => {
+    expect(candidatos("const x = 'Sobrante por material'").some((c) => SOBRANTE.test(c))).toBe(true)
+  })
+})

@@ -491,7 +491,7 @@ async def test_REQ_P2_CON_004_agregar_todo_en_seguimiento_cerrado_409(
     seg = await _abrir_seguimiento(client, equipo, m1)
     resp = await client.post(
         f"/api/v1/equipos/{equipo['equipo_id']}/seguimientos/{seg['id']}/cerrar",
-        json={"sobrantes": []},
+        json={"consumidos": [{"material_id": m1["id_lista"], "cantidad_consumida": 1}]},
     )
     assert resp.status_code == 200
     resp = await client.post(_agregar_todo(equipo, seg))
@@ -685,7 +685,7 @@ def test_cero_aritmetica_de_stock_en_la_capa_de_aplicacion() -> None:
     realiza operaciones aritméticas (+, -, *, /, //, %) ni asignaciones
     aumentadas sobre variables/atributos de stock o cantidades."""
     app_dir = Path(__file__).resolve().parents[1] / "app"
-    sensibles = ("stock", "cantidad", "sobrante", "consumid")
+    sensibles = ("stock", "cantidad", "consumid")
     ops = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod)
 
     def _nombre(nodo: ast.AST) -> str:

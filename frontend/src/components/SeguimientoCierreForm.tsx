@@ -7,10 +7,11 @@ import type { CerrarSeguimientoPayload, SeguimientoItem } from '../types'
 // FORMULARIO — CIERRE DE SEGUIMIENTO (CONSUMO) (FASE 7)
 //
 // Una fila por ítem: descripción y cantidad tomada SOLO LECTURA; el único
-// campo editable es `cantidad_sobrante` (default 0, rango 0..tomada). El
-// formulario NUNCA calcula el consumo (tomada − sobrante): ese cálculo es
-// exclusivo del backend (PostgreSQL). Captura la intención y la valida con
-// `cerrarSeguimientoSchema`; el backend sigue siendo la autoridad.
+// campo editable es `cantidad_consumida`: inicia VACÍO y su captura es
+// OBLIGATORIA para cada material (rango 0..tomada). El formulario NUNCA
+// calcula stock: el descuento es exclusivo del backend (PostgreSQL).
+// Captura la intención y la valida con `cerrarSeguimientoSchema`; el
+// backend sigue siendo la autoridad.
 //
 // Contrato de props (wave 2b — página InventarioPorEquipos):
 //   { items, materiales, onSubmit, onCancel }
@@ -30,11 +31,11 @@ export default function SeguimientoCierreForm({
   onSubmit,
   onCancel,
 }: SeguimientoCierreFormProps) {
-  // estado por material_id: string editable del sobrante
-  const [sobrantes, setSobrantes] = useState<Record<number, string>>(() => {
+  // estado por material_id: string editable del consumido (inicia vacío)
+  const [consumidos, setConsumidos] = useState<Record<number, string>>(() => {
     const inicial: Record<number, string> = {}
     for (const item of items) {
-      inicial[item.material_id] = '0'
+      inicial[item.material_id] = ''
     }
     return inicial
   })
@@ -44,21 +45,35 @@ export default function SeguimientoCierreForm({
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
 
-    // Guardia de presentación por fila: 0 <= sobrante <= cantidad tomada.
+    // Captura obligatoria: ningún campo puede quedar vacío.
+    const faltantes = items.filter(
+      (item) => (consumidos[item.material_id] ?? '').trim() === '',
+    )
+    if (faltantes.length > 0) {
+      setErrores(
+        faltantes.map(
+          (item) =>
+            `Indique la cantidad consumida de ${materiales[item.material_id] ?? item.material_id}.`,
+        ),
+      )
+      return
+    }
+
+    // Guardia de presentación por fila: 0 <= consumido <= cantidad tomada.
     for (const item of items) {
-      const cantidad = Number(sobrantes[item.material_id] ?? 0)
+      const cantidad = Number(consumidos[item.material_id])
       if (Number.isFinite(cantidad) && cantidad > item.cantidad_tomada) {
         setErrores([
-          `El sobrante no puede exceder la cantidad tomada (${item.cantidad_tomada}).`,
+          `El consumido no puede exceder la cantidad tomada (${item.cantidad_tomada}).`,
         ])
         return
       }
     }
 
     const payload: CerrarSeguimientoPayload = {
-      sobrantes: items.map((item) => ({
+      consumidos: items.map((item) => ({
         material_id: item.material_id,
-        cantidad_sobrante: Number(sobrantes[item.material_id] ?? 0) || 0,
+        cantidad_consumida: Number(consumidos[item.material_id]),
       })),
     }
     if (observacionesCierre.trim() !== '') {
@@ -71,8 +86,8 @@ export default function SeguimientoCierreForm({
       for (const issue of resultado.error.issues) {
         if (issue.message.includes('duplicado')) {
           mensajes.push(issue.message)
-        } else if (issue.path[2] === 'cantidad_sobrante') {
-          mensajes.push('El sobrante debe ser un entero mayor o igual a 0.')
+        } else if (issue.path[2] === 'cantidad_consumida') {
+          mensajes.push('El consumido debe ser un entero mayor o igual a 0.')
         } else {
           mensajes.push(issue.message)
         }
@@ -89,11 +104,11 @@ export default function SeguimientoCierreForm({
     <form onSubmit={handleSubmit} noValidate className="space-y-4">
       <div className="space-y-2 border-t border-slate-200 pt-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Sobrantes por material
+          Consumido por material
         </p>
         <p className="text-xs text-slate-500">
-          Indique cuánto devuelve cada material. El consumo (tomada −
-          sobrante) lo calcula y audita el backend al cerrar.
+          Indique cuánto consumió de cada material. El backend descuenta esa
+          cantidad del inventario de la unidad y lo audita al cerrar.
         </p>
 
         {items.map((item) => (
@@ -114,21 +129,22 @@ export default function SeguimientoCierreForm({
             </div>
             <div className="w-28">
               <label
-                htmlFor={`sobrante-${item.material_id}`}
+                htmlFor={`consumido-${item.material_id}`}
                 className="text-xs font-semibold uppercase tracking-wide text-slate-400"
               >
-                Sobrante
+                Consumido
               </label>
               <input
-                id={`sobrante-${item.material_id}`}
+                id={`consumido-${item.material_id}`}
                 type="number"
                 min={0}
                 max={item.cantidad_tomada}
                 step={1}
-                value={sobrantes[item.material_id] ?? '0'}
+                required
+                value={consumidos[item.material_id] ?? ''}
                 onChange={(event) => {
-                  setSobrantes({
-                    ...sobrantes,
+                  setConsumidos({
+                    ...consumidos,
                     [item.material_id]: event.target.value,
                   })
                   setErrores([])
@@ -152,7 +168,7 @@ export default function SeguimientoCierreForm({
           value={observacionesCierre}
           onChange={(event) => setObservacionesCierre(event.target.value)}
           rows={2}
-          placeholder="Ej. Sobrante devuelto al inventario general"
+          placeholder="Ej. Trabajo concluido sin incidencias"
           className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
       </div>

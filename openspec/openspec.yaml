@@ -349,8 +349,6 @@ paths:
                               type: integer
                             cantidad_tomada:
                               type: integer
-                            cantidad_sobrante:
-                              type: [integer, "null"]
                             cantidad_consumida:
                               type: [integer, "null"]
         "404":
@@ -359,19 +357,45 @@ paths:
           description: "El seguimiento no se encuentra en estado ABIERTA"
   /api/v1/equipos/{equipo_id}/seguimientos/{seguimiento_id}/cerrar:
     post:
-      summary: "Cerrar seguimiento registrando sobrantes, ajustando stock del equipo y registrando el Acta de Consumo"
+      summary: "Cerrar seguimiento registrando lo CONSUMIDO (una línea por material), descontándolo del stock de la unidad y registrando el Acta de Consumo"
       operationId: "cerrarSeguimiento"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [consumidos]
+              properties:
+                consumidos:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [material_id, cantidad_consumida]
+                    properties:
+                      material_id:
+                        type: integer
+                        exclusiveMinimum: 0
+                      cantidad_consumida:
+                        type: integer
+                        minimum: 0
+                observaciones_cierre:
+                  type: [string, "null"]
+                  maxLength: 2000
       responses:
         "200":
           description: "Seguimiento cerrado vía fn_cerrar_seguimiento (auditoría SEGUIMIENTO_CERRADO por línea y Acta de Consumo ACTA_CONSUMO_GENERADA con snapshot jsonb en la misma transacción)"
         "400":
-          description: "Sobrante mayor a tomada o stock de equipo insuficiente"
+          description: "Consumo mayor a lo tomado, material ajeno al seguimiento o stock de la unidad insuficiente"
         "404":
           description: "Seguimiento no encontrado"
         "409":
           description: "Seguimiento no se encuentra en estado ABIERTA (doble cierre)"
         "422":
-          description: "Sobrante negativo o payload inválido"
+          description: "Falta la línea de consumo de algún material, consumo negativo o duplicado, o payload inválido (incluye el campo retirado `sobrantes`)"
   /api/v1/inventario/secciones/transferibles:
     get:
       summary: "Secciones válidas como origen/destino de transferencias (GENERAL activas + manejadores FO)"

@@ -48,7 +48,7 @@ _SQL_CREAR_SEGUIMIENTO = text(
 )
 _SQL_CERRAR_SEGUIMIENTO = text(
     "SELECT fn_cerrar_seguimiento("
-    ":seguimiento_id, CAST(:sobrantes AS JSONB), :usuario, :observaciones_cierre)"
+    ":seguimiento_id, CAST(:consumidos AS JSONB), :usuario, :observaciones_cierre)"
 )
 _SQL_AGREGAR_TODO_SEGUIMIENTO = text(
     "SELECT fn_agregar_todo_seguimiento("
@@ -185,8 +185,12 @@ async def _mapear_raise_exception(exc: DBAPIError) -> Exception:
     if "no pertenece a este seguimiento" in mensaje:
         return BusinessRuleError(mensaje, status_code=400)
 
-    if "Sobrante inválido" in mensaje:
+    if "Consumo inválido" in mensaje:
         return BusinessRuleError(mensaje, status_code=400)
+
+    # Línea de consumo omitida: 422 antes de tocar el inventario.
+    if "Falta la cantidad consumida" in mensaje:
+        return BusinessRuleError(mensaje, status_code=422)
 
     if (
         "Stock insuficiente en la Unidad" in mensaje
@@ -694,14 +698,15 @@ async def cerrar_seguimiento(
     session: AsyncSession,
     *,
     seguimiento_id: int,
-    sobrantes: list[dict],
+    consumidos: list[dict],
     usuario: str,
     observaciones_cierre: str | None,
 ) -> None:
-    """fn_cerrar_seguimiento: cierre con sobrantes 100 % en PostgreSQL.
-    `sobrantes` es una lista de {"material_id", "cantidad_sobrante"}
-    serializada a JSON (vacía si no hay sobrantes: las líneas omitidas se
-    cierran con sobrante 0). El descuento del inventario del equipo, la
+    """fn_cerrar_seguimiento: cierre con consumos 100 % en PostgreSQL.
+    `consumidos` es una lista de {"material_id", "cantidad_consumida"}
+    serializada a JSON, con UNA línea por material del seguimiento (la
+    función rechaza las omitidas). El descuento directo del consumido del
+    inventario de la unidad, la
     auditoría ('SEGUIMIENTO_CERRADO' por línea) y el registro del Acta de
     Consumo (snapshot jsonb, 'ACTA_CONSUMO_GENERADA') ocurren dentro de la
     función bajo FOR UPDATE, en la misma transacción."""
@@ -711,7 +716,7 @@ async def cerrar_seguimiento(
         _SQL_CERRAR_SEGUIMIENTO,
         {
             "seguimiento_id": seguimiento_id,
-            "sobrantes": json.dumps(sobrantes),
+            "consumidos": json.dumps(consumidos),
             "usuario": usuario,
             "observaciones_cierre": observaciones_cierre,
         },

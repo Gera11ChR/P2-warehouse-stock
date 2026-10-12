@@ -132,7 +132,7 @@ describe('useCerrarSeguimiento — invalidación y payload', () => {
     const { wrapper, claves } = setup()
     vi.mocked(cerrarSeguimiento).mockResolvedValue(seg({}))
     const { result } = renderHook(() => useCerrarSeguimiento(4), { wrapper })
-    const payload = { sobrantes: [{ material_id: 1, cantidad_sobrante: 0 }] }
+    const payload = { consumidos: [{ material_id: 1, cantidad_consumida: 0 }] }
     await result.current.mutateAsync({ seguimientoId: 7, payload })
     expect(cerrarSeguimiento).toHaveBeenCalledWith(4, 7, payload)
     expect(claves()).toEqual(
@@ -150,7 +150,7 @@ describe('useCerrarSeguimiento — invalidación y payload', () => {
     vi.mocked(cerrarSeguimiento).mockRejectedValue(new Error('409'))
     const { result } = renderHook(() => useCerrarSeguimiento(4), { wrapper })
     await expect(
-      result.current.mutateAsync({ seguimientoId: 7, payload: { sobrantes: [] } }),
+      result.current.mutateAsync({ seguimientoId: 7, payload: { consumidos: [{ material_id: 1, cantidad_consumida: 0 }] } }),
     ).rejects.toThrow('409')
     expect(claves()).toEqual([])
   })
@@ -164,7 +164,7 @@ describe('useCerrarSeguimiento — invalidación y payload', () => {
     expect(obs?.state.isInvalidated).toBe(false)
     vi.mocked(cerrarSeguimiento).mockResolvedValue(seg({}))
     const { result } = renderHook(() => useCerrarSeguimiento(4), { wrapper })
-    await result.current.mutateAsync({ seguimientoId: 7, payload: { sobrantes: [] } })
+    await result.current.mutateAsync({ seguimientoId: 7, payload: { consumidos: [{ material_id: 1, cantidad_consumida: 0 }] } })
     expect(obs?.state.isInvalidated).toBe(true)
   })
 })

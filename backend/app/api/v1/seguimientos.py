@@ -206,12 +206,13 @@ async def cerrar_seguimiento(
     session: SessionDep,
     actor_ctx: ActorDep,
 ) -> SeguimientoOut:
-    """Cierre con sobrantes delegado a fn_cerrar_seguimiento: valida cada
-    sobrante (0 ≤ sobrante ≤ tomada), descuenta el consumido del inventario
-    del equipo bajo FOR UPDATE, audita 'SEGUIMIENTO_CERRADO' por línea y
-    registra el Acta de Consumo (hito B) en la MISMA transacción SQL.
-    Las líneas omitidas se cierran con sobrante 0. Clasificación 404/409
-    por pre-chequeo; la autoridad transaccional permanece en PostgreSQL."""
+    """Cierre con consumos delegado a fn_cerrar_seguimiento: exige una línea
+    por material, valida cada consumo (0 ≤ consumido ≤ tomada), descuenta
+    DIRECTAMENTE el consumido del inventario de la unidad bajo FOR UPDATE
+    (el remanente no se mueve), audita 'SEGUIMIENTO_CERRADO' por línea y
+    registra el Acta de Consumo en la MISMA transacción SQL. Clasificación
+    404/409 por pre-chequeo; la autoridad transaccional permanece en
+    PostgreSQL."""
     assert_authenticated(actor_ctx)
     async with session.begin():
         await _prechequear_equipo(session, actor_ctx, equipo_id)
@@ -222,12 +223,12 @@ async def cerrar_seguimiento(
         await transaccional.cerrar_seguimiento(
             session,
             seguimiento_id=seguimiento_id,
-            sobrantes=[
+            consumidos=[
                 {
-                    "material_id": s.material_id,
-                    "cantidad_sobrante": s.cantidad_sobrante,
+                    "material_id": c.material_id,
+                    "cantidad_consumida": c.cantidad_consumida,
                 }
-                for s in payload.sobrantes
+                for c in payload.consumidos
             ],
             usuario=actor_ctx.actor_id,
             observaciones_cierre=payload.observaciones_cierre,

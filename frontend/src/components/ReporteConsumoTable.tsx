@@ -5,7 +5,7 @@ import type { Acta, ActaItem } from '../types'
 //
 // Una fila por ítem (acta sin ítems → fila con "—"). Las actas son snapshots
 // persistidos por PostgreSQL al cerrar un seguimiento; `cantidad_consumida`
-// (tomada − sobrante) llega calculada por la base de datos y aquí solo se
+// llega registrada por la base de datos y aquí solo se
 // muestra (sin agregar ni recalcular).
 // ============================================================================
 
@@ -32,7 +32,6 @@ export default function ReporteConsumoTable({ actas }: { actas: Acta[] }) {
             <th className="px-4 py-2">Categoría</th>
             <th className="px-4 py-2">U.M.</th>
             <th className="px-4 py-2">Tomada</th>
-            <th className="px-4 py-2">Sobrante</th>
             <th className="px-4 py-2">Consumida</th>
             <th className="px-4 py-2">Usuario</th>
           </tr>
@@ -73,9 +72,6 @@ export default function ReporteConsumoTable({ actas }: { actas: Acta[] }) {
               <td className="px-4 py-2 text-slate-500">{item?.u_m ?? '—'}</td>
               <td className="px-4 py-2 font-semibold text-slate-700">
                 {num(item?.cantidad_tomada)}
-              </td>
-              <td className="px-4 py-2 text-slate-700">
-                {num(item?.cantidad_sobrante)}
               </td>
               <td className="px-4 py-2 text-slate-700">
                 {num(item?.cantidad_consumida)}

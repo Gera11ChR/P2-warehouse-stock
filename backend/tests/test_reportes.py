@@ -66,7 +66,7 @@ async def _entrega(
 
 
 async def _consumo(
-    client: AsyncClient, material: dict, equipo: dict, *, tomada=20, sobrante=5
+    client: AsyncClient, material: dict, equipo: dict, *, tomada=20, consumido=15
 ) -> dict:
     resp = await client.post(
         f"/api/v1/equipos/{equipo['equipo_id']}/seguimientos",
@@ -78,8 +78,8 @@ async def _consumo(
         f"/api/v1/equipos/{equipo['equipo_id']}/seguimientos/"
         f"{seguimiento['id']}/cerrar",
         json={
-            "sobrantes": [
-                {"material_id": material["id_lista"], "cantidad_sobrante": sobrante}
+            "consumidos": [
+                {"material_id": material["id_lista"], "cantidad_consumida": consumido}
             ]
         },
     )
@@ -218,7 +218,7 @@ async def test_REQ_P2_CON_005_cerrar_seguimiento_genera_acta_de_consumo(
     client: AsyncClient,
 ) -> None:
     material, equipo, _ = await _entrega(client)
-    await _consumo(client, material, equipo, tomada=20, sobrante=5)
+    await _consumo(client, material, equipo, tomada=20, consumido=15)
 
     resp = await client.get("/api/v1/reportes/consumo")
     actas = resp.json()["actas"]
@@ -228,9 +228,10 @@ async def test_REQ_P2_CON_005_cerrar_seguimiento_genera_acta_de_consumo(
     assert acta["equipo_id"] == equipo["equipo_id"]
     assert acta["seguimiento_id"] is not None
     item = acta["items"][0]
-    # tomada, sobrante y consumida las calcula PostgreSQL (columna GENERATED).
-    assert (item["cantidad_tomada"], item["cantidad_sobrante"]) == (20, 5)
+    # tomada y consumida las registra fn_cerrar_seguimiento (sin sobrante).
+    assert item["cantidad_tomada"] == 20
     assert item["cantidad_consumida"] == 15
+    assert "cantidad_sobrante" not in item
 
 
 async def test_seguimiento_abierto_no_genera_acta_de_consumo(
@@ -253,7 +254,7 @@ async def test_REQ_P2_REP_004_consumo_xlsx_titulo_y_cantidad_consumida(
     client: AsyncClient, formato: str, primera_fila: int
 ) -> None:
     material, equipo, _ = await _entrega(client)
-    await _consumo(client, material, equipo, tomada=20, sobrante=5)
+    await _consumo(client, material, equipo, tomada=20, consumido=15)
 
     resp = await client.get(f"/api/v1/reportes/consumo?formato={formato}")
     assert re.fullmatch(
@@ -268,9 +269,9 @@ async def test_REQ_P2_REP_004_consumo_xlsx_titulo_y_cantidad_consumida(
 
 
 async def test_consumo_xlsx_omite_lineas_sin_consumo(client: AsyncClient) -> None:
-    """Una línea devuelta completa (consumida = 0) no certifica consumo."""
+    """Una línea sin consumo (consumida = 0) no certifica consumo."""
     material, equipo, _ = await _entrega(client)
-    await _consumo(client, material, equipo, tomada=20, sobrante=20)
+    await _consumo(client, material, equipo, tomada=20, consumido=0)
     assert (await client.get("/api/v1/reportes/consumo")).json()["actas"]
     ws = _xlsx(await client.get("/api/v1/reportes/consumo?formato=normal"))
     assert ws["B10"].value is None
@@ -493,7 +494,7 @@ async def test_acta_consumo_atribuida_al_actor_del_cierre(
     """El evento ACTA_CONSUMO_GENERADA queda atribuido al actor que cierra
     el seguimiento, con la referencia del acta y del seguimiento."""
     material, equipo, _ = await _entrega(client)
-    await _consumo(client, material, equipo, tomada=20, sobrante=5)
+    await _consumo(client, material, equipo, tomada=20, consumido=15)
 
     eventos = await _eventos_acta(session, "ACTA_CONSUMO_GENERADA")
     assert len(eventos) == 1

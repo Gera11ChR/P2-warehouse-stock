@@ -2,7 +2,7 @@
 
 Cubre el ciclo ABIERTA -> CERRADA delegado íntegramente a las stored
 functions fn_crear_seguimiento / fn_cerrar_seguimiento: apertura con ítems y
-cantidades tomadas, registro de observaciones, cierre con sobrantes, ajuste
+cantidades tomadas, registro de observaciones, cierre con consumidos, ajuste
 atómico del stock del equipo, auditoría inmutable (SEGUIMIENTO_CREADO /
 SEGUIMIENTO_CERRADO), rollback total ante stock insuficiente, máquina de
 estados 404/409, aislamiento por integrante de equipo y serialización de
@@ -75,12 +75,12 @@ async def _cerrar_seguimiento(
     client: AsyncClient,
     equipo_id: int,
     seguimiento_id: int,
-    sobrantes: list[dict] | None = None,
+    consumidos: list[dict] | None = None,
     expect: int = 200,
 ) -> Response:
     resp = await client.post(
         f"/api/v1/equipos/{equipo_id}/seguimientos/{seguimiento_id}/cerrar",
-        json={"sobrantes": sobrantes or []},
+        json={"consumidos": consumidos or []},
     )
     assert resp.status_code == expect, resp.text
     return resp
@@ -92,7 +92,7 @@ async def test_REQ_DEPLOY_001_002_crear_seguimiento_201_estado_abierta_con_items
 ) -> None:
     """REQ-DEPLOY-001/002: la apertura devuelve 201 con estado ABIERTA,
     fecha del día, usuario del actor y las líneas con su cantidad_tomada
-    registrada (sobrante/consumida aún NULL)."""
+    registrada (consumida aún NULL)."""
     material, equipo = await _setup_equipo_stock(client)
 
     resp = await _crear_seguimiento(
@@ -109,7 +109,6 @@ async def test_REQ_DEPLOY_001_002_crear_seguimiento_201_estado_abierta_con_items
     item = body["items"][0]
     assert item["material_id"] == material["id_lista"]
     assert item["cantidad_tomada"] == 20
-    assert item["cantidad_sobrante"] is None
     assert item["cantidad_consumida"] is None
 
 
@@ -168,12 +167,12 @@ async def test_REQ_DEPLOY_001_segundo_seguimiento_abierto_mismo_equipo_409(
 
 
 @pytest.mark.critical
-async def test_REQ_DEPLOY_004_005_cierre_con_sobrantes_200_estado_cerrada(
+async def test_REQ_DEPLOY_004_005_cierre_con_consumidos_200_estado_cerrada(
     client: AsyncClient,
 ) -> None:
-    """REQ-DEPLOY-004/005: el cierre con sobrantes devuelve 200, transiciona
-    a CERRADA con closed_at y materializa cantidad_consumida = tomada -
-    sobrante en cada línea del ledger."""
+    """REQ-DEPLOY-004/005: el cierre con consumidos devuelve 200, transiciona
+    a CERRADA con closed_at y registra cantidad_consumida en cada línea del
+    ledger."""
     material, equipo = await _setup_equipo_stock(client)
     creado = await _crear_seguimiento(
         client,
@@ -186,7 +185,7 @@ async def test_REQ_DEPLOY_004_005_cierre_con_sobrantes_200_estado_cerrada(
         client,
         equipo["equipo_id"],
         seguimiento_id,
-        [{"material_id": material["id_lista"], "cantidad_sobrante": 5}],
+        [{"material_id": material["id_lista"], "cantidad_consumida": 15}],
     )
     body = resp.json()
     assert body["estado"] == "CERRADA"
@@ -194,7 +193,6 @@ async def test_REQ_DEPLOY_004_005_cierre_con_sobrantes_200_estado_cerrada(
     item = next(
         i for i in body["items"] if i["material_id"] == material["id_lista"]
     )
-    assert item["cantidad_sobrante"] == 5
     assert item["cantidad_consumida"] == 15
 
 
@@ -204,7 +202,7 @@ async def test_REQ_DEPLOY_005_stock_equipo_ajustado_y_auditoria_por_linea(
 ) -> None:
     """REQ-DEPLOY-005: el cierre descuenta el consumido del inventario del
     equipo (50 - 15 = 35) y audita SEGUIMIENTO_CERRADO por línea con
-    tomada/sobrante/consumida/stock_remanente y el actor del header."""
+    tomada/consumida/stock_remanente y el actor del header."""
     material, equipo = await _setup_equipo_stock(client, cantidad=50)
     creado = await _crear_seguimiento(
         client,
@@ -215,7 +213,7 @@ async def test_REQ_DEPLOY_005_stock_equipo_ajustado_y_auditoria_por_linea(
         client,
         equipo["equipo_id"],
         creado.json()["id"],
-        [{"material_id": material["id_lista"], "cantidad_sobrante": 5}],
+        [{"material_id": material["id_lista"], "cantidad_consumida": 15}],
     )
 
     filas = await inventario_equipo(client, equipo["equipo_id"])
@@ -234,7 +232,7 @@ async def test_REQ_DEPLOY_005_stock_equipo_ajustado_y_auditoria_por_linea(
     detalles = evento.detalles or {}
     assert detalles["seguimiento_id"] == creado.json()["id"]
     assert detalles["cantidad_tomada"] == 20
-    assert detalles["cantidad_sobrante"] == 5
+    assert "cantidad_sobrante" not in detalles
     assert detalles["cantidad_consumida"] == 15
     assert detalles["stock_remanente_equipo"] == 35
 
@@ -281,14 +279,14 @@ async def test_REQ_DEPLOY_005_doble_cierre_409_sin_doble_ajuste(
         client,
         equipo["equipo_id"],
         creado.json()["id"],
-        [{"material_id": material["id_lista"], "cantidad_sobrante": 5}],
+        [{"material_id": material["id_lista"], "cantidad_consumida": 15}],
     )
 
     resp = await _cerrar_seguimiento(
         client,
         equipo["equipo_id"],
         creado.json()["id"],
-        [{"material_id": material["id_lista"], "cantidad_sobrante": 0}],
+        [{"material_id": material["id_lista"], "cantidad_consumida": 0}],
         expect=409,
     )
     assert "no se encuentra en estado ABIERTA" in resp.json()["error"]["message"]
@@ -304,15 +302,19 @@ async def test_REQ_DEPLOY_004_cierre_seguimiento_inexistente_404(
     de tocar la stored function."""
     _, equipo = await _setup_equipo_stock(client)
     resp = await _cerrar_seguimiento(
-        client, equipo["equipo_id"], 9999, expect=404
+        client,
+        equipo["equipo_id"],
+        9999,
+        [{"material_id": 1, "cantidad_consumida": 1}],
+        expect=404,
     )
     assert resp.json()["error"]["code"] == "BUSINESS_RULE_VIOLATION"
 
 
-async def test_REQ_DEPLOY_004_sobrante_mayor_tomada_400(
+async def test_REQ_DEPLOY_004_consumido_mayor_tomada_400(
     client: AsyncClient,
 ) -> None:
-    """REQ-DEPLOY-004: sobrante > cantidad tomada es rechazado por
+    """REQ-DEPLOY-004: consumido > cantidad tomada es rechazado por
     fn_cerrar_seguimiento con 400 (validación autoritativa en PostgreSQL)."""
     material, equipo = await _setup_equipo_stock(client)
     creado = await _crear_seguimiento(
@@ -324,14 +326,14 @@ async def test_REQ_DEPLOY_004_sobrante_mayor_tomada_400(
         client,
         equipo["equipo_id"],
         creado.json()["id"],
-        [{"material_id": material["id_lista"], "cantidad_sobrante": 21}],
+        [{"material_id": material["id_lista"], "cantidad_consumida": 21}],
         expect=400,
     )
-    assert "Sobrante inválido" in resp.json()["error"]["message"]
+    assert "Consumo inválido" in resp.json()["error"]["message"]
 
 
-async def test_REQ_DEPLOY_004_sobrante_negativo_422(client: AsyncClient) -> None:
-    """REQ-DEPLOY-004: sobrante negativo viola el esquema (ge=0) → 422."""
+async def test_REQ_DEPLOY_004_consumido_negativo_422(client: AsyncClient) -> None:
+    """REQ-DEPLOY-004: consumido negativo viola el esquema (ge=0) → 422."""
     material, equipo = await _setup_equipo_stock(client)
     creado = await _crear_seguimiento(
         client,
@@ -342,15 +344,15 @@ async def test_REQ_DEPLOY_004_sobrante_negativo_422(client: AsyncClient) -> None
         client,
         equipo["equipo_id"],
         creado.json()["id"],
-        [{"material_id": material["id_lista"], "cantidad_sobrante": -1}],
+        [{"material_id": material["id_lista"], "cantidad_consumida": -1}],
         expect=422,
     )
 
 
-async def test_REQ_DEPLOY_004_sobrante_material_ajeno_400(
+async def test_REQ_DEPLOY_004_consumido_material_ajeno_400(
     client: AsyncClient,
 ) -> None:
-    """REQ-DEPLOY-004: un sobrante de un material que no pertenece al
+    """REQ-DEPLOY-004: un consumo de un material que no pertenece al
     seguimiento es rechazado con 400."""
     material, equipo = await _setup_equipo_stock(client)
     ajeno = await crear_material(client, descripcion="Material ajeno")
@@ -363,16 +365,16 @@ async def test_REQ_DEPLOY_004_sobrante_material_ajeno_400(
         client,
         equipo["equipo_id"],
         creado.json()["id"],
-        [{"material_id": ajeno["id_lista"], "cantidad_sobrante": 1}],
+        [{"material_id": ajeno["id_lista"], "cantidad_consumida": 1}],
         expect=400,
     )
     assert "no pertenece a este seguimiento" in resp.json()["error"]["message"]
 
 
-async def test_REQ_DEPLOY_004_sobrante_duplicado_422(
+async def test_REQ_DEPLOY_004_consumido_duplicado_422(
     client: AsyncClient,
 ) -> None:
-    """REQ-DEPLOY-004: líneas de sobrante duplicadas violan el validator del
+    """REQ-DEPLOY-004: líneas de consumo duplicadas violan el validator del
     esquema → 422."""
     material, equipo = await _setup_equipo_stock(client)
     creado = await _crear_seguimiento(
@@ -384,9 +386,9 @@ async def test_REQ_DEPLOY_004_sobrante_duplicado_422(
         f"/api/v1/equipos/{equipo['equipo_id']}/seguimientos/"
         f"{creado.json()['id']}/cerrar",
         json={
-            "sobrantes": [
-                {"material_id": material["id_lista"], "cantidad_sobrante": 2},
-                {"material_id": material["id_lista"], "cantidad_sobrante": 3},
+            "consumidos": [
+                {"material_id": material["id_lista"], "cantidad_consumida": 2},
+                {"material_id": material["id_lista"], "cantidad_consumida": 3},
             ]
         },
     )
@@ -413,7 +415,7 @@ async def test_REQ_DEPLOY_005_cierre_stock_insuficiente_400_rollback_total(
 ) -> None:
     """REQ-DEPLOY-005 + Constitución 4.1: si el consumido supera el stock
     del equipo, fn_cerrar_seguimiento hace RAISE y la transacción completa
-    revierte — estado sigue ABIERTA, stock intacto y sobrantes en NULL."""
+    revierte — estado sigue ABIERTA, stock intacto y consumidos en NULL."""
     material, equipo = await _setup_equipo_stock(client, cantidad=30)
     creado = await _crear_seguimiento(
         client,
@@ -423,7 +425,11 @@ async def test_REQ_DEPLOY_005_cierre_stock_insuficiente_400_rollback_total(
     seguimiento_id = creado.json()["id"]
 
     resp = await _cerrar_seguimiento(
-        client, equipo["equipo_id"], seguimiento_id, expect=400
+        client,
+        equipo["equipo_id"],
+        seguimiento_id,
+        [{"material_id": material["id_lista"], "cantidad_consumida": 50}],
+        expect=400,
     )
     assert "Stock insuficiente en la Unidad" in resp.json()["error"]["message"]
 
@@ -437,17 +443,17 @@ async def test_REQ_DEPLOY_005_cierre_stock_insuficiente_400_rollback_total(
     item = next(
         i for i in body["items"] if i["material_id"] == material["id_lista"]
     )
-    assert item["cantidad_sobrante"] is None
+    assert item["cantidad_consumida"] is None
 
     filas = await inventario_equipo(client, equipo["equipo_id"])
     assert filas[material["id_lista"]]["stock_actual"] == 30
 
 
-async def test_REQ_DEPLOY_004_linea_omitida_sobrante_cero(
+async def test_REQ_DEPLOY_004_cierre_multilinea_consumos_por_material(
     client: AsyncClient,
 ) -> None:
-    """REQ-DEPLOY-004: las líneas omitidas en el cierre se cierran con
-    sobrante 0 (consumida = tomada)."""
+    """REQ-DEPLOY-004: cada línea del cierre registra su propio consumo
+    (la omisión de una línea se rechaza: ver REQ-CONSUMO-004)."""
     material, equipo = await _setup_equipo_stock(client)
     extra = await crear_material(client, descripcion="Material extra")
     await carga_inicial(
@@ -474,12 +480,13 @@ async def test_REQ_DEPLOY_004_linea_omitida_sobrante_cero(
         client,
         equipo["equipo_id"],
         creado.json()["id"],
-        [{"material_id": material["id_lista"], "cantidad_sobrante": 3}],
+        [
+            {"material_id": material["id_lista"], "cantidad_consumida": 7},
+            {"material_id": extra["id_lista"], "cantidad_consumida": 10},
+        ],
     )
     items = {i["material_id"]: i for i in resp.json()["items"]}
-    assert items[material["id_lista"]]["cantidad_sobrante"] == 3
     assert items[material["id_lista"]]["cantidad_consumida"] == 7
-    assert items[extra["id_lista"]]["cantidad_sobrante"] == 0
     assert items[extra["id_lista"]]["cantidad_consumida"] == 10
 
 
@@ -520,7 +527,11 @@ async def test_REQ_DEPLOY_001_aislamiento_no_integrante_403(
         resp = await ext.post(
             f"/api/v1/equipos/{equipo['equipo_id']}/seguimientos/"
             f"{creado.json()['id']}/cerrar",
-            json={"sobrantes": []},
+            json={
+                "consumidos": [
+                    {"material_id": material["id_lista"], "cantidad_consumida": 1}
+                ]
+            },
         )
         assert resp.status_code == 403
     finally:
@@ -552,7 +563,7 @@ async def test_REQ_DEPLOY_001_admin_pase_transversal(
         client_admin,
         equipo["equipo_id"],
         seguimiento_id,
-        [{"material_id": material["id_lista"], "cantidad_sobrante": 2}],
+        [{"material_id": material["id_lista"], "cantidad_consumida": 8}],
     )
     assert resp.json()["estado"] == "CERRADA"
 
@@ -581,10 +592,10 @@ async def test_REQ_DEPLOY_005_concurrencia_dos_cierres_serializados(
             f"/api/v1/equipos/{equipo['equipo_id']}/seguimientos/"
             f"{seguimiento_id}/cerrar",
             json={
-                "sobrantes": [
+                "consumidos": [
                     {
                         "material_id": material["id_lista"],
-                        "cantidad_sobrante": 5,
+                        "cantidad_consumida": 15,
                     }
                 ]
             },
@@ -642,7 +653,7 @@ async def test_REQ_DEPLOY_001_listado_ordenado_y_detalle_equipo_equivocado_404(
 async def test_REQ_DEPLOY_005_fila_stock_cero_conservada_y_oculta_en_lectura(
     client: AsyncClient, session
 ) -> None:
-    """REQ-DEPLOY-005: el consumo total (sobrante 0) NO elimina la fila
+    """REQ-DEPLOY-005: el consumo total (consumido = stock) NO elimina la fila
     física de inventario_equipos (queda en stock 0), pero GET inventario la
     oculta (filtro stock_actual > 0, cero fantasmas)."""
     material, equipo = await _setup_equipo_stock(client, cantidad=50)
@@ -652,7 +663,11 @@ async def test_REQ_DEPLOY_005_fila_stock_cero_conservada_y_oculta_en_lectura(
         [{"material_id": material["id_lista"], "cantidad_tomada": 50}],
     )
     await _cerrar_seguimiento(
-        client, equipo["equipo_id"], creado.json()["id"], expect=200
+        client,
+        equipo["equipo_id"],
+        creado.json()["id"],
+        [{"material_id": material["id_lista"], "cantidad_consumida": 50}],
+        expect=200,
     )
 
     fila = (

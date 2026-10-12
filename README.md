@@ -34,7 +34,7 @@ It replaces spreadsheet-driven inventory control with a transactional system of 
 | Materials dispatched to crews are never returned/corroborated | `TEAMS` (dispatch) and `DEVOL` (return) movements, atomically processed and reversible via cancellation |
 | Stock discrepancies discovered after the fact | Justification is **optional** (2026-10-04 ergonomics): every adjustment, edit or cancellation is still ledgered with the motivo exactly as received (`NULL` allowed). Exception: FO deletion with stock > 0 keeps a mandatory reason (`REQ-DEL-004`) |
 | Fiber-optic stock treated as an anonymous lump sum | Dedicated **FO modules** (`PAQUETE` / `EN_USO`) with their own isolated inventory, CRUD and audit trail |
-| Consumption of materials (lists taken vs. surplus) tracked informally | **Seguimientos de CONSUMO** lifecycle per crew: open → close, with taken/surplus/consumed reconciliation computed in SQL and an Acta de Consumo recorded in the same transaction |
+| Consumption of materials (lists taken vs. consumed) tracked informally | **Seguimientos de CONSUMO** lifecycle per crew: open → close, closing records the **consumed** quantity per material (one line per material, required), `fn_cerrar_seguimiento` deducts it directly from the unit's stock, and an Acta de Consumo is recorded in the same transaction |
 | No forensics on who changed what | Immutable `auditoria_eventos` ledger (LEFT-JOIN readable), correlation `trace_id` per request |
 
 ### 1.3 General architecture

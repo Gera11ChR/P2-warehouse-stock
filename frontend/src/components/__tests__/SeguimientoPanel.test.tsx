@@ -103,7 +103,6 @@ const seguimientoAbierto: Seguimiento = {
       id: 1,
       material_id: 10,
       cantidad_tomada: 5,
-      cantidad_sobrante: null,
       cantidad_consumida: null,
     },
   ],
@@ -153,11 +152,12 @@ describe('SeguimientoPanel — con seguimiento abierto', () => {
     // Descripción presente en resumen y en el formulario de cierre.
     expect(screen.getAllByText('Cable UTP Cat 6').length).toBeGreaterThan(0)
 
+    await user.type(screen.getByLabelText('Consumido'), '2')
     await user.click(screen.getByRole('button', { name: 'Cerrar Seguimiento' }))
 
     expect(screen.getByText('Cerrar seguimiento')).toBeInTheDocument()
     expect(
-      screen.getByText(/Se registrarán los sobrantes/),
+      screen.getByText(/Se registrará lo consumido/),
     ).toBeInTheDocument()
     expect(cerrarMutate).not.toHaveBeenCalled()
 
@@ -167,7 +167,7 @@ describe('SeguimientoPanel — con seguimiento abierto', () => {
     expect(cerrarMutate).toHaveBeenCalledWith(
       {
         seguimientoId: 3,
-        payload: { sobrantes: [{ material_id: 10, cantidad_sobrante: 0 }] },
+        payload: { consumidos: [{ material_id: 10, cantidad_consumida: 2 }] },
       },
       expect.any(Object),
     )
@@ -188,6 +188,7 @@ describe('SeguimientoPanel — Acta de Consumo tras el cierre (REQ-P2-CON-005)',
     abrirConfirmacionDeCierre()
     renderPanel()
 
+    await user.type(screen.getByLabelText('Consumido'), '2')
     await user.click(screen.getByRole('button', { name: 'Cerrar Seguimiento' }))
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
@@ -208,6 +209,7 @@ describe('SeguimientoPanel — Acta de Consumo tras el cierre (REQ-P2-CON-005)',
       </NavigationContext.Provider>,
     )
 
+    await user.type(screen.getByLabelText('Consumido'), '2')
     await user.click(screen.getByRole('button', { name: 'Cerrar Seguimiento' }))
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
@@ -230,6 +232,7 @@ describe('SeguimientoPanel — Acta de Consumo tras el cierre (REQ-P2-CON-005)',
     cerrarMutate.mockImplementation((_vars, opts) => opts.onSuccess())
     renderPanel()
 
+    await user.type(screen.getByLabelText('Consumido'), '2')
     await user.click(screen.getByRole('button', { name: 'Cerrar Seguimiento' }))
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 

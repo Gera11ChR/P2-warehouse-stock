@@ -9,7 +9,7 @@ import {
 
 /**
  * POST /equipos/{equipoId}/seguimientos/{seguimientoId}/cerrar — cierre con
- * sobrantes. El backend calcula consumos, reintegra sobrantes y registra el
+ * consumidos. El backend descuenta lo consumido y registra el
  * Acta de Consumo en PostgreSQL (misma transacción). Tras success se
  * invalidan: seguimientos del equipo, inventario del equipo, actas de CONSUMO
  * (Reportes > Consumo) y auditoría; React re-renderiza estado PERSISTIDO,

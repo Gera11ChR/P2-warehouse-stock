@@ -155,13 +155,12 @@ export interface EquipoConfigLocal {
 
 export type EstadoSeguimiento = 'ABIERTA' | 'CERRADA'
 
-/** Línea de un seguimiento. `cantidad_consumida` la calcula el backend
- *  (tomada − sobrante) al cierre; NUNCA el frontend. */
+/** Línea de un seguimiento. `cantidad_consumida` la registra el backend al
+ *  cierre (NULL mientras está ABIERTA); NUNCA el frontend. */
 export interface SeguimientoItem {
   id: number
   material_id: number
   cantidad_tomada: number
-  cantidad_sobrante: number | null
   cantidad_consumida: number | null
 }
 
@@ -195,7 +194,7 @@ export interface SeguimientoCreatePayload {
 
 /** POST /equipos/{equipo_id}/seguimientos/{seguimiento_id}/cerrar. */
 export interface CerrarSeguimientoPayload {
-  sobrantes: { material_id: number; cantidad_sobrante: number }[]
+  consumidos: { material_id: number; cantidad_consumida: number }[]
   observaciones_cierre?: string
 }
 
@@ -262,9 +261,8 @@ export interface ActaItem {
   u_m: string | null
   /** ENTREGA: cantidad entregada al equipo. */
   cantidad: number | null
-  /** CONSUMO: tomada / sobrante / consumida. */
+  /** CONSUMO: tomada / consumida. */
   cantidad_tomada: number | null
-  cantidad_sobrante: number | null
   cantidad_consumida: number | null
 }
 

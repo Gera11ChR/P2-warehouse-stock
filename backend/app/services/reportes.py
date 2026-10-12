@@ -51,7 +51,6 @@ def _a_acta_out(acta: ActaReporte) -> ActaOut:
                 u_m=it.get("u_m"),
                 cantidad=it.get("cantidad") if es_entrega else None,
                 cantidad_tomada=None if es_entrega else it.get("cantidad_tomada"),
-                cantidad_sobrante=None if es_entrega else it.get("cantidad_sobrante"),
                 cantidad_consumida=(
                     None if es_entrega else it.get("cantidad_consumida")
                 ),

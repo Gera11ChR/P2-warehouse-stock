@@ -4,21 +4,11 @@ import userEvent from '@testing-library/user-event'
 import SeguimientoCierreForm from '../SeguimientoCierreForm'
 import type { SeguimientoItem } from '../../types'
 
+// RF-1 / REQ-CONSUMO-001: Consumido vacío y de captura obligatoria.
+
 const items: SeguimientoItem[] = [
-  {
-    id: 1,
-    material_id: 10,
-    cantidad_tomada: 4,
-    cantidad_sobrante: null,
-    cantidad_consumida: null,
-  },
-  {
-    id: 2,
-    material_id: 20,
-    cantidad_tomada: 2,
-    cantidad_sobrante: null,
-    cantidad_consumida: null,
-  },
+  { id: 1, material_id: 10, cantidad_tomada: 4, cantidad_consumida: null },
+  { id: 2, material_id: 20, cantidad_tomada: 2, cantidad_consumida: null },
 ]
 
 const materiales: Record<number, string> = {
@@ -37,34 +27,67 @@ function renderForm(onSubmit = vi.fn()) {
   )
 }
 
+const cerrar = () => screen.getByRole('button', { name: 'Cerrar Seguimiento' })
+
 describe('SeguimientoCierreForm render', () => {
-  it('renderiza una fila por ítem con descripción, tomada y sobrante default 0', () => {
-    renderForm()
+  it('REQ-CONSUMO-001: una fila por ítem con tomada y campo Consumido VACÍO', () => {
+    const { container } = renderForm()
 
     expect(screen.getByText('Cable UTP Cat 6')).toBeInTheDocument()
     expect(screen.getByText('Conector RJ45')).toBeInTheDocument()
     expect(screen.getByText('4')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
 
-    const sobrantes = screen.getAllByLabelText(/Sobrante/i)
-    expect(sobrantes).toHaveLength(2)
-    for (const input of sobrantes) {
-      expect(input).toHaveValue(0)
+    const campos = screen.getAllByLabelText('Consumido')
+    expect(campos).toHaveLength(2)
+    for (const input of campos) {
+      expect(input).toHaveValue(null) // number vacío
+      expect(input).toBeRequired()
     }
+    expect(container).not.toHaveTextContent(/sobrante/i)
   })
 })
 
 describe('SeguimientoCierreForm validación', () => {
-  it('sobrante > tomada → error y no llama onSubmit', async () => {
+  it('REQ-CONSUMO-001: sin capturar nada no envía y nombra cada material faltante', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     renderForm(onSubmit)
 
-    // Fila 1: tomada 4 → sobrante 5 inválido
-    const inputs = screen.getAllByLabelText(/Sobrante/i)
-    await user.clear(inputs[0])
-    await user.type(inputs[0], '5')
-    await user.click(screen.getByRole('button', { name: 'Cerrar Seguimiento' }))
+    await user.click(cerrar())
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(
+      screen.getByText('Indique la cantidad consumida de Cable UTP Cat 6.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Indique la cantidad consumida de Conector RJ45.'),
+    ).toBeInTheDocument()
+  })
+
+  it('REQ-CONSUMO-001: con una sola línea capturada sigue sin enviar', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm(onSubmit)
+
+    await user.type(screen.getAllByLabelText('Consumido')[0], '1')
+    await user.click(cerrar())
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(
+      screen.getByText('Indique la cantidad consumida de Conector RJ45.'),
+    ).toBeInTheDocument()
+  })
+
+  it('consumido > tomada → error y no llama onSubmit', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm(onSubmit)
+
+    const inputs = screen.getAllByLabelText('Consumido')
+    await user.type(inputs[0], '5') // tomada 4
+    await user.type(inputs[1], '1')
+    await user.click(cerrar())
 
     expect(onSubmit).not.toHaveBeenCalled()
     expect(
@@ -72,27 +95,43 @@ describe('SeguimientoCierreForm validación', () => {
     ).toBeInTheDocument()
   })
 
-  it('submit válido → payload correcto (sobrantes por material + observaciones)', async () => {
+  it('0 explícito es una captura válida (no se confunde con vacío)', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     renderForm(onSubmit)
 
-    const inputs = screen.getAllByLabelText(/Sobrante/i)
-    await user.clear(inputs[0])
+    const inputs = screen.getAllByLabelText('Consumido')
+    await user.type(inputs[0], '0')
+    await user.type(inputs[1], '0')
+    await user.click(cerrar())
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      consumidos: [
+        { material_id: 10, cantidad_consumida: 0 },
+        { material_id: 20, cantidad_consumida: 0 },
+      ],
+    })
+  })
+
+  it('submit válido → payload { consumidos } + observaciones', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm(onSubmit)
+
+    const inputs = screen.getAllByLabelText('Consumido')
     await user.type(inputs[0], '1')
-    await user.clear(inputs[1])
     await user.type(inputs[1], '2')
     await user.type(
       screen.getByLabelText(/Observaciones del cierre/i),
       'Cierre de obra',
     )
-    await user.click(screen.getByRole('button', { name: 'Cerrar Seguimiento' }))
+    await user.click(cerrar())
 
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onSubmit).toHaveBeenCalledWith({
-      sobrantes: [
-        { material_id: 10, cantidad_sobrante: 1 },
-        { material_id: 20, cantidad_sobrante: 2 },
+      consumidos: [
+        { material_id: 10, cantidad_consumida: 1 },
+        { material_id: 20, cantidad_consumida: 2 },
       ],
       observaciones_cierre: 'Cierre de obra',
     })

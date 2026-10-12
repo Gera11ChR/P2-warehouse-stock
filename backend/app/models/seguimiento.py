@@ -2,7 +2,6 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     CheckConstraint,
-    Computed,
     Date,
     DateTime,
     ForeignKey,
@@ -132,10 +131,9 @@ class SeguimientoItem(Base):
       * Las filas se crean ÚNICAMENTE en `fn_crear_seguimiento` o en
         `fn_agregar_todo_seguimiento` (idempotente) y jamás se eliminan ni
         se reescribe su `cantidad_tomada` (append-only).
-      * `cantidad_sobrante` solo la escribe `fn_cerrar_seguimiento` (antes
-        del cierre es NULL); la columna GENERADA `cantidad_consumida`
-        (= tomada - sobrante) se materializa en PostgreSQL, nunca desde
-        la aplicación.
+      * `cantidad_consumida` solo la escribe `fn_cerrar_seguimiento` (antes
+        del cierre es NULL); jamás se escribe desde la aplicación. El
+        concepto "sobrante" no existe (0025): el remanente no se mueve.
       * Toda la aritmética de stock del seguimiento ocurre dentro de
         fn_cerrar_seguimiento bajo FOR UPDATE (cero condiciones de
         carrera); el backend jamás muta `inventario_equipos` para este
@@ -149,9 +147,9 @@ class SeguimientoItem(Base):
         ),
         CheckConstraint("cantidad_tomada > 0", name="ck_seguimiento_items_tomada"),
         CheckConstraint(
-            "cantidad_sobrante IS NULL OR "
-            "(cantidad_sobrante >= 0 AND cantidad_sobrante <= cantidad_tomada)",
-            name="ck_seguimiento_items_sobrante",
+            "cantidad_consumida IS NULL OR "
+            "(cantidad_consumida >= 0 AND cantidad_consumida <= cantidad_tomada)",
+            name="ck_seguimiento_items_consumida",
         ),
         Index("ix_seguimiento_items_material", "material_id"),
     )
@@ -165,10 +163,6 @@ class SeguimientoItem(Base):
         nullable=False,
     )
     cantidad_tomada: Mapped[int] = mapped_column(Integer, nullable=False)
-    cantidad_sobrante: Mapped[int | None] = mapped_column(Integer)
-    cantidad_consumida: Mapped[int | None] = mapped_column(
-        Integer,
-        Computed("cantidad_tomada - cantidad_sobrante", persisted=True),
-    )
+    cantidad_consumida: Mapped[int | None] = mapped_column(Integer)
 
     seguimiento: Mapped["Seguimiento"] = relationship(back_populates="items")
