@@ -27,6 +27,9 @@ class ActaItemOut(BaseModel):
     u_m: str | None = None
     # ENTREGA: cantidad entregada al equipo.
     cantidad: int | None = None
+    # ENTREGA (0026): sección de origen de la línea (carritos multi-origen).
+    origen_almacen_id: int | None = None
+    origen_nombre: str | None = None
     # CONSUMO: tomada / consumida (registradas por fn_cerrar_seguimiento).
     cantidad_tomada: int | None = None
     cantidad_consumida: int | None = None

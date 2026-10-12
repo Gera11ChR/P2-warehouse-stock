@@ -53,6 +53,9 @@ domain_rules:
   justificacion_opcional:
     required: true
     description: "Ergonomía 2026-10-04: el campo de justificación (motivo/observaciones) es OPCIONAL en la modificación de materiales, los ajustes administrativos de stock (POST /ajustes/stock-almacen y POST /fibra/ajuste), los borradores TEAMS/DEVOL y la cancelación de movimientos. Se acepta null, cadena vacía o campo omitido; el ledger inmutable sigue auditando cada mutación con el motivo tal como llega (NULL permitido). Excepción: la eliminación FO con stock > 0 conserva motivo obligatorio (REQ-DEL-004)."
+  transferencias_multi_origen:
+    required: true
+    description: "2026-10-12: un borrador TEAMS (TRANSF) puede combinar líneas de Inventario General y de Fibra Óptica. Cada línea del detalle lleva su `origen_almacen_id` (opcional: si se omite hereda el de la cabecera, payload legado válido). movimientos_cabecera.origen_almacen_id es el origen común o NULL si el carrito es mixto. fn_procesar_movimiento y fn_cancelar_movimiento validan y mueven el stock POR LÍNEA contra su origen (inventario_almacen o inventario_fibra por módulo) en una sola transacción, con bloqueos FOR UPDATE en orden (origen, material). Se emite UNA sola acta de entrega (folio único) con el origen de cada línea. DEVOL no admite origen por línea. El actor no administrador requiere scope sobre TODOS los orígenes (403 si falta alguno)."
   official_reports:
     required: true
     description: "Los reportes oficiales son XLSX inyectados sobre las plantillas corporativas (nunca generados desde cero) conservando estilo, celdas combinadas y logo. El CSV legacy queda descartado. Las actas son snapshots jsonb (actas_reportes) escritos por PostgreSQL en la transacción del evento."
@@ -66,6 +69,56 @@ domain_rules:
       - "nueva_categoria"
 
 paths:
+  /api/v1/movimientos:
+    post:
+      summary: "Crear borrador TEAMS (origen por línea, multi-origen) o DEVOL"
+      operationId: "crearBorradorMovimiento"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tipo_movimiento, detalle]
+              properties:
+                tipo_movimiento:
+                  type: string
+                  enum: [TEAMS, DEVOL]
+                origen_almacen_id:
+                  type: [integer, "null"]
+                  description: "TEAMS: origen por defecto de las líneas sin origen propio. La cabecera persistida guarda el origen común o NULL si es mixto."
+                destino_equipo_id:
+                  type: [integer, "null"]
+                origen_equipo_id:
+                  type: [integer, "null"]
+                destino_almacen_id:
+                  type: [integer, "null"]
+                observaciones:
+                  type: [string, "null"]
+                detalle:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [material_id, cantidad]
+                    properties:
+                      material_id:
+                        type: integer
+                      cantidad:
+                        type: integer
+                        minimum: 1
+                      origen_almacen_id:
+                        type: [integer, "null"]
+                        description: "TEAMS: sección de origen de la línea (General o FO). Prohibido en DEVOL."
+      responses:
+        "201":
+          description: "Borrador creado; cada línea devuelve su origen_almacen_id"
+        "403":
+          description: "Actor sin scope sobre alguna de las secciones de origen (o sin acceso a la unidad)"
+        "422":
+          description: "Línea sin origen, sección inexistente o GENERAL inactiva, origen por línea en DEVOL o payload inválido"
   /api/v1/movimientos/procesar:
     post:
       summary: "Ejecutar transferencia TEAMS o devolución DEVOL"
@@ -83,9 +136,9 @@ paths:
                   type: integer
       responses:
         "200":
-          description: "Movimiento procesado exitosamente vía fn_procesar_movimiento (estado CONFIRMADO). Si es TEAMS, el trigger tg_acta_entrega registra el Acta de Entrega con snapshot jsonb en la misma transacción (evento ACTA_ENTREGA_GENERADA)"
+          description: "Movimiento procesado exitosamente vía fn_procesar_movimiento (estado CONFIRMADO; en un borrador TEAMS mixto cada línea se descuenta de SU origen en una sola transacción). Si es TEAMS, el trigger tg_acta_entrega registra el Acta de Entrega con snapshot jsonb en la misma transacción (evento ACTA_ENTREGA_GENERADA)"
         "400":
-          description: "Stock insuficiente o movimiento en estado no válido"
+          description: "Stock insuficiente en el origen de alguna línea (rollback total) o movimiento en estado no válido"
   /api/v1/movimientos/{movimiento_id}/cancelar:
     post:
       summary: "Cancelar y revertir un movimiento CONFIRMADO"

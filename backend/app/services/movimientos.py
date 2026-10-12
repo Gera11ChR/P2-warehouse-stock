@@ -6,6 +6,8 @@ auditoría crítica se ejecutan EXCLUSIVAMENTE en PostgreSQL vía
 fn_procesar_movimiento / fn_cancelar_movimiento (ver services.transaccional).
 """
 
+from typing import cast
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -57,15 +59,12 @@ async def _validar_referencias(
     # se aceptan aunque is_active=FALSE. Solo las secciones GENERAL exigen
     # is_active=TRUE. Los mensajes de sección inexistente permanecen
     # idénticos al contrato previo.
+    origenes: set[int] = set()
     if payload.tipo_movimiento == "TEAMS":
-        seccion = await session.get(Seccion, payload.origen_almacen_id)
-        if seccion is None or (
-            seccion.tipo == "GENERAL" and not seccion.is_active
-        ):
-            raise BusinessRuleError(
-                "Sección origen inexistente",
-                coordinates=[{"origen_almacen_id": payload.origen_almacen_id}],
-            )
+        # Multi-origen (0026): se validan TODOS los orígenes distintos.
+        origenes = _origenes_de(payload)
+        for origen_id in sorted(origenes):
+            await _validar_origen(session, origen_id)
         equipo = await session.get(Equipo, payload.destino_equipo_id)
         if equipo is None:
             raise BusinessRuleError(
@@ -88,18 +87,22 @@ async def _validar_referencias(
                 coordinates=[{"destino_almacen_id": payload.destino_almacen_id}],
             )
 
-    # SEC-002 (opcional): default-deny sobre la sección de almacén
-    # involucrada (origen en TEAMS, destino en DEVOL). Se aplica DESPUÉS de
-    # la validación de existencia para preservar la clasificación 422 de
-    # referencias inexistentes. El administrador recibe pase directo.
+    # SEC-002 (opcional): default-deny sobre las secciones de almacén
+    # involucradas (TODOS los orígenes en TEAMS, destino en DEVOL). Se aplica
+    # DESPUÉS de la validación de existencia para preservar la clasificación
+    # 422 de referencias inexistentes. El administrador recibe pase directo.
     if actor_ctx is not None and not actor_ctx.es_admin:
-        requerida = (
-            payload.origen_almacen_id
+        requeridas = (
+            origenes
             if payload.tipo_movimiento == "TEAMS"
-            else payload.destino_almacen_id
+            else (
+                {payload.destino_almacen_id}
+                if payload.destino_almacen_id is not None
+                else set()
+            )
         )
-        if requerida is not None:
-            assert_scope(actor_ctx, {requerida})
+        if requeridas:
+            assert_scope(actor_ctx, requeridas)
 
         # V3 (sec-ops): aislamiento por equipo en el extremo de equipo del
         # movimiento — el actor regular solo puede TEAMS hacia equipos donde
@@ -114,19 +117,63 @@ async def _validar_referencias(
             await assert_equipo_access(actor_ctx, session, equipo_requerido)
 
 
+def _origenes_de(payload: MovimientoBorradorCreate) -> set[int]:
+    """Orígenes efectivos de las líneas TEAMS (línea o, si no trae, cabecera)."""
+    return {
+        line.origen_almacen_id
+        if line.origen_almacen_id is not None
+        else cast(int, payload.origen_almacen_id)
+        for line in payload.detalle
+    }
+
+
+async def _validar_origen(session: AsyncSession, origen_id: int) -> None:
+    seccion = await session.get(Seccion, origen_id)
+    if seccion is None or (seccion.tipo == "GENERAL" and not seccion.is_active):
+        raise BusinessRuleError(
+            "Sección origen inexistente",
+            coordinates=[{"origen_almacen_id": origen_id}],
+        )
+
+
 def _aplicar_campos(
     cabecera: MovimientoCabecera, payload: MovimientoBorradorCreate
 ) -> None:
     cabecera.tipo_movimiento = payload.tipo_movimiento
-    cabecera.origen_almacen_id = payload.origen_almacen_id
     cabecera.destino_almacen_id = payload.destino_almacen_id
     cabecera.origen_equipo_id = payload.origen_equipo_id
     cabecera.destino_equipo_id = payload.destino_equipo_id
     cabecera.observaciones = payload.observaciones
-    cabecera.detalle = [
-        MovimientoDetalle(material_id=line.material_id, cantidad=line.cantidad)
-        for line in payload.detalle
-    ]
+    if payload.tipo_movimiento == "TEAMS":
+        # Origen por línea (0026): la línea que no lo trae hereda el de la
+        # cabecera; la cabecera queda con el origen común o NULL si es mixto.
+        default = payload.origen_almacen_id
+        lineas = [
+            MovimientoDetalle(
+                material_id=line.material_id,
+                cantidad=line.cantidad,
+                origen_almacen_id=(
+                    line.origen_almacen_id
+                    if line.origen_almacen_id is not None
+                    else default
+                ),
+            )
+            for line in payload.detalle
+        ]
+        cabecera.detalle = lineas
+        cabecera.origen_almacen_id = _origen_comun(lineas)
+    else:
+        cabecera.origen_almacen_id = None
+        cabecera.detalle = [
+            MovimientoDetalle(material_id=line.material_id, cantidad=line.cantidad)
+            for line in payload.detalle
+        ]
+
+
+def _origen_comun(lineas: list[MovimientoDetalle]) -> int | None:
+    """Origen compartido por TODAS las líneas, o None si el carrito es mixto."""
+    origenes = {line.origen_almacen_id for line in lineas}
+    return next(iter(origenes)) if len(origenes) == 1 else None
 
 
 async def _to_out(
@@ -194,6 +241,7 @@ async def actualizar_borrador(
     payload: MovimientoBorradorUpdate,
     *,
     actor: str,
+    actor_ctx: ActorContext | None = None,
 ) -> MovimientoOut:
     cabecera = await _obtener(session, movimiento_id)
     if cabecera.estado != "BORRADOR":
@@ -222,10 +270,43 @@ async def actualizar_borrador(
                     {"material_id": m} for m in sorted(inexistentes)
                 ],
             )
-        cabecera.detalle = [
-            MovimientoDetalle(material_id=line.material_id, cantidad=line.cantidad)
-            for line in payload.detalle
-        ]
+        if cabecera.tipo_movimiento == "TEAMS":
+            previos = {d.material_id: d.origen_almacen_id for d in cabecera.detalle}
+            lineas = []
+            for line in payload.detalle:
+                origen = (
+                    line.origen_almacen_id
+                    or previos.get(line.material_id)
+                    or cabecera.origen_almacen_id
+                )
+                if origen is None:
+                    raise BusinessRuleError(
+                        "La línea no tiene sección de origen",
+                        coordinates=[{"material_id": line.material_id}],
+                    )
+                lineas.append(
+                    MovimientoDetalle(
+                        material_id=line.material_id,
+                        cantidad=line.cantidad,
+                        origen_almacen_id=origen,
+                    )
+                )
+            origenes = {linea.origen_almacen_id for linea in lineas}
+            for origen_id in sorted(cast(set[int], origenes)):
+                await _validar_origen(session, origen_id)
+            if actor_ctx is not None and not actor_ctx.es_admin:
+                assert_scope(actor_ctx, cast(set[int], origenes))
+            cabecera.detalle = lineas
+            cabecera.origen_almacen_id = _origen_comun(lineas)
+        else:
+            if any(line.origen_almacen_id is not None for line in payload.detalle):
+                raise BusinessRuleError(
+                    "DEVOL no admite origen_almacen_id por línea"
+                )
+            cabecera.detalle = [
+                MovimientoDetalle(material_id=line.material_id, cantidad=line.cantidad)
+                for line in payload.detalle
+            ]
     await session.flush()
     return await _to_out(session, cabecera)
 

@@ -68,7 +68,11 @@ async def actualizar_borrador(
     assert_authenticated(actor_ctx)
     async with session.begin():
         return await movimientos_svc.actualizar_borrador(
-            session, movimiento_id, payload, actor=actor_ctx.actor_id
+            session,
+            movimiento_id,
+            payload,
+            actor=actor_ctx.actor_id,
+            actor_ctx=actor_ctx,
         )
 
 

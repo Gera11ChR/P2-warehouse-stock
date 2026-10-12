@@ -8,11 +8,19 @@ class DetalleLine(BaseModel):
 
     material_id: int = Field(gt=0, description="Referencia a id_lista inmutable")
     cantidad: int = Field(gt=0)
+    # TEAMS (0026): sección de ORIGEN de la línea (Inventario General o Fibra
+    # Óptica). Opcional: si se omite, la línea hereda `origen_almacen_id` de
+    # la cabecera (payload legado). Prohibido en DEVOL.
+    origen_almacen_id: int | None = Field(default=None, gt=0)
 
 
 class MovimientoBorradorCreate(BaseModel):
     """Borrador TEAMS/DEVOL. La validación de stock disponible NO ocurre aquí:
-    se delega íntegramente a fn_procesar_movimiento en PostgreSQL."""
+    se delega íntegramente a fn_procesar_movimiento en PostgreSQL.
+
+    TEAMS multi-origen (0026): cada línea puede traer su `origen_almacen_id`;
+    las que no lo traen heredan el de la cabecera. La cabecera queda con el
+    origen común o NULL si el carrito es mixto (lo fija el servicio)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -27,14 +35,22 @@ class MovimientoBorradorCreate(BaseModel):
     @model_validator(mode="after")
     def _check_extremos(self) -> "MovimientoBorradorCreate":
         if self.tipo_movimiento == "TEAMS":
-            if self.origen_almacen_id is None or self.destino_equipo_id is None:
+            if self.destino_equipo_id is None:
+                raise ValueError("TEAMS requiere destino_equipo_id.")
+            if self.origen_almacen_id is None and any(
+                line.origen_almacen_id is None for line in self.detalle
+            ):
                 raise ValueError(
-                    "TEAMS requiere origen_almacen_id y destino_equipo_id."
+                    "TEAMS requiere origen_almacen_id (cabecera o por línea)."
                 )
         else:
             if self.origen_equipo_id is None or self.destino_almacen_id is None:
                 raise ValueError(
                     "DEVOL requiere origen_equipo_id y destino_almacen_id."
+                )
+            if any(line.origen_almacen_id is not None for line in self.detalle):
+                raise ValueError(
+                    "DEVOL no admite origen_almacen_id por línea."
                 )
         return self
 
@@ -74,6 +90,7 @@ class DetalleOut(BaseModel):
 
     material_id: int
     cantidad: int
+    origen_almacen_id: int | None = None
 
 
 class MovimientoOut(BaseModel):

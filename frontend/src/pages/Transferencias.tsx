@@ -34,6 +34,18 @@ function errorMessage(error: unknown): string {
   return 'Ocurrió un error'
 }
 
+/** Orígenes DISTINTOS de un movimiento TEAMS (cada línea o, si no trae, el de
+ *  la cabecera), en orden de aparición. */
+function origenesDeMovimiento(m: Movimiento): number[] {
+  const ids = new Set<number>()
+  for (const d of m.detalle) {
+    const id = d.origen_almacen_id ?? m.origen_almacen_id
+    if (id != null) ids.add(id)
+  }
+  if (ids.size === 0 && m.origen_almacen_id != null) ids.add(m.origen_almacen_id)
+  return [...ids]
+}
+
 const BADGE_ESTADO: Record<string, string> = {
   BORRADOR: 'bg-slate-100 text-slate-700',
   CONFIRMADO: 'bg-green-100 text-green-700',
@@ -45,11 +57,14 @@ function CartRows({
   field,
   onChange,
   onRemove,
+  origenLabel,
 }: {
   lines: CartLine[]
   field: 'cantidad_transferir' | 'cantidad_devolver'
   onChange: (materialId: number, cantidad: number) => void
   onRemove: (materialId: number) => void
+  /** Etiqueta de la sección de origen de la línea (solo TEAMS). */
+  origenLabel?: (id: number) => string
 }) {
   if (lines.length === 0) {
     return (
@@ -75,6 +90,17 @@ function CartRows({
                   {line.codigo ?? '—'} · {line.u_m ?? '—'} · Disponible:{' '}
                   {line.stock_disponible.toLocaleString('es-MX')}
                 </p>
+                {origenLabel && line.origen_almacen_id != null && (
+                  <p className="text-xs text-slate-500">
+                    Origen:{' '}
+                    <span
+                      data-testid={`origen-linea-${line.material_id}`}
+                      className="font-medium text-slate-700"
+                    >
+                      {origenLabel(line.origen_almacen_id)}
+                    </span>
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -229,6 +255,8 @@ export default function Transferencias() {
           descripcion: r.descripcion,
           u_m: r.u_m,
           stock_disponible: r.stock_actual,
+          // Cada línea conserva la sección desde la que se agrega.
+          origen_almacen_id: seccionOrigen,
         }))
     }
     const rows = inventarioEquipoQuery.data ?? []
@@ -247,7 +275,13 @@ export default function Transferencias() {
         u_m: r.u_m,
         stock_disponible: r.stock_actual,
       }))
-  }, [tab, busqueda, stockOrigenQuery.data, inventarioEquipoQuery.data])
+  }, [
+    tab,
+    busqueda,
+    seccionOrigen,
+    stockOrigenQuery.data,
+    inventarioEquipoQuery.data,
+  ])
 
   // ============================================================================
   // CARRITO
@@ -308,9 +342,14 @@ export default function Transferencias() {
   })
   const bloqueoPorStock = lineasSaldoNegativo.length > 0
 
+  // TEAMS multi-origen: el origen vive en CADA línea del carrito (se fija al
+  // agregarla), así que solo hace falta la unidad destino y que todas las
+  // líneas tengan origen. La sección seleccionada solo decide qué inventario
+  // se consulta; cambiarla NO altera lo ya agregado.
   const extremosValidos =
     tab === 'TEAMS'
-      ? seccionOrigen !== null && equipoDestino !== null
+      ? equipoDestino !== null &&
+        carrito.every((l) => l.origen_almacen_id != null)
       : equipoOrigen !== null && seccionDestino !== null
 
   // CONTRATO (REQ-API-009, EARS v1.1): el backend valida el borrador con un
@@ -323,12 +362,14 @@ export default function Transferencias() {
       ? tab === 'TEAMS'
         ? {
             tipo_movimiento: 'TEAMS',
-            origen_almacen_id: seccionOrigen,
             destino_equipo_id: equipoDestino,
             observaciones: observaciones.trim() || null,
+            // Origen POR LÍNEA: el backend valida y descuenta cada línea
+            // contra su inventario real (General / FO Paquete / FO En Uso).
             detalle: carrito.map((l) => ({
               material_id: l.material_id,
               cantidad: l[field] ?? 0,
+              origen_almacen_id: l.origen_almacen_id ?? null,
             })),
           }
         : {
@@ -416,11 +457,11 @@ export default function Transferencias() {
         // REQ-TRF-002: cuando un extremo de sección es una raíz FO, el stock
         // restaurado vive en inventario_fibra — invalidar ['fibra', modulo]
         // además de la invalidación por sección existente.
-        if (m.origen_almacen_id != null) {
-          queryClient.invalidateQueries({
-            queryKey: ['stock', m.origen_almacen_id],
-          })
-          const origenModuloMov = moduloDeSeccion(m.origen_almacen_id)
+        // Multi-origen: se invalidan TODOS los orígenes del movimiento
+        // (cabecera + cada línea), no solo el de la cabecera.
+        for (const origenId of origenesDeMovimiento(m)) {
+          queryClient.invalidateQueries({ queryKey: ['stock', origenId] })
+          const origenModuloMov = moduloDeSeccion(origenId)
           if (origenModuloMov !== null) {
             queryClient.invalidateQueries({
               queryKey: ['fibra', origenModuloMov],
@@ -499,9 +540,13 @@ export default function Transferencias() {
 
   const detalleMovimiento = (m: Movimiento): string => {
     if (m.tipo_movimiento === 'TEAMS') {
-      return `${nombreSeccion(m.origen_almacen_id)} → ${nombreEquipo(
-        m.destino_equipo_id,
-      )}`
+      // Una sola operación = una sola fila, con todos sus orígenes.
+      const origenes = origenesDeMovimiento(m)
+      const origen =
+        origenes.length > 0
+          ? origenes.map((id) => nombreSeccion(id)).join(' + ')
+          : nombreSeccion(m.origen_almacen_id)
+      return `${origen} → ${nombreEquipo(m.destino_equipo_id)}`
     }
     return `${nombreEquipo(m.origen_equipo_id)} → ${nombreSeccion(
       m.destino_almacen_id,
@@ -568,7 +613,7 @@ export default function Transferencias() {
           <>
             <div>
               <label className="block text-sm font-medium text-slate-700">
-                Sección Origen
+                Sección Origen (consulta)
               </label>
               <select
                 value={seccionOrigen ?? ''}
@@ -805,6 +850,7 @@ export default function Transferencias() {
           field={field}
           onChange={actualizarCantidad}
           onRemove={quitarDelCarrito}
+          origenLabel={tab === 'TEAMS' ? (id) => nombreSeccion(id) : undefined}
         />
         {carrito.length > 0 && (
           <div className="border-t border-slate-100 bg-slate-50/70 p-3">

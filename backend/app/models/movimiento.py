@@ -5,6 +5,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -35,7 +36,7 @@ class MovimientoCabecera(Base):
             name="ck_movimientos_cabecera_estado",
         ),
         CheckConstraint(
-            "(tipo_movimiento = 'TEAMS' AND origen_almacen_id IS NOT NULL AND destino_equipo_id IS NOT NULL) "
+            "(tipo_movimiento = 'TEAMS' AND destino_equipo_id IS NOT NULL) "
             "OR (tipo_movimiento = 'DEVOL' AND origen_equipo_id IS NOT NULL AND destino_almacen_id IS NOT NULL)",
             name="ck_movimientos_cabecera_extremos",
         ),
@@ -79,6 +80,7 @@ class MovimientoDetalle(Base):
     __tablename__ = "movimientos_detalle"
     __table_args__ = (
         CheckConstraint("cantidad > 0", name="ck_movimientos_detalle_cantidad"),
+        Index("ix_movimientos_detalle_origen", "origen_almacen_id"),
     )
 
     movimiento_id: Mapped[int] = mapped_column(
@@ -89,5 +91,10 @@ class MovimientoDetalle(Base):
         primary_key=True,
     )
     cantidad: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Sección de ORIGEN de la línea (0026, TEAMS): permite carritos mixtos
+    # General + Fibra Óptica. La cabecera guarda el origen común o NULL.
+    origen_almacen_id: Mapped[int | None] = mapped_column(
+        ForeignKey("secciones.almacen_id", ondelete="RESTRICT", name="fk_movimientos_detalle_origen")
+    )
 
     cabecera: Mapped[MovimientoCabecera] = relationship(back_populates="detalle")

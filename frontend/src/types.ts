@@ -416,6 +416,9 @@ export type EstadoMovimiento = 'BORRADOR' | 'CONFIRMADO' | 'CANCELADO'
 export interface DetalleMovimiento {
   material_id: number
   cantidad: number
+  /** TEAMS multi-origen: sección de origen de la línea (General o FO). La
+   *  cabecera trae el origen común o null si el carrito es mixto. */
+  origen_almacen_id?: number | null
 }
 
 export interface Movimiento {
@@ -450,6 +453,8 @@ export interface CartLine {
   descripcion: string
   u_m: string | null
   stock_disponible: number
+  /** TEAMS: sección desde la que se agregó la línea (su origen real). */
+  origen_almacen_id?: number | null
   cantidad_transferir?: number
   cantidad_devolver?: number
 }

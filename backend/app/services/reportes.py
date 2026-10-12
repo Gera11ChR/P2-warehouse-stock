@@ -41,7 +41,11 @@ def _a_acta_out(acta: ActaReporte) -> ActaOut:
     equipo = snap.get("destino_equipo") or {}
     es_entrega = acta.tipo == "ENTREGA"
     items = []
+    # Origen de cabecera: fallback de las actas previas a 0026 (sin origen
+    # por línea en el snapshot).
+    origen_acta = snap.get("origen") or {}
     for it in snap.get("items", []):
+        origen = (it.get("origen") or origen_acta) if es_entrega else {}
         items.append(
             ActaItemOut(
                 material_id=it["material_id"],
@@ -50,6 +54,8 @@ def _a_acta_out(acta: ActaReporte) -> ActaOut:
                 categoria=it.get("categoria"),
                 u_m=it.get("u_m"),
                 cantidad=it.get("cantidad") if es_entrega else None,
+                origen_almacen_id=origen.get("almacen_id"),
+                origen_nombre=origen.get("nombre"),
                 cantidad_tomada=None if es_entrega else it.get("cantidad_tomada"),
                 cantidad_consumida=(
                     None if es_entrega else it.get("cantidad_consumida")
