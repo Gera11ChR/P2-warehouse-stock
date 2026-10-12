@@ -107,3 +107,40 @@ describe('Sin rastro de "sobrante" (REQ-CONSUMO-014)', () => {
     expect(candidatos("const x = 'Sobrante por material'").some((c) => SOBRANTE.test(c))).toBe(true)
   })
 })
+
+// RF-8 / REQ-NOM-008: la nomenclatura oficial es TRANSF; "TEAMS" solo puede
+// aparecer como VALOR TÉCNICO del contrato (tipo_movimiento, claves de mapa,
+// comparaciones), nunca en un texto visible.
+describe('Sin "TEAMS" en texto visible (REQ-NOM-008)', () => {
+  const TEAMS = /\bTEAMS\b/
+
+  /** Un candidato es texto visible si tiene espacios o es un rótulo con
+   *  mayúscula inicial y no es el literal técnico `TEAMS` a secas. */
+  const esVisible = (c: string): boolean => {
+    const v = c.replace(/\$\{[^}]*\}/g, '').trim()
+    if (!TEAMS.test(v)) return false
+    if (/^(TEAMS|TEAMS_[A-Z_]+)$/.test(v)) return false // valor técnico
+    if (/['"`]TEAMS['"`]/.test(v)) return false // literal de código, no texto
+    return /\s/.test(v)
+  }
+
+  it('ningún texto visible de producción contiene "TEAMS"', () => {
+    const ofensores: string[] = []
+    for (const [ruta, src] of Object.entries(fuentes)) {
+      if (/__tests__|\.test\.|\/test\//.test(ruta)) continue
+      for (const c of candidatos(src)) {
+        if (esVisible(c)) ofensores.push(`${ruta}: ${c.trim()}`)
+      }
+    }
+    expect(ofensores).toEqual([])
+  })
+
+  it('el detector reconoce texto visible antiguo y respeta los valores técnicos', () => {
+    expect(esVisible('Confirmar TEAMS')).toBe(true)
+    expect(esVisible('TEAMS — transferencia')).toBe(true)
+    expect(esVisible('El movimiento TEAMS hacia')).toBe(true)
+    expect(esVisible('TEAMS')).toBe(false)
+    expect(esVisible('TEAMS_TRANSFERENCIA')).toBe(false)
+    expect(esVisible("useState<TipoMovimiento>('TEAMS')")).toBe(false)
+  })
+})

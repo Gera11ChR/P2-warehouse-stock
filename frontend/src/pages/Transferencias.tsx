@@ -20,7 +20,7 @@ import type { MovimientoBorradorCreatePayload } from '../services/movimientos'
 import { useToast } from '../hooks/useToasts'
 import { invalidarTrasConfirmarMovimiento } from '../hooks/queryKeys'
 import type { CartLine, Movimiento, TipoMovimiento } from '../types'
-import { ESTADOS_MOVIMIENTO } from '../types'
+import { ESTADOS_MOVIMIENTO, etiquetaTipoMovimiento } from '../types'
 
 function errorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
@@ -602,7 +602,7 @@ export default function Transferencias() {
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            {t}
+            {etiquetaTipoMovimiento(t)}
           </button>
         ))}
       </div>
@@ -903,7 +903,8 @@ export default function Transferencias() {
             }
             className="flex items-center gap-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            <Check className="h-4 w-4" /> Confirmar {tab}
+            <Check className="h-4 w-4" />{' '}
+            {tab === 'TEAMS' ? 'Confirmar Transferencia' : 'Confirmar Devolución'}
           </button>
         </div>
       </div>
@@ -940,7 +941,7 @@ export default function Transferencias() {
                 <tr key={m.id} className="hover:bg-slate-50">
                   <td className="px-4 py-2 font-mono text-slate-600">{m.id}</td>
                   <td className="px-4 py-2 font-semibold text-slate-700">
-                    {m.tipo_movimiento}
+                    {etiquetaTipoMovimiento(m.tipo_movimiento)}
                   </td>
                   <td className="px-4 py-2 text-slate-700">
                     {detalleMovimiento(m)}
@@ -1024,7 +1025,9 @@ export default function Transferencias() {
             La cancelación revierte el movimiento{' '}
             <span className="font-semibold">
               #{movimientoACancelar?.id ?? ''}{' '}
-              {movimientoACancelar?.tipo_movimiento ?? ''}
+              {movimientoACancelar
+                ? etiquetaTipoMovimiento(movimientoACancelar.tipo_movimiento)
+                : ''}
             </span>{' '}
             y restaura el stock de origen y destino. Esta acción es irreversible
             y queda registrada en auditoría.

@@ -80,7 +80,7 @@ Six operational screens (one React page each) over ten backend routers:
 | **Sección General** | Master catalog (SKUs, categories, units of measure), initial stock loads, warehouse-level inventory with a single unified search |
 | **Inventario por Unidad** | Fleet/crew-scoped inventory, local configuration, crew membership, seguimientos de CONSUMO |
 | **Fibra Óptica** | Isolated `PAQUETE` / `EN_USO` roots: view, edit, adjust, delete (motivo mandatory only when stock > 0) |
-| **Transferencias** | `TEAMS` (warehouse/FO → crew) and `DEVOL` (crew → warehouse/FO) with cart review and cancellation; a `TEAMS` cart can **mix General and Fibra Óptica lines** — each line carries its own origin, is validated and deducted against it in one atomic transaction, and the operation yields a single acta and history row |
+| **Transferencias** | `TEAMS` (shown in the UI as **TRANSF**; warehouse/FO → crew) and `DEVOL` (crew → warehouse/FO) with cart review and cancellation; a `TEAMS` cart can **mix General and Fibra Óptica lines** — each line carries its own origin, is validated and deducted against it in one atomic transaction, and the operation yields a single acta and history row |
 | **Reportes** | Official reports: Actas de Entrega / Consumo — JSON listing or XLSX injected onto the corporate templates |
 | **Auditoría** | Read-only, human-readable immutable ledger |
 

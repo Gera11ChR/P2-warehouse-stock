@@ -18,7 +18,7 @@ describe('ActaGeneradaAviso', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Acta de Entrega generada')
     expect(screen.getByRole('status')).toHaveTextContent(
-      'movimiento TEAMS hacia PARTNER 2017 fue CONFIRMADO por el servidor',
+      'transferencia hacia PARTNER 2017 fue CONFIRMADA por el servidor',
     )
     await user.click(screen.getByRole('button', { name: 'Ir a Reportes > Entrega' }))
     expect(onVerActa).toHaveBeenCalledTimes(1)

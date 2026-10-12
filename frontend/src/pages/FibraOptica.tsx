@@ -538,7 +538,7 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
         El inventario <span className="font-mono">{modulo}</span> se consume
         vía <span className="font-mono">/fibra/&lt;modulo&gt;</span> y ahora se
         gestiona directamente desde esta sección (Ver Detalle, Modificar,
-        Eliminar). Las transferencias TEAMS/DEVOL siguen operando en la página
+        Eliminar). Las transferencias (TRANSF) y devoluciones (DEVOL) siguen operando en la página
         Transferencias: el CRUD FO no altera el ruteo ni el inventario que
         consumen.
       </p>

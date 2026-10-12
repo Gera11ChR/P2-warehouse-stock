@@ -260,7 +260,7 @@ describe('Reportes — subsecciones Entrega y Consumo con datos reales (API mock
     const { queryClient } = renderReportes()
     expect(await screen.findByText('Sin actas de entrega')).toBeInTheDocument()
 
-    // Simula lo que hace Transferencias tras «Confirmar TEAMS»: el trigger de
+    // Simula lo que hace Transferencias tras «Confirmar Transferencia»: el trigger de
     // PostgreSQL ya registró el acta; la UI solo recarga el estado persistido.
     mockedListarActas.mockResolvedValue([actaEntrega])
     await act(() =>

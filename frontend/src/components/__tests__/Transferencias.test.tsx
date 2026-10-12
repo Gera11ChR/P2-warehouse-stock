@@ -163,7 +163,7 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
       screen.getByLabelText(/Motivo \/ Observaciones/),
       'Entrega FO QA',
     )
-    await user.click(screen.getByRole('button', { name: 'Confirmar TEAMS' }))
+    await user.click(screen.getByRole('button', { name: 'Confirmar Transferencia' }))
 
     // procesar → invalidarInventarios → refetch de ['fibra', 'PAQUETE']
     await waitFor(() => {
@@ -180,7 +180,7 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
       screen.getByLabelText(/Motivo \/ Observaciones/),
       'Entrega QA',
     )
-    await user.click(screen.getByRole('button', { name: 'Confirmar TEAMS' }))
+    await user.click(screen.getByRole('button', { name: 'Confirmar Transferencia' }))
   }
 
   const borradorTeams = {
@@ -190,7 +190,7 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
     destino_equipo_id: 5,
   }
 
-  it('REQ-P2-REP-003: tras Confirmar TEAMS exitoso informa el Acta de Entrega y ofrece ir a Reportes > Entrega del equipo', async () => {
+  it('REQ-P2-REP-003: tras Confirmar Transferencia exitoso informa el Acta de Entrega y ofrece ir a Reportes > Entrega del equipo', async () => {
     const user = userEvent.setup()
     const navigate = vi.fn()
     ;(crearBorrador as ReturnType<typeof vi.fn>).mockResolvedValue(borradorTeams)
@@ -242,7 +242,7 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('REQ-P2-REP-003: tras Confirmar TEAMS invalida las actas de Entrega y recarga el listado montado sin recargar la página', async () => {
+  it('REQ-P2-REP-003: tras Confirmar Transferencia invalida las actas de Entrega y recarga el listado montado sin recargar la página', async () => {
     const user = userEvent.setup()
     ;(crearBorrador as ReturnType<typeof vi.fn>).mockResolvedValue(borradorTeams)
     const queryClient = new QueryClient({
@@ -352,7 +352,7 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
     )
   })
 
-  it('REQ-ERG-007: Confirmar TEAMS permanece habilitado con el motivo vacío y envía observaciones null', async () => {
+  it('REQ-ERG-007: Confirmar Transferencia permanece habilitado con el motivo vacío y envía observaciones null', async () => {
     const user = userEvent.setup()
     renderConQueryClient()
 
@@ -361,7 +361,7 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
     await user.selectOptions(combos[1], '5') // Equipo destino
     await user.click(await screen.findByRole('button', { name: /Agregar/ }))
 
-    const confirmar = screen.getByRole('button', { name: 'Confirmar TEAMS' })
+    const confirmar = screen.getByRole('button', { name: 'Confirmar Transferencia' })
     expect(confirmar).toBeEnabled()
     await user.click(confirmar)
 
@@ -370,7 +370,7 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
     expect(payload.observaciones).toBeNull()
   })
 
-  it('REQ-ERG-007: Confirmar DEVOL permanece habilitado con el motivo vacío y envía observaciones null', async () => {
+  it('REQ-ERG-007: Confirmar Devolución permanece habilitado con el motivo vacío y envía observaciones null', async () => {
     const user = userEvent.setup()
     ;(inventarioEquipo as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
@@ -393,7 +393,7 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
     await user.selectOptions(combos[1], '1') // Sección destino GENERAL
     await user.click(await screen.findByRole('button', { name: /Agregar/ }))
 
-    const confirmar = screen.getByRole('button', { name: 'Confirmar DEVOL' })
+    const confirmar = screen.getByRole('button', { name: 'Confirmar Devolución' })
     expect(confirmar).toBeEnabled()
     await user.click(confirmar)
 

@@ -440,9 +440,16 @@ export const ESTADOS_MOVIMIENTO: Record<EstadoMovimiento, string> = {
   CANCELADO: 'Cancelado',
 }
 
+/** Texto VISIBLE de cada tipo de movimiento (nomenclatura oficial). El valor
+ *  técnico del contrato (`TEAMS` | `DEVOL`) NO cambia: solo se rotula. */
 export const TIPOS_MOVIMIENTO: Record<TipoMovimiento, string> = {
-  TEAMS: 'TEAMS',
+  TEAMS: 'TRANSF',
   DEVOL: 'DEVOL',
+}
+
+/** Única fuente del texto visible de un tipo de movimiento. */
+export function etiquetaTipoMovimiento(tipo: TipoMovimiento): string {
+  return TIPOS_MOVIMIENTO[tipo]
 }
 
 /** Línea de carrito temporal (UX). cantidad_transferir/cantidad_devolver
@@ -486,7 +493,7 @@ export interface EventoAuditoria {
 
 export const TIPOS_ACCION_AUDITORIA: Record<string, string> = {
   MATERIAL_MODIFICADO: 'Material modificado',
-  TEAMS_TRANSFERENCIA: 'TEAMS — transferencia',
+  TEAMS_TRANSFERENCIA: 'TRANSF — transferencia',
   DEVOL_DEVOLUCION: 'DEVOL — devolución',
   MOVIMIENTO_CANCELADO: 'Movimiento cancelado',
   STOCK_INICIAL: 'Carga inicial de stock',

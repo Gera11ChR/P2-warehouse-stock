@@ -30,7 +30,7 @@ const COPY: Record<
   ENTREGA: {
     titulo: 'Acta de Entrega generada',
     detalle: (equipo) =>
-      `El movimiento TEAMS${equipo} fue CONFIRMADO por el servidor y su Acta de Entrega quedó registrada. Puedes exportarla en Reportes > Entrega.`,
+      `La transferencia${equipo} fue CONFIRMADA por el servidor y su Acta de Entrega quedó registrada. Puedes exportarla en Reportes > Entrega.`,
     accion: 'Ir a Reportes > Entrega',
   },
   CONSUMO: {

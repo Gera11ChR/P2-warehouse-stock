@@ -125,7 +125,7 @@ describe('Carrito multi-origen', () => {
     await agregarDesde(user, '3', 'Cable En Uso')
     const combos = await screen.findAllByRole('combobox')
     await user.selectOptions(combos[1], '5') // Unidad destino
-    await user.click(screen.getByRole('button', { name: 'Confirmar TEAMS' }))
+    await user.click(screen.getByRole('button', { name: 'Confirmar Transferencia' }))
 
     await waitFor(() => expect(crearBorrador).toHaveBeenCalledTimes(1))
     const payload = vi.mocked(crearBorrador).mock.calls[0][0]
@@ -145,10 +145,10 @@ describe('Carrito multi-origen', () => {
     const user = userEvent.setup()
     renderPagina()
     await agregarDesde(user, '1', 'Conector General')
-    expect(screen.getByRole('button', { name: 'Confirmar TEAMS' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Confirmar Transferencia' })).toBeDisabled()
   })
 
-  it('cambiar de pestaña TEAMS/DEVOL sí vacía el carrito (otro tipo de operación)', async () => {
+  it('cambiar de pestaña TRANSF/DEVOL sí vacía el carrito (otro tipo de operación)', async () => {
     const user = userEvent.setup()
     renderPagina()
     await agregarDesde(user, '1', 'Conector General')

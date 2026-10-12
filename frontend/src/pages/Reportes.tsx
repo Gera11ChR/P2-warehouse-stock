@@ -179,7 +179,7 @@ export default function Reportes({
           <ReporteSubseccion
             tipo="entrega"
             idPrefix="reportes-entrega"
-            descripcion="Actas de Entrega: se generan al confirmar un movimiento TEAMS."
+            descripcion="Actas de Entrega: se generan al confirmar una transferencia (TRANSF)."
             {...filtrosProps}
             {...exportProps}
           >
