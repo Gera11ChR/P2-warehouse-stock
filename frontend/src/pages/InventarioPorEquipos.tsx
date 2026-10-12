@@ -24,6 +24,8 @@ import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../hooks/useToasts'
 import type { Equipo, InventarioEquipoRow } from '../types'
+import UnidadConsultaDetalle from '../components/UnidadConsultaDetalle'
+import { CONSULTA_OPCIONES, type ConsultaVista } from '../utils/consultaUnidad'
 
 function errorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
@@ -61,6 +63,14 @@ export default function InventarioPorEquipos() {
   const [configMaterial, setConfigMaterial] =
     useState<InventarioEquipoRow | null>(null)
 
+  // Vista de Consulta (REQ-UNI-010/011/014): la opción elegida pertenece a
+  // la unidad con la que se eligió; al cambiar de unidad vuelve sola a
+  // "Inventario Unidad" (sin efectos ni estado obsoleto).
+  const [consultaSel, setConsultaSel] = useState<{
+    equipoId: number | null
+    vista: ConsultaVista
+  }>({ equipoId: null, vista: 'inventario' })
+
   // ============================================================================
   // QUERIES
   // ============================================================================
@@ -90,6 +100,16 @@ export default function InventarioPorEquipos() {
     error: inventarioErrorObj,
   } = useEquipoInventario(effectiveEquipoId)
 
+  const consultaVista: ConsultaVista =
+    consultaSel.equipoId === effectiveEquipoId
+      ? consultaSel.vista
+      : 'inventario'
+  // Inventario visible: Consulta en su vista por defecto, o Configuración.
+  const mostrarInventario = tab === 'configuracion' || consultaVista === 'inventario'
+  const unidadSeleccionada = equipos.find(
+    (e) => e.equipo_id === effectiveEquipoId,
+  )
+
   // Catálogos para el formulario de configuración local (FASE 7).
   const { data: categorias = [] } = useCategorias()
   const { data: ums = [] } = useUms()
@@ -102,7 +122,7 @@ export default function InventarioPorEquipos() {
     mutationFn: createEquipo,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipos'] })
-      pushToast('Equipo creado')
+      pushToast('Unidad creada')
       setFormMode(null)
     },
     onError: (error) => pushError(errorMessage(error)),
@@ -119,7 +139,7 @@ export default function InventarioPorEquipos() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipos'] })
       queryClient.invalidateQueries({ queryKey: ['equipo', effectiveEquipoId] })
-      pushToast('Equipo modificado')
+      pushToast('Unidad modificada')
       setFormMode(null)
       setEquipoToEdit(null)
     },
@@ -130,7 +150,7 @@ export default function InventarioPorEquipos() {
     mutationFn: deleteEquipo,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipos'] })
-      pushToast('Equipo eliminado')
+      pushToast('Unidad eliminada')
       setDeleteOpen(false)
       setEquipoToDelete(null)
       // Si eliminamos el equipo actualmente seleccionado, limpiar la selección
@@ -178,14 +198,14 @@ export default function InventarioPorEquipos() {
       {/* Header con acciones */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold text-slate-800">
-          Inventario por Equipos
+          Inventario por Unidad
         </h2>
         <button
           type="button"
           onClick={() => setFormMode('create')}
           className="flex items-center gap-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
         >
-          <Plus className="h-4 w-4" /> Crear Equipo
+          <Plus className="h-4 w-4" /> Crear Unidad
         </button>
       </div>
 
@@ -193,19 +213,23 @@ export default function InventarioPorEquipos() {
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-slate-700">
-              Seleccionar Equipo
+            <label
+              htmlFor="seleccionar-unidad"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Seleccionar Unidad
             </label>
             {equiposLoading && (
-              <p className="mt-1 text-sm text-slate-500">Cargando equipos...</p>
+              <p className="mt-1 text-sm text-slate-500">Cargando unidades...</p>
             )}
             {equiposError && (
               <p className="mt-1 text-sm text-red-600">
-                No se pudieron cargar los equipos
+                No se pudieron cargar las unidades
               </p>
             )}
             {!equiposLoading && !equiposError && (
               <select
+                id="seleccionar-unidad"
                 value={effectiveEquipoId ?? ''}
                 onChange={(e) =>
                   setSelectedEquipoId(
@@ -214,7 +238,7 @@ export default function InventarioPorEquipos() {
                 }
                 className="mt-1 w-full max-w-md rounded-md border border-slate-300 px-3 py-2 text-sm font-medium"
               >
-                <option value="">— Seleccione un equipo —</option>
+                <option value="">— Seleccione una unidad —</option>
                 {equipos
                   .filter((e) => e.is_active)
                   .map((e) => (
@@ -281,21 +305,58 @@ export default function InventarioPorEquipos() {
           {effectiveEquipoId === null && (
             <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
               <p className="text-slate-500">
-                Seleccione un equipo para ver su inventario
+                Seleccione una unidad para ver su inventario
               </p>
             </div>
           )}
 
-          {effectiveEquipoId !== null && inventarioLoading && (
+          {tab === 'consulta' && effectiveEquipoId !== null && (
+            <div className="mb-3">
+              <label
+                htmlFor="consulta-vista"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Consulta
+              </label>
+              <select
+                id="consulta-vista"
+                value={consultaVista}
+                onChange={(e) =>
+                  setConsultaSel({
+                    equipoId: effectiveEquipoId,
+                    vista: e.target.value as ConsultaVista,
+                  })
+                }
+                className="mt-1 w-full max-w-xs rounded-md border border-slate-300 px-3 py-2 text-sm"
+              >
+                {CONSULTA_OPCIONES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {tab === 'consulta' &&
+            effectiveEquipoId !== null &&
+            consultaVista !== 'inventario' && (
+              <UnidadConsultaDetalle
+                vista={consultaVista}
+                unidad={unidadSeleccionada}
+              />
+            )}
+
+          {mostrarInventario && effectiveEquipoId !== null && inventarioLoading && (
             <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
               <p className="text-slate-500">Cargando inventario...</p>
             </div>
           )}
 
-          {effectiveEquipoId !== null && inventarioError && (
+          {mostrarInventario && effectiveEquipoId !== null && inventarioError && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
               <p className="text-red-700">
-                No se pudo obtener el inventario del equipo
+                No se pudo obtener el inventario de la unidad
               </p>
               <p className="mt-1 text-sm text-red-600">
                 {errorMessage(inventarioErrorObj)}
@@ -306,7 +367,8 @@ export default function InventarioPorEquipos() {
           {effectiveEquipoId !== null &&
             !inventarioLoading &&
             !inventarioError &&
-            tab === 'consulta' && (
+            tab === 'consulta' &&
+            consultaVista === 'inventario' && (
               <>
                 <EquipoInventoryTable rows={inventarioRows} />
                 <p className="mt-2 text-xs text-slate-500">
@@ -332,7 +394,7 @@ export default function InventarioPorEquipos() {
       {tab === 'consumo' &&
         (effectiveEquipoId === null ? (
           <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
-            <p className="text-slate-500">Seleccione un equipo</p>
+            <p className="text-slate-500">Seleccione una unidad</p>
           </div>
         ) : (
           <SeguimientoPanel
@@ -346,7 +408,7 @@ export default function InventarioPorEquipos() {
       {/* Modal CRUD de equipos */}
       <Modal
         open={formMode !== null}
-        title={formMode === 'create' ? 'Crear Equipo' : 'Modificar Equipo'}
+        title={formMode === 'create' ? 'Crear Unidad' : 'Modificar Unidad'}
         onClose={() => {
           setFormMode(null)
           setEquipoToEdit(null)
@@ -366,8 +428,8 @@ export default function InventarioPorEquipos() {
       {/* Confirmación de eliminación */}
       <ConfirmDialog
         open={deleteOpen}
-        title="Eliminar Equipo"
-        message={`¿Seguro que deseas eliminar el equipo "${equipoToDelete?.nombre ?? ''}"? Esta acción marcará el equipo como inactivo.`}
+        title="Eliminar Unidad"
+        message={`¿Seguro que deseas eliminar la unidad "${equipoToDelete?.nombre ?? ''}"? Esta acción marcará la unidad como inactiva.`}
         onConfirm={handleDelete}
         onCancel={() => {
           setDeleteOpen(false)

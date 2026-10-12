@@ -32,7 +32,7 @@ export function mensajeErrorExportacion(
 ): string {
   const acta = `Acta de ${TIPO_LABEL[tipo]}`
   if (httpStatus === 404) {
-    return `No hay actas de ${TIPO_LABEL[tipo]} para los filtros seleccionados, así que no se generó el archivo. Ajusta el equipo o el rango de fechas e inténtalo de nuevo.`
+    return `No hay actas de ${TIPO_LABEL[tipo]} para los filtros seleccionados, así que no se generó el archivo. Ajusta la unidad o el rango de fechas e inténtalo de nuevo.`
   }
   if (httpStatus === 422) {
     return `Los filtros no son válidos y no se generó el ${acta}. Revisa las fechas e inténtalo de nuevo.`

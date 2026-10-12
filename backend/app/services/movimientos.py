@@ -69,14 +69,14 @@ async def _validar_referencias(
         equipo = await session.get(Equipo, payload.destino_equipo_id)
         if equipo is None:
             raise BusinessRuleError(
-                "Equipo destino inexistente",
+                "Unidad destino inexistente",
                 coordinates=[{"destino_equipo_id": payload.destino_equipo_id}],
             )
     else:
         equipo = await session.get(Equipo, payload.origen_equipo_id)
         if equipo is None:
             raise BusinessRuleError(
-                "Equipo origen inexistente",
+                "Unidad origen inexistente",
                 coordinates=[{"origen_equipo_id": payload.origen_equipo_id}],
             )
         seccion = await session.get(Seccion, payload.destino_almacen_id)

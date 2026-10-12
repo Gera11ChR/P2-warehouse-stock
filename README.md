@@ -78,7 +78,7 @@ Six operational screens (one React page each) over ten backend routers:
 | Module | What it does |
 | --- | --- |
 | **Sección General** | Master catalog (SKUs, categories, units of measure), initial stock loads, warehouse-level inventory with a single unified search |
-| **Inventario por Equipos** | Fleet/crew-scoped inventory, local configuration, crew membership, seguimientos de CONSUMO |
+| **Inventario por Unidad** | Fleet/crew-scoped inventory, local configuration, crew membership, seguimientos de CONSUMO |
 | **Fibra Óptica** | Isolated `PAQUETE` / `EN_USO` roots: view, edit, adjust, delete (motivo mandatory only when stock > 0) |
 | **Transferencias** | `TEAMS` (warehouse/FO → crew) and `DEVOL` (crew → warehouse/FO) with cart review and cancellation |
 | **Reportes** | Official reports: Actas de Entrega / Consumo — JSON listing or XLSX injected onto the corporate templates |
@@ -350,7 +350,7 @@ All routers are mounted under `/api/v1`. Interactive documentation is served at 
 | | `POST /movimientos/{id}/cancelar` | Atomic reversal via `fn_cancelar_movimiento` |
 | **Adjustments** | `POST /ajustes/carga-inicial` | Idempotent first load via `fn_cargar_stock_inicial` |
 | | `POST /ajustes/stock-almacen` | Differential via `fn_ajustar_stock_almacen` (motivo optional) |
-| **Fleet** | `GET/POST /equipos` · `GET/PATCH/DELETE /equipos/{id}` | Crew management |
+| **Fleet** (UI: *Unidad*) | `GET/POST /equipos` · `GET/PATCH/DELETE /equipos/{id}` | Crew management |
 | | `GET /equipos/{id}/inventario` · `PATCH /equipos/{id}/inventario/{material_id}` | Crew-scoped inventory |
 | **Seguimientos (CONSUMO)** | `POST/GET /equipos/{id}/seguimientos` · `GET …/{seguimiento_id}` | CONSUMO lifecycle per crew |
 | | `POST …/{seguimiento_id}/agregar-todo` · `POST …/{seguimiento_id}/cerrar` | Idempotent "add all" and close (Acta de Consumo recorded on close) |

@@ -18,7 +18,7 @@ interface EquipoInventoryTableProps {
   onConfigurar?: (row: InventarioEquipoRow) => void
 }
 
-/** ¿La fila tiene configuración LOCAL definida para este equipo? */
+/** ¿La fila tiene configuración LOCAL definida para esta unidad? */
 function tieneConfigLocal(row: InventarioEquipoRow): boolean {
   return (
     row.stock_minimo_local != null ||
@@ -109,7 +109,7 @@ export default function EquipoInventoryTable({
       </table>
       {rows.length === 0 && (
         <div className="p-6 text-center text-sm text-slate-500">
-          No hay registros de inventario para este equipo.
+          No hay registros de inventario para esta unidad.
         </div>
       )}
     </div>

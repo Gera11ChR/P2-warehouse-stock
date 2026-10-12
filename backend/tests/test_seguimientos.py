@@ -425,7 +425,7 @@ async def test_REQ_DEPLOY_005_cierre_stock_insuficiente_400_rollback_total(
     resp = await _cerrar_seguimiento(
         client, equipo["equipo_id"], seguimiento_id, expect=400
     )
-    assert "Stock insuficiente en el Equipo" in resp.json()["error"]["message"]
+    assert "Stock insuficiente en la Unidad" in resp.json()["error"]["message"]
 
     detalle = await client.get(
         f"/api/v1/equipos/{equipo['equipo_id']}/seguimientos/{seguimiento_id}"

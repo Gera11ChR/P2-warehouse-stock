@@ -495,7 +495,7 @@ export default function Transferencias() {
     return seccion ? labelSeccion(seccion) : `Sección ${id}`
   }
   const nombreEquipo = (id: number | null): string =>
-    equipos.find((e) => e.equipo_id === id)?.nombre ?? `Equipo ${id}`
+    equipos.find((e) => e.equipo_id === id)?.nombre ?? `Unidad ${id}`
 
   const detalleMovimiento = (m: Movimiento): string => {
     if (m.tipo_movimiento === 'TEAMS') {
@@ -591,7 +591,7 @@ export default function Transferencias() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700">
-                Equipo Destino
+                Unidad Destino
               </label>
               <select
                 value={equipoDestino ?? ''}
@@ -602,7 +602,7 @@ export default function Transferencias() {
                 }
                 className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
               >
-                <option value="">— Seleccione equipo —</option>
+                <option value="">— Seleccione unidad —</option>
                 {equipos
                   .filter((e) => e.is_active)
                   .map((e) => (
@@ -617,7 +617,7 @@ export default function Transferencias() {
           <>
             <div>
               <label className="block text-sm font-medium text-slate-700">
-                Equipo Origen
+                Unidad Origen
               </label>
               <select
                 value={equipoOrigen ?? ''}
@@ -628,7 +628,7 @@ export default function Transferencias() {
                 }
                 className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
               >
-                <option value="">— Seleccione equipo —</option>
+                <option value="">— Seleccione unidad —</option>
                 {equipos
                   .filter((e) => e.is_active)
                   .map((e) => (
@@ -700,7 +700,7 @@ export default function Transferencias() {
             placeholder={
               tab === 'TEAMS'
                 ? 'Buscar en inventario de la sección…'
-                : 'Buscar en inventario del equipo…'
+                : 'Buscar en inventario de la unidad…'
             }
             className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
@@ -716,12 +716,12 @@ export default function Transferencias() {
         )}
         {tab === 'DEVOL' && inventarioEquipoQuery.isLoading && (
           <p className="p-4 text-sm text-slate-500">
-            Cargando inventario del equipo…
+            Cargando inventario de la unidad…
           </p>
         )}
         {tab === 'DEVOL' && inventarioEquipoQuery.isError && (
           <p className="p-4 text-sm text-red-600">
-            No se pudo obtener el inventario del equipo origen.
+            No se pudo obtener el inventario de la unidad origen.
           </p>
         )}
 
@@ -781,7 +781,7 @@ export default function Transferencias() {
             <p className="p-4 text-sm text-slate-500">
               {tab === 'TEAMS'
                 ? 'Seleccione una sección origen para ver su inventario.'
-                : 'Seleccione un equipo origen para ver su inventario (solo materiales con stock > 0).'}
+                : 'Seleccione una unidad origen para ver su inventario (solo materiales con stock > 0).'}
             </p>
           )}
       </div>

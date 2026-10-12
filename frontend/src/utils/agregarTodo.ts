@@ -4,7 +4,7 @@ import type { InventarioEquipoRow } from '../types'
 // "AGREGAR TODO" — proyección LOCAL de la lista de seguimiento (REQ-P2-CON-003/004)
 //
 // Helper puro de PRESENTACIÓN: precarga en el borrador de la lista una línea
-// por cada material con stock del inventario del equipo, usando el stock
+// por cada material con stock del inventario de la unidad, usando el stock
 // visible en el cliente como cantidad. NO es autoridad transaccional: el
 // borrador solo captura intención; la creación del seguimiento
 // (fn_crear_seguimiento) y su validación de stock siguen siendo del backend.
@@ -62,7 +62,7 @@ export function calcularAgregarTodo(
 export function mensajeAgregarTodo(resultado: AgregarTodoResultado): string {
   const { agregadas, yaPresentes } = resultado
   if (agregadas === 0) {
-    return `La lista ya incluye todos los materiales con stock del equipo (${yaPresentes}). No se agregó ninguna línea.`
+    return `La lista ya incluye todos los materiales con stock de la unidad (${yaPresentes}). No se agregó ninguna línea.`
   }
   const nuevas =
     agregadas === 1

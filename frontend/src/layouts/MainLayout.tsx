@@ -13,7 +13,7 @@ import type { NavigationTarget } from '../types'
 const LABELS: Record<string, string> = {
   'seccion-general': 'Sección General',
   'fibra-optica': 'Fibra Óptica',
-  'inventario-por-equipos': 'Inventario por Equipos',
+  'inventario-por-equipos': 'Inventario por Unidad',
   transferencias: 'Transferencias',
   reportes: 'Reportes',
   auditoria: 'Auditoría',

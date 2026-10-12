@@ -368,7 +368,7 @@ async def test_REQ_FO_002_cancelacion_revertir_sin_stock_equipo_400(
         json={"motivo": "Revertir sin stock"},
     )
     assert resp.status_code == 400
-    assert "Stock insuficiente en el Equipo destino" in resp.json()["error"][
+    assert "Stock insuficiente en la Unidad destino" in resp.json()["error"][
         "message"
     ]
 

@@ -133,11 +133,11 @@ describe('SeguimientoNuevaListaForm duplicados', () => {
 })
 
 describe('SeguimientoNuevaListaForm estado vacío', () => {
-  it('muestra mensaje cuando el equipo no tiene materiales con stock', () => {
+  it('muestra mensaje cuando la unidad no tiene materiales con stock', () => {
     renderForm(vi.fn(), { materiales: [] })
 
     expect(
-      screen.getByText('El equipo no tiene materiales con stock.'),
+      screen.getByText('La unidad no tiene materiales con stock.'),
     ).toBeInTheDocument()
   })
 })
@@ -216,7 +216,7 @@ describe('SeguimientoNuevaListaForm — «Agregar todo» (REQ-P2-CON-003/004)', 
 
     expect(screen.getByText('Líneas: 2')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent(
-      'La lista ya incluye todos los materiales con stock del equipo (2). No se agregó ninguna línea.',
+      'La lista ya incluye todos los materiales con stock de la unidad (2). No se agregó ninguna línea.',
     )
   })
 
@@ -231,13 +231,13 @@ describe('SeguimientoNuevaListaForm — «Agregar todo» (REQ-P2-CON-003/004)', 
     expect(screen.getByText('Líneas: 2')).toBeInTheDocument()
   })
 
-  it('queda deshabilitado con motivo si el equipo no tiene stock', () => {
+  it('queda deshabilitado con motivo si la unidad no tiene stock', () => {
     renderForm(vi.fn(), {
       materiales: [fila({ material_id: 10, stock_actual: 0 })],
     })
     expect(agregarTodo()).toBeDisabled()
     expect(
-      screen.getByText('El equipo no tiene materiales con stock.'),
+      screen.getByText('La unidad no tiene materiales con stock.'),
     ).toBeInTheDocument()
   })
 

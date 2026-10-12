@@ -165,11 +165,15 @@ async def _mapear_raise_exception(exc: DBAPIError) -> Exception:
     if "Seguimiento ID" in mensaje and "no encontrado" in mensaje:
         return BusinessRuleError(mensaje, status_code=404)
 
-    # Pertenencia seguimiento<->equipo: 404 (misma semántica que el GET).
-    if "no pertenece al equipo" in mensaje:
+    # Pertenencia seguimiento<->unidad: 404 (misma semántica que el GET).
+    # REQ-UNI-007: se acepta también el texto previo a la migración 0024
+    # ("equipo") para que un despliegue con la migración pendiente no cambie
+    # el código HTTP.
+    if "no pertenece a la unidad" in mensaje or "no pertenece al equipo" in mensaje:
         return BusinessRuleError(mensaje, status_code=404)
 
-    if "no existe o se encuentra inactivo" in mensaje:
+    # "inactiva" (0024, La unidad…) / "inactivo" (texto previo).
+    if "no existe o se encuentra inactiv" in mensaje:
         return BusinessRuleError(mensaje, status_code=404)
 
     if "no existe o está inactivo" in mensaje:
@@ -184,7 +188,10 @@ async def _mapear_raise_exception(exc: DBAPIError) -> Exception:
     if "Sobrante inválido" in mensaje:
         return BusinessRuleError(mensaje, status_code=400)
 
-    if "Stock insuficiente en el Equipo" in mensaje:
+    if (
+        "Stock insuficiente en la Unidad" in mensaje
+        or "Stock insuficiente en el Equipo" in mensaje
+    ):
         return BusinessRuleError(mensaje, status_code=400)
 
     if "debe contener al menos un material" in mensaje:
@@ -253,12 +260,12 @@ async def _prechequear_material(
 async def _prechequear_equipo(
     session: AsyncSession, *, equipo_id: int
 ) -> None:
-    """Pre-chequeo del flujo CONSUMO: el equipo debe existir y estar
-    activo (clasificación temprana 404 antes de invocar la función)."""
+    """Pre-chequeo del flujo CONSUMO: la unidad debe existir y estar
+    activa (clasificación temprana 404 antes de invocar la función)."""
     equipo = await session.get(Equipo, equipo_id)
     if equipo is None or not equipo.is_active:
         raise BusinessRuleError(
-            "Equipo no encontrado",
+            "Unidad no encontrada",
             coordinates=[{"equipo_id": equipo_id}],
             status_code=404,
         )

@@ -106,7 +106,7 @@ async def obtener_equipo(
     equipo = await _obtener(session, equipo_id)
     if equipo is None:
         raise BusinessRuleError(
-            "Equipo no encontrado",
+            "Unidad no encontrada",
             coordinates=[{"equipo_id": equipo_id}],
             status_code=404,
         )
@@ -136,7 +136,7 @@ async def inventario_equipo(
     equipo = await _obtener(session, equipo_id)
     if equipo is None:
         raise BusinessRuleError(
-            "Equipo no encontrado",
+            "Unidad no encontrada",
             coordinates=[{"equipo_id": equipo_id}],
             status_code=404,
         )
@@ -241,7 +241,7 @@ async def configurar_inventario_local(
         equipo = await session.get(Equipo, equipo_id)
         if equipo is None or not equipo.is_active:
             raise BusinessRuleError(
-                "Equipo no encontrado",
+                "Unidad no encontrada",
                 coordinates=[{"equipo_id": equipo_id}],
                 status_code=404,
             )
@@ -305,7 +305,7 @@ async def actualizar_equipo(
         equipo = await _obtener(session, equipo_id)
         if equipo is None:
             raise BusinessRuleError(
-                "Equipo no encontrado",
+                "Unidad no encontrada",
                 coordinates=[{"equipo_id": equipo_id}],
                 status_code=404,
             )
@@ -350,7 +350,7 @@ async def eliminar_equipo(
         equipo = await _obtener(session, equipo_id)
         if equipo is None:
             raise BusinessRuleError(
-                "Equipo no encontrado",
+                "Unidad no encontrada",
                 coordinates=[{"equipo_id": equipo_id}],
                 status_code=404,
             )

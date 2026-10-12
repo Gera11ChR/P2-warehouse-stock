@@ -62,7 +62,7 @@ export default function EquipoForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className="block text-sm font-medium text-slate-700">
-          Nombre de Cuadrilla *
+          Nombre por Unidad *
         </label>
         <input
           type="text"
@@ -158,7 +158,7 @@ export default function EquipoForm({
           type="submit"
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
-          {mode === 'create' ? 'Crear Equipo' : 'Guardar Cambios'}
+          {mode === 'create' ? 'Crear Unidad' : 'Guardar Cambios'}
         </button>
       </div>
     </form>

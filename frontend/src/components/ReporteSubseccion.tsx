@@ -74,7 +74,7 @@ export default function ReporteSubseccion({
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-48 flex-1">
             <label htmlFor={`${idPrefix}-equipo`} className={LABEL}>
-              Equipo
+              Unidad
             </label>
             <select
               id={`${idPrefix}-equipo`}

@@ -50,7 +50,7 @@ describe('ReporteExportFeedback — estados de la exportación XLSX', () => {
     expect(alerta).toHaveTextContent(
       'No hay actas de Entrega para los filtros seleccionados',
     )
-    expect(alerta).toHaveTextContent('Ajusta el equipo o el rango de fechas')
+    expect(alerta).toHaveTextContent('Ajusta la unidad o el rango de fechas')
     expect(alerta).toHaveTextContent(
       'Detalle del servidor: No hay actas para los filtros indicados',
     )

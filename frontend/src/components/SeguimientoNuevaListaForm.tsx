@@ -17,7 +17,7 @@ import type { InventarioEquipoRow, SeguimientoCreatePayload } from '../types'
 //
 // Editor de líneas (carrito temporal, SOLO UX): cada línea es
 // material_id + cantidad_tomada. El `max` por línea es una GUARDIA DE
-// PRESENTACIÓN (stock_actual > 0 del inventario del equipo); la autoridad
+// PRESENTACIÓN (stock_actual > 0 del inventario de la unidad); la autoridad
 // del contrato sigue siendo el backend (validación Pydantic + PostgreSQL).
 // El formulario NUNCA descuenta stock: captura la intención y la valida
 // con `seguimientoCreateSchema` (mín. 1 línea, positivos, sin duplicados).
@@ -26,7 +26,7 @@ import type { InventarioEquipoRow, SeguimientoCreatePayload } from '../types'
 // la lista se arma ANTES de crear el seguimiento, y el endpoint
 // POST /equipos/{id}/seguimientos/{seguimiento_id}/agregar-todo opera sobre
 // un seguimiento ABIERTA ya creado. Por eso, en este flujo, "Agregar todo"
-// precarga LOCALMENTE el borrador desde el inventario del equipo ya
+// precarga LOCALMENTE el borrador desde el inventario de la unidad ya
 // disponible en el cliente (prop `materiales`), sin red. Mismo contrato que
 // el SP (solo agrega los faltantes, no duplica, no pisa cantidades). El
 // borrador se valida y persiste al "Crear Seguimiento" (autoridad: backend).
@@ -87,9 +87,9 @@ export default function SeguimientoNuevaListaForm({
   const agregarTodoBloqueo: string | null = !editable
     ? 'La lista ya no admite cambios.'
     : sinStock
-      ? 'El equipo no tiene materiales con stock.'
+      ? 'La unidad no tiene materiales con stock.'
       : isLoading
-        ? 'Actualizando el inventario del equipo…'
+        ? 'Actualizando el inventario de la unidad…'
         : null
 
   const handleAgregarTodo = () => {
@@ -200,7 +200,7 @@ export default function SeguimientoNuevaListaForm({
       <span id="seguimiento-agregar-todo-ayuda" className="sr-only">
         {agregarTodoBloqueo
           ? `Agregar todo no está disponible. ${agregarTodoBloqueo}`
-          : 'Carga en la lista todos los materiales con stock del equipo sin duplicar los ya agregados.'}
+          : 'Carga en la lista todos los materiales con stock de la unidad sin duplicar los ya agregados.'}
       </span>
     </div>
   )
@@ -211,7 +211,7 @@ export default function SeguimientoNuevaListaForm({
         {cabecera}
         <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-center">
           <p className="text-sm text-slate-600">
-            El equipo no tiene materiales con stock.
+            La unidad no tiene materiales con stock.
           </p>
         </div>
         <div className="flex justify-end gap-2">
@@ -250,7 +250,7 @@ export default function SeguimientoNuevaListaForm({
           {lineas.length === 0 && (
             <p className="text-xs text-slate-500">
               No hay líneas agregadas. Agregue líneas una a una o use «Agregar
-              todo» para cargar todo el stock del equipo.
+              todo» para cargar todo el stock de la unidad.
             </p>
           )}
 

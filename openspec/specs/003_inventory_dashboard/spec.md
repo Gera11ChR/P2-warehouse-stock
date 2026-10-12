@@ -18,10 +18,10 @@ The system SHALL present all user-facing labels, database entities, schemas, DTO
 
 #### Scenario: No mixed language
 - **WHEN** any inventory view, form, header, or API response is rendered
-- **THEN** every visible label uses Spanish terms (e.g., "Almacén", "Stock Actual", "Stock Mínimo", "Alerta Stock", "Transferencia", "Inventario por Equipos") with no English equivalents
+- **THEN** every visible label uses Spanish terms (e.g., "Almacén", "Stock Actual", "Stock Mínimo", "Alerta Stock", "Transferencia", "Inventario por Unidad") with no English equivalents
 
 ### Requirement: REQ-DASH-003 Navigation hierarchy
-The system SHALL provide a sidebar navigation with the following structure: "Sección General", "Fibra Óptica" (with "Paquete" and "En Uso"), "Inventario por Equipos", "Transferencias", "Reportes", and "Auditoría".
+The system SHALL provide a sidebar navigation with the following structure: "Sección General", "Fibra Óptica" (with "Paquete" and "En Uso"), "Inventario por Unidad", "Transferencias", "Reportes", and "Auditoría".
 
 #### Scenario: All navigation entries present
 - **WHEN** the sidebar is rendered

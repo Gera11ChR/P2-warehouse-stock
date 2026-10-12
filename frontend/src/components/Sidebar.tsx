@@ -29,7 +29,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: 'En Uso', page: 'fibra-optica', sub: 'en-uso', icon: Wrench },
     ],
   },
-  { label: 'Inventario por Equipos', page: 'inventario-por-equipos', icon: Wrench },
+  { label: 'Inventario por Unidad', page: 'inventario-por-equipos', icon: Wrench },
   { label: 'Transferencias', page: 'transferencias', icon: ArrowRightLeft },
   { label: 'Reportes', page: 'reportes', icon: FileBarChart },
   { label: 'Auditoría', page: 'auditoria', icon: ShieldCheck },

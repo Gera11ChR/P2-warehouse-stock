@@ -34,7 +34,7 @@ describe('ActaGeneradaAviso', () => {
       />,
     )
     expect(screen.getByText('Acta de Consumo generada')).toBeInTheDocument()
-    expect(screen.getByText(/seguimiento del equipo PARTNER 2017 fue cerrado/)).toBeInTheDocument()
+    expect(screen.getByText(/seguimiento de la unidad PARTNER 2017 fue cerrado/)).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: 'Ir a Reportes > Consumo' }),
     ).toBeInTheDocument()

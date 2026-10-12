@@ -24,7 +24,7 @@ import type { CerrarSeguimientoPayload } from '../types'
 // Flujo de cierre (REQ-P2-CON-005): el aviso «Acta de Consumo generada» solo
 // se muestra en el `onSuccess` del cierre (el servidor ya aceptó el cierre y
 // registró el acta en la misma transacción). Ofrece ir a Reportes > Consumo
-// pre-filtrado por este equipo (si hay navegación disponible).
+// pre-filtrado por esta unidad (si hay navegación disponible).
 // ============================================================================
 
 function errorMessage(error: unknown): string {
@@ -114,7 +114,7 @@ export default function SeguimientoPanel({
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-6">
         <p className="text-red-700">
-          No se pudieron cargar los seguimientos de consumo del equipo.
+          No se pudieron cargar los seguimientos de consumo de la unidad.
         </p>
         <p className="mt-1 text-sm text-red-600">
           {errorMessage(seguimientosErrorObj)}
@@ -181,7 +181,7 @@ export default function SeguimientoPanel({
         <ConfirmDialog
           open={cierreConfirmOpen}
           title="Cerrar seguimiento"
-          message="Se registrarán los sobrantes y el consumo se descontará del inventario del equipo. ¿Confirmar?"
+          message="Se registrarán los sobrantes y el consumo se descontará del inventario de la unidad. ¿Confirmar?"
           confirmLabel="Confirmar"
           onConfirm={() => {
             if (cierrePendiente) {
@@ -215,14 +215,14 @@ export default function SeguimientoPanel({
       {avisoActa}
       {inventarioQuery.isLoading && (
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
-          <p className="text-slate-500">Cargando inventario del equipo...</p>
+          <p className="text-slate-500">Cargando inventario de la unidad...</p>
         </div>
       )}
 
       {inventarioQuery.isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-6">
           <p className="text-red-700">
-            No se pudo obtener el inventario del equipo.
+            No se pudo obtener el inventario de la unidad.
           </p>
           <p className="mt-1 text-sm text-red-600">
             {errorMessage(inventarioQuery.error)}

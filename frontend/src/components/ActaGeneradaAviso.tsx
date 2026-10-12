@@ -51,7 +51,7 @@ export default function ActaGeneradaAviso({
   const equipo = equipoNombre
     ? tipo === 'ENTREGA'
       ? ` hacia ${equipoNombre}`
-      : ` del equipo ${equipoNombre}`
+      : ` de la unidad ${equipoNombre}`
     : ''
   return (
     <div

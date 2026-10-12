@@ -694,7 +694,7 @@ def test_agregar_todo_validaciones(conn):
         "SELECT fn_agregar_todo_seguimiento(%s, %s, 'qa', NULL)",
         (seguimiento_id, otro_equipo),
     )
-    assert "no pertenece al equipo" in msg
+    assert "no pertenece a la unidad" in msg
 
     _uno(conn, "SELECT fn_cerrar_seguimiento(%s, '[]'::jsonb, 'qa', NULL)", (seguimiento_id,))
     msg = _falla(

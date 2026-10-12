@@ -121,7 +121,7 @@ async def assert_equipo_access(
     ).scalar()
     if not es_integrante:
         raise AuthorizationError(
-            "El actor no tiene acceso a este equipo",
+            "El actor no tiene acceso a esta unidad",
             actor=actor_ctx.actor_id,
         )
 

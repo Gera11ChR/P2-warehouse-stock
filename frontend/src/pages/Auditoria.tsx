@@ -51,7 +51,7 @@ export default function Auditoria() {
   const nombreSeccion = (id: number | null): string =>
     secciones.find((s) => s.almacen_id === id)?.nombre ?? `Sección ${id}`
   const nombreEquipo = (id: number | null): string =>
-    equipos.find((e) => e.equipo_id === id)?.nombre ?? `Equipo ${id}`
+    equipos.find((e) => e.equipo_id === id)?.nombre ?? `Unidad ${id}`
 
   const eventos = (eventosQuery.data ?? []).filter((e) => {
     if (!fechaDesde) return true

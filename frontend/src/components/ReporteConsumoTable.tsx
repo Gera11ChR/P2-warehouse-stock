@@ -27,7 +27,7 @@ export default function ReporteConsumoTable({ actas }: { actas: Acta[] }) {
             <th className="px-4 py-2">Acta</th>
             <th className="px-4 py-2">Seguimiento</th>
             <th className="px-4 py-2">Fecha</th>
-            <th className="px-4 py-2">Equipo</th>
+            <th className="px-4 py-2">Unidad</th>
             <th className="px-4 py-2">Material</th>
             <th className="px-4 py-2">Categoría</th>
             <th className="px-4 py-2">U.M.</th>
