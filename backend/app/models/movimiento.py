@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -7,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     text,
@@ -77,6 +79,10 @@ class MovimientoCabecera(Base):
 
 
 class MovimientoDetalle(Base):
+    """Línea de un movimiento. Migración 0027 (RF-6): `cantidad` pasa a
+    NUMERIC(12,3) — cantidades fraccionarias con hasta 3 decimales; el
+    CHECK `cantidad > 0` se conserva."""
+
     __tablename__ = "movimientos_detalle"
     __table_args__ = (
         CheckConstraint("cantidad > 0", name="ck_movimientos_detalle_cantidad"),
@@ -90,7 +96,7 @@ class MovimientoDetalle(Base):
         ForeignKey("catalogo_materiales.id_lista", ondelete="RESTRICT"),
         primary_key=True,
     )
-    cantidad: Mapped[int] = mapped_column(Integer, nullable=False)
+    cantidad: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
     # Sección de ORIGEN de la línea (0026, TEAMS): permite carritos mixtos
     # General + Fibra Óptica. La cabecera guarda el origen común o NULL.
     origen_almacen_id: Mapped[int | None] = mapped_column(

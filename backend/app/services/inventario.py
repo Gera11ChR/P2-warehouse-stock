@@ -34,17 +34,19 @@ async def listar_secciones_transferibles(
     session: AsyncSession,
 ) -> list[dict]:
     """Secciones válidas como origen/destino de movimientos TEAMS/DEVOL
-    (0014, enrutamiento aditivo FO): las secciones GENERAL activas MÁS los
-    manejadores de ruteo FO_PAQUETE/FO_EN_USO (transferibles aunque
-    is_active=FALSE, pues su stock vive en inventario_fibra). Las secciones
-    GENERAL inactivas quedan excluidas. NO altera GET /inventario/secciones
-    (contrato existente: solo GENERAL activa)."""
+    (RF-9, migración 0027): las secciones GENERAL activas MÁS la sección
+    única de ruteo FO "Inventario FO" (transferible aunque is_active=FALSE,
+    pues su stock vive en inventario_fibra). Las secciones legacy
+    FO_PAQUETE/FO_EN_USO NO se emiten (valores históricos del ledger: se
+    leen desde la BD para movimientos previos, pero no son seleccionables).
+    Las secciones GENERAL inactivas quedan excluidas. NO altera
+    GET /inventario/secciones (contrato existente: solo GENERAL activa)."""
     stmt = (
         select(Seccion)
         .where(
             or_(
                 Seccion.is_active == True,  # noqa: E712
-                Seccion.tipo.in_(("FO_PAQUETE", "FO_EN_USO")),
+                Seccion.tipo == "FO",
             )
         )
         .order_by(Seccion.almacen_id.asc())
@@ -80,6 +82,7 @@ async def stock_seccion(
             CatalogoMaterial.descripcion,
             CatalogoMaterial.u_m,
             CatalogoMaterial.stock_minimo,
+            CatalogoMaterial.valor_unitario,
             InventarioAlmacen.stock_actual,
         )
         .join(
@@ -103,6 +106,7 @@ async def stock_seccion(
             u_m=f.u_m,
             stock_minimo=f.stock_minimo,
             stock_actual=f.stock_actual,
+            valor_unitario=f.valor_unitario,
             alerta_stock=(
                 f.stock_actual <= f.stock_minimo
                 if f.stock_minimo is not None

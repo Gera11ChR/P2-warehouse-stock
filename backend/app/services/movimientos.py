@@ -54,9 +54,11 @@ async def _validar_referencias(
             ],
         )
 
-    # Enrutamiento aditivo FO (0014, REQ aprobado): las secciones
-    # FO_PAQUETE/FO_EN_USO son manejadores de ruteo hacia inventario_fibra;
-    # se aceptan aunque is_active=FALSE. Solo las secciones GENERAL exigen
+    # Enrutamiento FO (0027, RF-9): la sección de ruteo única 'FO' y las
+    # secciones legacy FO_PAQUETE/FO_EN_USO referencian el mismo
+    # inventario_fibra unificado; se aceptan aunque is_active=FALSE (un
+    # BORRADOR histórico con origen legacy sigue siendo editable y
+    # confirmable, caso E8). Solo las secciones GENERAL exigen
     # is_active=TRUE. Los mensajes de sección inexistente permanecen
     # idénticos al contrato previo.
     origenes: set[int] = set()

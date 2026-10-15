@@ -292,35 +292,34 @@ async def test_fix_nis_um_dinamica_aceptada_en_alta(
 
 
 async def test_fix_nis_carga_inicial_destino_fo(client: AsyncClient, session) -> None:
-    """REQ-CARGA-002/003 (fix NIS): la SECCIÓN DESTINO de la Carga Inicial
-    admite las raíces FO — el stock inicial se rutea a inventario_fibra
-    (PAQUETE/EN_USO) vía fn_cargar_stock_inicial_fibra, con auditoría
-    inmutable STOCK_INICIAL_FO."""
-    material_paquete = await crear_material(
+    """REQ-CARGA-002/003 (fix NIS, 0027): la SECCIÓN DESTINO de la Carga
+    Inicial admite la raíz FO unificada — el stock inicial se rutea a
+    `inventario_fibra` (una fila por material, RF-1) vía
+    fn_cargar_stock_inicial_fibra, con auditoría inmutable STOCK_INICIAL_FO
+    (sin `modulo`). Las secciones legacy FO_PAQUETE/FO_EN_USO ya NO son
+    destinos de carga inicial."""
+    from tests.helpers.fabrica import inventario_fo, seccion_fo
+
+    fo = await seccion_fo(client)
+    material_a = await crear_material(
         client,
-        descripcion="Material FO Paquete inicial",
+        descripcion="Material FO A inicial",
         stock_inicial=50,
-        seccion_id=2,
+        seccion_id=fo["almacen_id"],
     )
-    material_en_uso = await crear_material(
+    material_b = await crear_material(
         client,
-        descripcion="Material FO En Uso inicial",
+        descripcion="Material FO B inicial",
         stock_inicial=30,
-        seccion_id=3,
+        seccion_id=fo["almacen_id"],
     )
 
-    resp = await client.get("/api/v1/fibra/PAQUETE")
-    assert resp.status_code == 200, resp.text
-    filas = {f["material_id"]: f for f in resp.json()}
-    assert filas[material_paquete["id_lista"]]["stock_actual"] == 50
-
-    resp = await client.get("/api/v1/fibra/EN_USO")
-    assert resp.status_code == 200, resp.text
-    filas = {f["material_id"]: f for f in resp.json()}
-    assert filas[material_en_uso["id_lista"]]["stock_actual"] == 30
+    filas = await inventario_fo(client)
+    assert filas[material_a["id_lista"]]["stock_actual"] == 50
+    assert filas[material_b["id_lista"]]["stock_actual"] == 30
 
     # REQ-CARGA-003: el camino ruteado de crear_material emite la auditoría
-    # STOCK_INICIAL_FO (una por raíz FO) con el módulo en `detalles`.
+    # STOCK_INICIAL_FO (una por material) SIN `modulo` en `detalles`.
     eventos = (
         await session.execute(
             select(AuditoriaEvento).where(
@@ -329,13 +328,9 @@ async def test_fix_nis_carga_inicial_destino_fo(client: AsyncClient, session) ->
         )
     ).scalars().all()
     por_material = {e.material_id: e for e in eventos}
-    assert material_paquete["id_lista"] in por_material
-    assert (
-        por_material[material_paquete["id_lista"]].detalles.get("modulo")
-        == "PAQUETE"
-    )
-    assert material_en_uso["id_lista"] in por_material
-    assert (
-        por_material[material_en_uso["id_lista"]].detalles.get("modulo")
-        == "EN_USO"
-    )
+    assert material_a["id_lista"] in por_material
+    assert "modulo" not in (por_material[material_a["id_lista"]].detalles or {})
+    assert por_material[material_a["id_lista"]].cantidad == 50
+    assert material_b["id_lista"] in por_material
+    assert "modulo" not in (por_material[material_b["id_lista"]].detalles or {})
+    assert por_material[material_b["id_lista"]].cantidad == 30

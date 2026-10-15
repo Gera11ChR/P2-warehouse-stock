@@ -1,4 +1,9 @@
+import math
+from typing import Any
+
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -100,3 +105,39 @@ async def movimiento_state_handler(
     request: Request, exc: MovimientoStateError
 ) -> JSONResponse:
     return JSONResponse(status_code=409, content=exc.to_http_detail())
+
+
+def _sanitizar_floats_no_finitos(valor: Any) -> Any:
+    """Recorre recursivamente el payload de errores de validación y
+    convierte cualquier float no finito (NaN/±Infinity) a su representación
+    de cadena.
+
+    Necesario porque `JSONResponse` serializa con `json.dumps(...,
+    allow_nan=False)`: si el detalle del 422 hiciera eco del `input`
+    inválido (`nan`/`inf`), la serialización lanzaría `ValueError` y el 422
+    exigido por RF-8 se degradaría a 500 (Drift T5-2). Dicts, listas y
+    tuplas se recorren recursivamente; el resto de los tipos y la
+    estructura `{loc, type, msg, input}` se conservan intactos.
+    """
+    if isinstance(valor, float) and not math.isfinite(valor):
+        return str(valor)
+    if isinstance(valor, dict):
+        return {
+            clave: _sanitizar_floats_no_finitos(v) for clave, v in valor.items()
+        }
+    if isinstance(valor, (list, tuple)):
+        return [_sanitizar_floats_no_finitos(v) for v in valor]
+    return valor
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Espejo del handler por defecto de FastAPI (422 con `detail` como
+    lista `{loc, type, msg, input}`), con los valores no finitos
+    sanitizados a cadena ANTES de la serialización JSON para que entradas
+    como `NaN`/`Infinity` respondan 422 con detalle bien formado, nunca
+    500 (RF-8)."""
+    errores = jsonable_encoder(_sanitizar_floats_no_finitos(exc.errors()))
+    return JSONResponse(status_code=422, content={"detail": errores})

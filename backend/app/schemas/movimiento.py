@@ -2,12 +2,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas._tipos import CantidadDecimal, CantidadMovimiento
+
 
 class DetalleLine(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     material_id: int = Field(gt=0, description="Referencia a id_lista inmutable")
-    cantidad: int = Field(gt=0)
+    cantidad: CantidadMovimiento
     # TEAMS (0026): sección de ORIGEN de la línea (Inventario General o Fibra
     # Óptica). Opcional: si se omite, la línea hereda `origen_almacen_id` de
     # la cabecera (payload legado). Prohibido en DEVOL.
@@ -89,7 +91,7 @@ class DetalleOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     material_id: int
-    cantidad: int
+    cantidad: CantidadDecimal
     origen_almacen_id: int | None = None
 
 

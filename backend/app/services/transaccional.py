@@ -8,6 +8,7 @@ Prohibiciones estructurales que este módulo garantiza:
 """
 
 import json
+from decimal import Decimal
 
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
@@ -30,14 +31,15 @@ _SQL_CARGAR_STOCK_INICIAL = text(
 _SQL_AJUSTAR_STOCK_ALMACEN = text(
     "SELECT fn_ajustar_stock_almacen(:almacen_id, :material_id, :nuevo_stock, :motivo)"
 )
+# Firmas 0027 (RF-1): sin `p_modulo` — el Inventario FO es único por material.
 _SQL_CARGAR_STOCK_INICIAL_FIBRA = text(
-    "SELECT fn_cargar_stock_inicial_fibra(:modulo, :material_id, :cantidad, :motivo)"
+    "SELECT fn_cargar_stock_inicial_fibra(:material_id, :cantidad, :motivo)"
 )
 _SQL_AJUSTAR_STOCK_FIBRA = text(
-    "SELECT fn_ajustar_stock_fibra(:modulo, :material_id, :nuevo_stock, :motivo)"
+    "SELECT fn_ajustar_stock_fibra(:material_id, :nuevo_stock, :motivo)"
 )
 _SQL_ELIMINAR_INVENTARIO_FIBRA = text(
-    "SELECT fn_eliminar_inventario_fibra(:modulo, :material_id, :motivo)"
+    "SELECT fn_eliminar_inventario_fibra(:material_id, :motivo)"
 )
 _SQL_AJUSTAR_STOCK_GENERAL = text(
     "SELECT fn_ajustar_stock_general(:material_id, :nuevo_stock, :motivo)"
@@ -54,14 +56,14 @@ _SQL_AGREGAR_TODO_SEGUIMIENTO = text(
     "SELECT fn_agregar_todo_seguimiento("
     ":seguimiento_id, :equipo_id, :usuario, :clave_idempotencia)"
 )
+# Firmas 0027 (RF-1): sin p_modulo / p_origen_modulo / p_destino_modulo.
 _SQL_SUMAR_CANTIDAD = text(
     "SELECT fn_sumar_cantidad("
-    ":destino, :modulo, :material_id, :cantidad, :usuario, :clave_idempotencia)"
+    ":destino, :material_id, :cantidad, :usuario, :clave_idempotencia)"
 )
 _SQL_MOVER_MATERIAL = text(
     "SELECT fn_mover_material("
-    ":origen, :origen_modulo, :destino, :destino_modulo, "
-    ":material_id, :cantidad, :usuario, :clave_idempotencia)"
+    ":origen, :destino, :material_id, :cantidad, :usuario, :clave_idempotencia)"
 )
 # Lectura (solo SELECT) del resultado original de una operación idempotente
 # (REQ-P2-INV-007, ligada al ACTOR desde la migración 0021). La guarda y la
@@ -75,6 +77,14 @@ _SQL_RESULTADO_IDEMPOTENTE = text(
 # confirmada (el router lo traduce a una respuesta 200 con el resultado
 # original; jamás se duplican efectos sobre stock ni auditoría).
 IDEMPOTENT_REPLAY = "IDEMPOTENT_REPLAY"
+
+
+def _dumps_json(valor: object) -> str:
+    """Serializa payloads JSONB de las stored functions convirtiendo
+    `Decimal` a float (exacto para ≤15 dígitos significativos, suficiente
+    para los valores NUMERIC(12,3) del dominio). Solo transporte: cero
+    aritmética de stock en Python."""
+    return json.dumps(valor, default=float)
 
 
 def _sqlstate(exc: DBAPIError) -> str | None:
@@ -379,10 +389,11 @@ async def cargar_stock_inicial(
     *,
     almacen_id: int,
     material_id: int,
-    cantidad: int,
+    cantidad: Decimal,
     motivo: str | None,
 ) -> None:
-    """fn_cargar_stock_inicial: alta única e idempotente de inventario."""
+    """fn_cargar_stock_inicial: alta única e idempotente de inventario.
+    `cantidad` NUMERIC(12,3) (RF-6)."""
     await _prechequear_seccion(session, almacen_id=almacen_id)
     await _prechequear_material(session, material_id=material_id)
     await _ejecutar(
@@ -402,13 +413,13 @@ async def ajustar_stock_almacen(
     *,
     almacen_id: int,
     material_id: int,
-    nuevo_stock: int,
+    nuevo_stock: Decimal,
     motivo: str | None,
 ) -> None:
     """fn_ajustar_stock_almacen: ajuste administrativo. Ergonomía
     `justificacion_opcional` (REQ-ERG-005): motivo opcional (null/vacío
     permitido; el evento AJUSTE_INVENTARIO registra el motivo tal como
-    llega)."""
+    llega). `nuevo_stock` NUMERIC(12,3) (RF-6)."""
     await _prechequear_seccion(session, almacen_id=almacen_id)
     await _prechequear_material(session, material_id=material_id)
     await _ejecutar(
@@ -426,20 +437,19 @@ async def ajustar_stock_almacen(
 async def cargar_stock_inicial_fibra(
     session: AsyncSession,
     *,
-    modulo: str,
     material_id: int,
-    cantidad: int,
+    cantidad: Decimal,
     motivo: str | None,
 ) -> None:
-    """fn_cargar_stock_inicial_fibra: alta única e idempotente de inventario
-    FO (PAQUETE/EN_USO). Rechaza si la fila (modulo, material_id) ya existe
-    y audita 'STOCK_INICIAL_FO' en PostgreSQL."""
+    """fn_cargar_stock_inicial_fibra: alta única e idempotente del Inventario
+    FO unificado (0027, RF-1) — la PK es `material_id` (sin modulo). Rechaza
+    si el material ya tiene fila y audita 'STOCK_INICIAL_FO' en PostgreSQL.
+    `cantidad` NUMERIC(12,3) (RF-6)."""
     await _prechequear_material(session, material_id=material_id)
     await _ejecutar(
         session,
         _SQL_CARGAR_STOCK_INICIAL_FIBRA,
         {
-            "modulo": modulo,
             "material_id": material_id,
             "cantidad": cantidad,
             "motivo": motivo,
@@ -452,23 +462,25 @@ async def cargar_stock_inicial_ruteada(
     *,
     almacen_id: int,
     material_id: int,
-    cantidad: int,
+    cantidad: Decimal,
     motivo: str | None,
 ) -> None:
     """Carga inicial ruteada por tipo de sección (REQ-CARGA-002/003).
 
     Resuelve `seccion.tipo` y despacha a la función del contrato correcta:
 
-      * GENERAL      → `fn_cargar_stock_inicial` (inventario_almacen), con
-                       el pre-chequeo de sección activa de `cargar_stock_inicial`.
-      * FO_PAQUETE   → `fn_cargar_stock_inicial_fibra(modulo='PAQUETE')`
-      * FO_EN_USO    → `fn_cargar_stock_inicial_fibra(modulo='EN_USO')`
+      * GENERAL → `fn_cargar_stock_inicial` (inventario_almacen), con el
+                  pre-chequeo de sección activa de `cargar_stock_inicial`.
+      * FO      → `fn_cargar_stock_inicial_fibra` (Inventario FO unificado).
 
-    EXCEPCIÓN DEL `is_active`: las raíces FO son manijas de ruteo
-    soft-inactivas (no albergan stock propio: su inventario vive en
-    `inventario_fibra`), por lo que NO se les exige `is_active` — solo se
+    EXCEPCIÓN DEL `is_active`: la sección FO es una manija de ruteo
+    soft-inactiva (no alberga stock propio: su inventario vive en
+    `inventario_fibra`), por lo que NO se le exige `is_active` — solo se
     valida su existencia (404). Para GENERAL la exigencia de sección activa
-    permanece íntegra dentro de `cargar_stock_inicial`.
+    permanece íntegra dentro de `cargar_stock_inicial`. Los tipos legacy
+    FO_PAQUETE/FO_EN_USO ya NO son destinos de carga inicial (RF-1: el
+    ruteo histórico desaparece; los movimientos legacy siguen leyéndose de
+    la BD).
 
     CERO aritmética de stock en Python: toda la lógica (unicidad, auditoría
     'STOCK_INICIAL'/'STOCK_INICIAL_FO') vive en PostgreSQL; esta función
@@ -497,11 +509,9 @@ async def cargar_stock_inicial_ruteada(
         )
         return
 
-    if seccion.tipo in ("FO_PAQUETE", "FO_EN_USO"):
-        modulo = "PAQUETE" if seccion.tipo == "FO_PAQUETE" else "EN_USO"
+    if seccion.tipo == "FO":
         await cargar_stock_inicial_fibra(
             session,
-            modulo=modulo,
             material_id=material_id,
             cantidad=cantidad,
             motivo=motivo,
@@ -518,21 +528,21 @@ async def cargar_stock_inicial_ruteada(
 async def ajustar_stock_fibra(
     session: AsyncSession,
     *,
-    modulo: str,
     material_id: int,
-    nuevo_stock: int,
+    nuevo_stock: Decimal,
     motivo: str | None,
 ) -> None:
-    """fn_ajustar_stock_fibra: ajuste administrativo FO. Ergonomía
-    `justificacion_opcional` (REQ-ERG-004/005): motivo opcional (null/vacío
-    permitido). Diferencial, FOR UPDATE y auditoría
-    ('AJUSTE_INVENTARIO_FO') calculados en PostgreSQL."""
+    """fn_ajustar_stock_fibra: ajuste administrativo del Inventario FO
+    unificado (0027, RF-1) — resolución por `material_id` sin modulo.
+    Ergonomía `justificacion_opcional` (REQ-ERG-004/005): motivo opcional
+    (null/vacío permitido). Diferencial, FOR UPDATE y auditoría
+    ('AJUSTE_INVENTARIO_FO') calculados en PostgreSQL.
+    `nuevo_stock` NUMERIC(12,3) (RF-6)."""
     await _prechequear_material(session, material_id=material_id)
     await _ejecutar(
         session,
         _SQL_AJUSTAR_STOCK_FIBRA,
         {
-            "modulo": modulo,
             "material_id": material_id,
             "nuevo_stock": nuevo_stock,
             "motivo": motivo,
@@ -541,7 +551,7 @@ async def ajustar_stock_fibra(
 
 
 async def mapear_error_delete_fibra(
-    exc: DBAPIError, *, modulo: str, material_id: int
+    exc: DBAPIError, *, material_id: int
 ) -> Exception:
     """Mapea errores de base de datos del flujo DELETE FO a respuestas
     controladas — NUNCA un HTTP 500 (REQ-DEL-FIX-002/007, fo_report_1.md):
@@ -558,7 +568,7 @@ async def mapear_error_delete_fibra(
       * Cualquier otro error de BD → 409 controlado con el mensaje de
         PostgreSQL (fallback fail-closed, jamás 500)."""
     sqlstate = _sqlstate(exc)
-    coordinates = [{"modulo": modulo, "material_id": material_id}]
+    coordinates = [{"material_id": material_id}]
     if sqlstate in ("23503", "23001"):
         return BusinessRuleError(
             "No se puede eliminar porque existen movimientos o "
@@ -587,19 +597,16 @@ async def mapear_error_delete_fibra(
 async def eliminar_inventario_fibra(
     session: AsyncSession,
     *,
-    modulo: str,
     material_id: int,
     motivo: str | None,
     actor: str,
 ) -> None:
-    """fn_eliminar_inventario_fibra: eliminación física de la fila
-    (modulo, material_id) de `inventario_fibra` (REQ-DEL-001/002/003/004).
-
-    Solo se elimina la fila del módulo indicado: `catalogo_materiales`, el
-    inventario del otro módulo FO y el Inventario General permanecen
-    intactos (aislamiento por módulo). El evento 'ELIMINACION_FO' con
-    snapshot completo jsonb (modulo, material_id, stock_eliminado, motivo,
-    usuario, fecha) lo inserta la función en PostgreSQL.
+    """fn_eliminar_inventario_fibra: eliminación física de la fila del
+    material en el Inventario FO unificado (0027, RF-1) — sin modulo.
+    `catalogo_materiales` y el Inventario General permanecen intactos
+    (REQ-DEL-003). El evento 'ELIMINACION_FO' con snapshot completo jsonb
+    (material_id, stock_eliminado, motivo, usuario, fecha) lo inserta la
+    función en PostgreSQL.
 
     Atribución del actor vía `set_config('app.actor', ...)` dentro de la
     MISMA transacción, espejo del patrón `_set_actor` de
@@ -626,7 +633,6 @@ async def eliminar_inventario_fibra(
         await session.execute(
             _SQL_ELIMINAR_INVENTARIO_FIBRA,
             {
-                "modulo": modulo,
                 "material_id": material_id,
                 "motivo": motivo,
             },
@@ -637,7 +643,7 @@ async def eliminar_inventario_fibra(
             # 404 fila inexistente / 422 motivo obligatorio (REQ-DEL-002/004).
             raise await _mapear_raise_exception(exc) from exc
         raise await mapear_error_delete_fibra(
-            exc, modulo=modulo, material_id=material_id
+            exc, material_id=material_id
         ) from exc
 
 
@@ -645,14 +651,15 @@ async def ajustar_stock_general(
     session: AsyncSession,
     *,
     material_id: int,
-    nuevo_stock: int,
+    nuevo_stock: Decimal,
     motivo: str | None,
 ) -> None:
     """fn_ajustar_stock_general: edición de stock desde Inventario General
     (REQ-API-002/003). Localiza en PostgreSQL la fila del material en la
     sección GENERAL activa y delega en fn_ajustar_stock_almacen: el
     diferencial y la auditoría viven íntegros en la base de datos.
-    Ergonomía `justificacion_opcional` (REQ-ERG-003): motivo opcional."""
+    Ergonomía `justificacion_opcional` (REQ-ERG-003): motivo opcional.
+    `nuevo_stock` NUMERIC(12,3) (RF-6)."""
     await _prechequear_material(session, material_id=material_id)
     await _ejecutar(
         session,
@@ -687,7 +694,7 @@ async def crear_seguimiento(
         {
             "equipo_id": equipo_id,
             "observaciones": observaciones,
-            "items": json.dumps(items),
+            "items": _dumps_json(items),
             "usuario": usuario,
         },
         scalar=True,
@@ -716,7 +723,7 @@ async def cerrar_seguimiento(
         _SQL_CERRAR_SEGUIMIENTO,
         {
             "seguimiento_id": seguimiento_id,
-            "consumidos": json.dumps(consumidos),
+            "consumidos": _dumps_json(consumidos),
             "usuario": usuario,
             "observaciones_cierre": observaciones_cierre,
         },
@@ -766,21 +773,20 @@ async def sumar_cantidad(
     session: AsyncSession,
     *,
     destino: str,
-    modulo: str | None,
     material_id: int,
-    cantidad: int,
+    cantidad: Decimal,
     usuario: str,
     clave_idempotencia: str | None,
-) -> int:
+) -> Decimal:
     """fn_sumar_cantidad (+Cantidad): suma directa al stock actual y evento
     inmutable 'SUMA_CANTIDAD' en una única transacción PostgreSQL. Devuelve
-    el nuevo stock calculado por la función. CERO aritmética en Python."""
+    el nuevo stock calculado por la función (NUMERIC(12,3) → Decimal).
+    CERO aritmética en Python. Firmas 0027: sin `modulo` (RF-1)."""
     return await _ejecutar(
         session,
         _SQL_SUMAR_CANTIDAD,
         {
             "destino": destino,
-            "modulo": modulo,
             "material_id": material_id,
             "cantidad": cantidad,
             "usuario": usuario,
@@ -794,26 +800,23 @@ async def mover_material(
     session: AsyncSession,
     *,
     origen: str,
-    origen_modulo: str | None,
     destino: str,
-    destino_modulo: str | None,
     material_id: int,
-    cantidad: int,
+    cantidad: Decimal,
     usuario: str,
     clave_idempotencia: str | None,
 ) -> dict:
     """fn_mover_material (Mover): descuento del origen, acreditación del
     destino y evento inmutable 'MOVIMIENTO_INVENTARIO' atómicos en
     PostgreSQL. Devuelve {"stock_origen", "stock_destino"} calculados por
-    la función. CERO aritmética en Python."""
+    la función (NUMERIC(12,3) → Decimal). CERO aritmética en Python.
+    Firmas 0027: sin `origen_modulo`/`destino_modulo` (RF-1)."""
     return await _ejecutar(
         session,
         _SQL_MOVER_MATERIAL,
         {
             "origen": origen,
-            "origen_modulo": origen_modulo,
             "destino": destino,
-            "destino_modulo": destino_modulo,
             "material_id": material_id,
             "cantidad": cantidad,
             "usuario": usuario,

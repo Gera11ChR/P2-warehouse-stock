@@ -158,6 +158,7 @@ async def inventario_equipo(
             CatalogoMaterial.descripcion,
             CatalogoMaterial.u_m,
             CatalogoMaterial.stock_minimo,
+            CatalogoMaterial.valor_unitario,
             InventarioEquipo.stock_actual,
             InventarioEquipo.ultimo_movimiento_id,
             EquipoMaterialConfig.stock_minimo_local,
@@ -200,6 +201,7 @@ async def inventario_equipo(
             u_m=f.u_m,
             stock_minimo=f.stock_minimo,
             stock_actual=f.stock_actual,
+            valor_unitario=f.valor_unitario,
             alerta_stock=(
                 f.stock_actual <= f.stock_minimo_efectivo
                 if f.stock_minimo_efectivo is not None

@@ -5,19 +5,11 @@ lo descuenta directamente del inventario de la unidad. Cubre RF-2..RF-13
 (REQ-CONSUMO-002..013). El concepto "Sobrante" deja de existir.
 """
 
-import os
-import subprocess
-import sys
-from pathlib import Path
-
-import psycopg
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select, text
-from sqlalchemy.engine import make_url
 
 from app.models import ActaReporte, AuditoriaEvento
-from tests.conftest import ADMIN_DB_URL
 from tests.helpers.fabrica import (
     borrador_teams,
     carga_inicial,
@@ -26,8 +18,7 @@ from tests.helpers.fabrica import (
     inventario_equipo,
     procesar,
 )
-
-BACKEND_DIR = Path(__file__).resolve().parents[1]
+from tests.helpers.migraciones import alembic, esquema_en, sql
 
 
 async def _unidad_con_stock(
@@ -419,79 +410,62 @@ async def test_REQ_CONSUMO_013_openapi_contrato_nuevo(client: AsyncClient) -> No
     assert "cantidad_sobrante" not in comps["ActaItemOut"]["properties"]
 
 
-# ── RF-11: migración 0025 con backfill (BD aparte) ────────────────────────
-
-
-def _alembic(url: str, *args: str) -> None:
-    env = {**os.environ, "P2_DATABASE_URL": url}
-    r = subprocess.run(
-        [sys.executable, "-m", "alembic", *args],
-        cwd=BACKEND_DIR, env=env, capture_output=True, text=True,
-    )
-    assert r.returncode == 0, r.stderr[-2000:]
+# ── RF-11: migración 0025 con backfill (IN-PLACE sobre p2_test) ───────────
+# p2admin (rol QA) carece de CREATEDB: la prueba degrada p2_test a 0024,
+# siembra seguimientos con `cantidad_sobrante`, sube a 0025 y valida el
+# backfill de `cantidad_consumida`; `esquema_en` restaura SIEMPRE la cabeza.
 
 
 def test_REQ_CONSUMO_011_migracion_backfill_y_downgrade() -> None:
-    admin = make_url(ADMIN_DB_URL)
-    nombre = "p2_mig_test"
-    mig_psy = admin.set(database=nombre).render_as_string(hide_password=False)
-    mig_sa = admin.set(
-        drivername="postgresql+psycopg", database=nombre
-    ).render_as_string(hide_password=False)
-    with psycopg.connect(ADMIN_DB_URL, autocommit=True) as c:
-        c.execute(f"DROP DATABASE IF EXISTS {nombre}")
-        c.execute(f"CREATE DATABASE {nombre}")
-    try:
-        _alembic(mig_sa, "upgrade", "0024")
-        with psycopg.connect(mig_psy, autocommit=True) as c:
-            c.execute("INSERT INTO categorias (nombre) VALUES ('c')")
-            mat = c.execute(
-                "INSERT INTO catalogo_materiales (codigo, descripcion, u_m) "
-                "VALUES ('M1','Mat','PZ') RETURNING id_lista"
-            ).fetchone()[0]
-            c.execute("INSERT INTO equipos (nombre) VALUES ('U')")
-            eq = c.execute("SELECT equipo_id FROM equipos").fetchone()[0]
-            c.execute(
-                "INSERT INTO seguimientos (equipo_id, fecha, usuario, estado) "
-                "VALUES (%s, CURRENT_DATE, 'qa', 'CERRADA')", (eq,)
+    with esquema_en("0024"):
+        sql("INSERT INTO categorias (nombre) VALUES ('c')")
+        mat = sql(
+            "INSERT INTO catalogo_materiales (codigo, descripcion, u_m) "
+            "VALUES ('M1','Mat','PZ') RETURNING id_lista"
+        )[0][0]
+        sql("INSERT INTO equipos (nombre) VALUES ('U')")
+        eq = sql("SELECT equipo_id FROM equipos")[0][0]
+        sql(
+            "INSERT INTO seguimientos (equipo_id, fecha, usuario, estado) "
+            "VALUES (%s, CURRENT_DATE, 'qa', 'CERRADA')",
+            (eq,),
+        )
+        s1 = sql("SELECT max(id) FROM seguimientos")[0][0]
+        sql(
+            "INSERT INTO seguimiento_items (seguimiento_id, material_id, "
+            "cantidad_tomada, cantidad_sobrante) VALUES (%s,%s,20,5)",
+            (s1, mat),
+        )
+        m2 = sql(
+            "INSERT INTO catalogo_materiales (codigo, descripcion, u_m) "
+            "VALUES ('M2','Mat2','PZ') RETURNING id_lista"
+        )[0][0]
+        sql(
+            "INSERT INTO seguimientos (equipo_id, fecha, usuario, estado) "
+            "VALUES (%s, CURRENT_DATE, 'qa', 'ABIERTA')",
+            (eq,),
+        )
+        s2 = sql("SELECT max(id) FROM seguimientos")[0][0]
+        sql(
+            "INSERT INTO seguimiento_items (seguimiento_id, material_id, "
+            "cantidad_tomada) VALUES (%s,%s,7)",
+            (s2, m2),
+        )
+        alembic("upgrade", "0025")
+        filas = dict(
+            sql(
+                "SELECT cantidad_tomada, cantidad_consumida "
+                "FROM seguimiento_items"
             )
-            s1 = c.execute("SELECT max(id) FROM seguimientos").fetchone()[0]
-            c.execute(
-                "INSERT INTO seguimiento_items (seguimiento_id, material_id, "
-                "cantidad_tomada, cantidad_sobrante) VALUES (%s,%s,20,5)", (s1, mat)
+        )
+        assert filas == {20: 15, 7: None}  # cerrado migrado; abierto NULL
+        alembic("downgrade", "0024")
+        filas = {
+            r[0]: (r[1], r[2])
+            for r in sql(
+                "SELECT cantidad_tomada, cantidad_sobrante, "
+                "cantidad_consumida FROM seguimiento_items"
             )
-            m2 = c.execute(
-                "INSERT INTO catalogo_materiales (codigo, descripcion, u_m) "
-                "VALUES ('M2','Mat2','PZ') RETURNING id_lista"
-            ).fetchone()[0]
-            c.execute(
-                "INSERT INTO seguimientos (equipo_id, fecha, usuario, estado) "
-                "VALUES (%s, CURRENT_DATE, 'qa', 'ABIERTA')", (eq,)
-            )
-            s2 = c.execute("SELECT max(id) FROM seguimientos").fetchone()[0]
-            c.execute(
-                "INSERT INTO seguimiento_items (seguimiento_id, material_id, "
-                "cantidad_tomada) VALUES (%s,%s,7)", (s2, m2)
-            )
-        _alembic(mig_sa, "upgrade", "0025")
-        with psycopg.connect(mig_psy, autocommit=True) as c:
-            filas = dict(
-                c.execute(
-                    "SELECT cantidad_tomada, cantidad_consumida FROM seguimiento_items"
-                ).fetchall()
-            )
-            assert filas == {20: 15, 7: None}  # cerrado migrado; abierto NULL
-        _alembic(mig_sa, "downgrade", "0024")
-        with psycopg.connect(mig_psy, autocommit=True) as c:
-            filas = {
-                r[0]: (r[1], r[2])
-                for r in c.execute(
-                    "SELECT cantidad_tomada, cantidad_sobrante, cantidad_consumida "
-                    "FROM seguimiento_items"
-                ).fetchall()
-            }
-            assert filas == {20: (5, 15), 7: (None, None)}
-        _alembic(mig_sa, "upgrade", "0025")
-    finally:
-        with psycopg.connect(ADMIN_DB_URL, autocommit=True) as c:
-            c.execute(f"DROP DATABASE IF EXISTS {nombre} WITH (FORCE)")
+        }
+        assert filas == {20: (5, 15), 7: (None, None)}
+        alembic("upgrade", "0025")

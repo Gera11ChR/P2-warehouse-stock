@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
@@ -7,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -162,7 +164,9 @@ class SeguimientoItem(Base):
         ForeignKey("catalogo_materiales.id_lista", ondelete="RESTRICT"),
         nullable=False,
     )
-    cantidad_tomada: Mapped[int] = mapped_column(Integer, nullable=False)
-    cantidad_consumida: Mapped[int | None] = mapped_column(Integer)
+    # Migración 0027 (RF-6): cantidades NUMERIC(12,3); los CHECK existentes
+    # (`tomada > 0`, `0 <= consumida <= tomada`) se conservan.
+    cantidad_tomada: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    cantidad_consumida: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
 
     seguimiento: Mapped["Seguimiento"] = relationship(back_populates="items")

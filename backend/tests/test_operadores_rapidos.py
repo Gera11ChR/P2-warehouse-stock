@@ -32,8 +32,9 @@ SUMAR = "/api/v1/inventario/sumar-cantidad"
 MOVER = "/api/v1/inventario/mover"
 
 
-async def _stock_fibra(client: AsyncClient, modulo: str) -> dict[int, int]:
-    resp = await client.get(f"/api/v1/fibra/{modulo}")
+async def _stock_fibra(client: AsyncClient) -> dict[int, int]:
+    """Stock del Inventario FO unificado vía GET /fibra (RF-1, sin modulo)."""
+    resp = await client.get("/api/v1/fibra")
     assert resp.status_code == 200, resp.text
     return {f["material_id"]: f["stock_actual"] for f in resp.json()}
 
@@ -81,25 +82,26 @@ async def test_REQ_P2_INV_001_sumar_cantidad_general_3_mas_50_igual_53(
     assert await _eventos(session, "AJUSTE_INVENTARIO") == []
 
 
-@pytest.mark.parametrize("modulo", ["PAQUETE", "EN_USO"])
 async def test_sumar_cantidad_fibra_optica(
-    client: AsyncClient, session, modulo: str
+    client: AsyncClient, session
 ) -> None:
-    m = await crear_material(client, descripcion=f"FO {modulo}")
-    await fibra_carga_inicial(client, modulo=modulo, material_id=m["id_lista"], cantidad=3)
+    """RF-1: +Cantidad sobre el Inventario FO unificado (destino FO, SIN
+    campos de módulo): la suma, la auditoría SUMA_CANTIDAD y la respuesta
+    viven en PostgreSQL (fn_sumar_cantidad, firma 0027)."""
+    m = await crear_material(client, descripcion="FO unificado")
+    await fibra_carga_inicial(client, material_id=m["id_lista"], cantidad=3)
 
     resp = await client.post(
         SUMAR,
         json={
             "destino": "FO",
-            "modulo": modulo,
             "material_id": m["id_lista"],
             "cantidad": 50,
         },
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["stock_nuevo"] == 53
-    assert (await _stock_fibra(client, modulo))[m["id_lista"]] == 53
+    assert (await _stock_fibra(client))[m["id_lista"]] == 53
     assert len(await _eventos(session, "SUMA_CANTIDAD")) == 1
 
 
@@ -138,7 +140,7 @@ async def test_sumar_cantidad_sin_registro_de_inventario_404(
     assert resp.status_code == 404, resp.text
     resp = await client.post(
         SUMAR,
-        json={"destino": "FO", "modulo": "PAQUETE", "material_id": m["id_lista"], "cantidad": 1},
+        json={"destino": "FO", "material_id": m["id_lista"], "cantidad": 1},
     )
     assert resp.status_code == 404, resp.text
 
@@ -146,7 +148,8 @@ async def test_sumar_cantidad_sin_registro_de_inventario_404(
 @pytest.mark.parametrize(
     "payload",
     [
-        {"destino": "FO", "material_id": 1, "cantidad": 1},  # FO sin módulo
+        # RF-1: `modulo` es un campo prohibido (extra_forbid) en el contrato 0027.
+        {"destino": "FO", "modulo": "PAQUETE", "material_id": 1, "cantidad": 1},
         {"destino": "GENERAL", "modulo": "PAQUETE", "material_id": 1, "cantidad": 1},
         {"destino": "OTRO", "material_id": 1, "cantidad": 1},
         {"destino": "GENERAL", "material_id": 1, "cantidad": 1, "stock": 9},
@@ -210,6 +213,9 @@ async def test_clave_distinta_si_aplica_nueva_suma(client: AsyncClient) -> None:
 async def test_REQ_P2_INV_003_mover_general_a_fo_cantidad_parcial(
     client: AsyncClient, session
 ) -> None:
+    """RF-1: Mover General → Inventario FO (cantidad parcial) SIN campos de
+    módulo; descuento/acreditación y auditoría MOVIMIENTO_INVENTARIO viven
+    en PostgreSQL (fn_mover_material, firma 0027)."""
     m = await crear_material(client, descripcion="Mover parcial")
     await carga_inicial(client, material_id=m["id_lista"], cantidad=10)
 
@@ -218,7 +224,6 @@ async def test_REQ_P2_INV_003_mover_general_a_fo_cantidad_parcial(
         json={
             "origen": "GENERAL",
             "destino": "FO",
-            "destino_modulo": "PAQUETE",
             "material_id": m["id_lista"],
             "cantidad": 4,
         },
@@ -227,7 +232,7 @@ async def test_REQ_P2_INV_003_mover_general_a_fo_cantidad_parcial(
     body = resp.json()
     assert (body["stock_origen"], body["stock_destino"]) == (6, 4)
     assert (await stock_seccion(client, ALMACEN_GENERAL))[m["id_lista"]] == 6
-    assert (await _stock_fibra(client, "PAQUETE"))[m["id_lista"]] == 4
+    assert (await _stock_fibra(client))[m["id_lista"]] == 4
 
     eventos = await _eventos(session, "MOVIMIENTO_INVENTARIO")
     assert len(eventos) == 1
@@ -236,17 +241,19 @@ async def test_REQ_P2_INV_003_mover_general_a_fo_cantidad_parcial(
     assert eventos[0]["detalles"]["stock_destino_despues"] == 4
 
 
-async def test_mover_fo_a_general_y_entre_modulos_fo(client: AsyncClient) -> None:
+async def test_mover_fo_a_general_y_retorno(client: AsyncClient) -> None:
+    """RF-1: Mover FO → GENERAL acumula sobre la fila existente; un Mover
+    posterior GENERAL → FO devuelve el stock al Inventario FO unificado
+    (una sola fila por material, sin módulos intermedios)."""
     m = await crear_material(client, descripcion="Mover FO")
     await carga_inicial(client, material_id=m["id_lista"], cantidad=2)
-    await fibra_carga_inicial(client, modulo="PAQUETE", material_id=m["id_lista"], cantidad=9)
+    await fibra_carga_inicial(client, material_id=m["id_lista"], cantidad=9)
 
-    # FO PAQUETE -> GENERAL (acumula sobre la fila existente).
+    # FO -> GENERAL (acumula sobre la fila existente).
     resp = await client.post(
         MOVER,
         json={
             "origen": "FO",
-            "origen_modulo": "PAQUETE",
             "destino": "GENERAL",
             "material_id": m["id_lista"],
             "cantidad": 5,
@@ -255,22 +262,20 @@ async def test_mover_fo_a_general_y_entre_modulos_fo(client: AsyncClient) -> Non
     assert resp.status_code == 200, resp.text
     assert (resp.json()["stock_origen"], resp.json()["stock_destino"]) == (4, 7)
 
-    # FO PAQUETE -> FO EN_USO (la fila destino se crea con stock > 0).
+    # GENERAL -> FO de regreso (misma fila unificada).
     resp = await client.post(
         MOVER,
         json={
-            "origen": "FO",
-            "origen_modulo": "PAQUETE",
+            "origen": "GENERAL",
             "destino": "FO",
-            "destino_modulo": "EN_USO",
             "material_id": m["id_lista"],
             "cantidad": 4,
         },
     )
     assert resp.status_code == 200, resp.text
-    assert (await _stock_fibra(client, "EN_USO"))[m["id_lista"]] == 4
-    # Semántica dispersa: la fila origen llegó a 0 y se CONSERVA.
-    assert (await _stock_fibra(client, "PAQUETE"))[m["id_lista"]] == 0
+    assert (await _stock_fibra(client))[m["id_lista"]] == 8
+    # Semántica dispersa: la fila General baja a 3 y se CONSERVA.
+    assert (await stock_seccion(client, ALMACEN_GENERAL))[m["id_lista"]] == 3
 
 
 async def test_mover_stock_insuficiente_400_atomico(
@@ -284,7 +289,6 @@ async def test_mover_stock_insuficiente_400_atomico(
         json={
             "origen": "GENERAL",
             "destino": "FO",
-            "destino_modulo": "PAQUETE",
             "material_id": m["id_lista"],
             "cantidad": 4,
         },
@@ -292,7 +296,7 @@ async def test_mover_stock_insuficiente_400_atomico(
     assert resp.status_code == 400, resp.text
     # Ningún inventario (origen ni destino) queda modificado.
     assert (await stock_seccion(client, ALMACEN_GENERAL))[m["id_lista"]] == 3
-    assert m["id_lista"] not in await _stock_fibra(client, "PAQUETE")
+    assert m["id_lista"] not in await _stock_fibra(client)
     assert await _eventos(session, "MOVIMIENTO_INVENTARIO") == []
 
 
@@ -307,7 +311,6 @@ async def test_mover_cantidad_cero_o_negativa_400(
         json={
             "origen": "GENERAL",
             "destino": "FO",
-            "destino_modulo": "PAQUETE",
             "material_id": m["id_lista"],
             "cantidad": cantidad,
         },
@@ -319,25 +322,22 @@ async def test_mover_cantidad_cero_o_negativa_400(
 async def test_mover_destino_igual_al_origen_422_sin_efectos(
     client: AsyncClient, session
 ) -> None:
+    """RF-1: origen == destino (GENERAL→GENERAL y FO→FO) es rechazado por
+    fn_mover_material (422, regla de PostgreSQL) sin efectos."""
     m = await crear_material(client, descripcion="Mover igual")
     await carga_inicial(client, material_id=m["id_lista"], cantidad=5)
-    await fibra_carga_inicial(client, modulo="PAQUETE", material_id=m["id_lista"], cantidad=5)
+    await fibra_carga_inicial(client, material_id=m["id_lista"], cantidad=5)
 
     for payload in (
         {"origen": "GENERAL", "destino": "GENERAL"},
-        {
-            "origen": "FO",
-            "origen_modulo": "PAQUETE",
-            "destino": "FO",
-            "destino_modulo": "PAQUETE",
-        },
+        {"origen": "FO", "destino": "FO"},
     ):
         resp = await client.post(
             MOVER, json={**payload, "material_id": m["id_lista"], "cantidad": 1}
         )
         assert resp.status_code == 422, resp.text
     assert (await stock_seccion(client, ALMACEN_GENERAL))[m["id_lista"]] == 5
-    assert (await _stock_fibra(client, "PAQUETE"))[m["id_lista"]] == 5
+    assert (await _stock_fibra(client))[m["id_lista"]] == 5
     assert await _eventos(session, "MOVIMIENTO_INVENTARIO") == []
 
 
@@ -348,7 +348,6 @@ async def test_mover_origen_sin_registro_404(client: AsyncClient) -> None:
         json={
             "origen": "GENERAL",
             "destino": "FO",
-            "destino_modulo": "PAQUETE",
             "material_id": m["id_lista"],
             "cantidad": 1,
         },
@@ -359,9 +358,11 @@ async def test_mover_origen_sin_registro_404(client: AsyncClient) -> None:
 @pytest.mark.parametrize(
     "payload",
     [
-        {"origen": "FO", "destino": "GENERAL"},  # origen FO sin módulo
-        {"origen": "GENERAL", "destino": "FO"},  # destino FO sin módulo
-        {"origen": "GENERAL", "origen_modulo": "PAQUETE", "destino": "FO", "destino_modulo": "EN_USO"},
+        # RF-1: los campos de módulo (origen_modulo/destino_modulo) ya no
+        # existen en el contrato — enviarlos → 422 (extra_forbid).
+        {"origen": "FO", "destino": "GENERAL", "origen_modulo": "PAQUETE"},
+        {"origen": "GENERAL", "destino": "FO", "destino_modulo": "EN_USO"},
+        {"origen": "GENERAL", "destino": "FO", "destino_modulo": "PAQUETE"},
     ],
 )
 async def test_mover_payload_invalido_422(client: AsyncClient, payload: dict) -> None:
@@ -378,7 +379,6 @@ async def test_REQ_P2_INV_007_mover_reenvio_idempotente(
     payload = {
         "origen": "GENERAL",
         "destino": "FO",
-        "destino_modulo": "EN_USO",
         "material_id": m["id_lista"],
         "cantidad": 4,
         "clave_idempotencia": "mover-001",
@@ -392,7 +392,7 @@ async def test_REQ_P2_INV_007_mover_reenvio_idempotente(
     for r in (primera, segunda):
         assert (r.json()["stock_origen"], r.json()["stock_destino"]) == (6, 4)
     assert (await stock_seccion(client, ALMACEN_GENERAL))[m["id_lista"]] == 6
-    assert (await _stock_fibra(client, "EN_USO"))[m["id_lista"]] == 4
+    assert (await _stock_fibra(client))[m["id_lista"]] == 4
     assert len(await _eventos(session, "MOVIMIENTO_INVENTARIO")) == 1
 
 
@@ -563,7 +563,7 @@ async def test_clave_idempotencia_no_se_persiste_en_auditoria(
     ),
     (
         MOVER,
-        {"origen": "GENERAL", "destino": "FO", "destino_modulo": "PAQUETE",
+        {"origen": "GENERAL", "destino": "FO",
          "material_id": 0, "cantidad": 5},
         "mover-cruzada",
     ),
@@ -644,7 +644,6 @@ async def test_scope_general_sin_alcance_sobre_seccion_implicada_403(
             json={
                 "origen": "GENERAL",
                 "destino": "FO",
-                "destino_modulo": "PAQUETE",
                 "material_id": m["id_lista"],
                 "cantidad": 1,
             },
@@ -659,17 +658,18 @@ async def test_scope_general_sin_alcance_sobre_seccion_implicada_403(
 
 
 @pytest.mark.parametrize("ruta", [SUMAR, MOVER])
-async def test_cantidad_fuera_de_rango_int4_422(
+async def test_cantidad_fuera_de_rango_422(
     client: AsyncClient, ruta: str
 ) -> None:
-    """M-3: cantidades que desbordan INT4 se rechazan en Pydantic (422)."""
+    """M-3 (0027): cantidades que desbordan la cota decimal NUMERIC(12,3)
+    — máximo `999 999 999.999` — se rechazan en Pydantic (422) antes de
+    llegar a PostgreSQL (RF-6/RF-8: desbordamiento API → 422)."""
     payload = (
         {"destino": "GENERAL", "material_id": 1, "cantidad": 2**31}
         if ruta == SUMAR
         else {
             "origen": "GENERAL",
             "destino": "FO",
-            "destino_modulo": "PAQUETE",
             "material_id": 1,
             "cantidad": 2**31,
         }

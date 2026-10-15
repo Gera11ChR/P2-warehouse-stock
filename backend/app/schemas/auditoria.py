@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from app.schemas._tipos import CantidadDecimal
+
 
 class AuditoriaOut(BaseModel):
     """Evento inmutable del ledger de Auditoría (Constitution 2.4/6.2).
@@ -11,7 +13,8 @@ class AuditoriaOut(BaseModel):
     (REQ-API-008): los eventos históricos de materiales desactivados
     permanecen íntegros y legibles, jamás se ocultan ni se mutan.
     `estado_activo` solo permite al frontend renderizar una etiqueta
-    visual discreta `[Inactivo]` (REQ-UI-006)."""
+    visual discreta `[Inactivo]` (REQ-UI-006). `cantidad` es decimal
+    (NUMERIC(12,3), RF-6) — solo lectura del ledger."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -23,7 +26,7 @@ class AuditoriaOut(BaseModel):
     equipo_destino_id: int | None
     almacen_origen_id: int | None
     almacen_destino_id: int | None
-    cantidad: int | None
+    cantidad: CantidadDecimal | None
     resultado: str | None
     detalles: dict | None
     created_at: datetime

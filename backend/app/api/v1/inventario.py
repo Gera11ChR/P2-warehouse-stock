@@ -1,12 +1,13 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.errors import BusinessRuleError
 from app.schemas.inventario import (
+    ResumenGeneralOut,
     SeccionOut,
     SeccionStockOut,
     SeccionTransferibleOut,
@@ -40,9 +41,9 @@ async def _asegurar_scope_general(
 ) -> None:
     """SEC-002 (A-3, dictamen sec-ops): default-deny sobre las secciones
     GENERAL activas implicadas en `+Cantidad` y `Mover`. El administrador
-    recibe pase directo. Los módulos FO no tienen sección de alcance en el
+    recibe pase directo. El Inventario FO no tiene sección de alcance en el
     modelo de scopes (espejo de la postura de los endpoints de fibra) y
-    quedan cubiertos por `assert_authenticated`."""
+    queda cubierto por `assert_authenticated`."""
     if actor_ctx.es_admin:
         return
     filas = (
@@ -118,13 +119,34 @@ async def list_secciones(
 async def secciones_transferibles(
     session: SessionDep, _actor: ActorDep
 ) -> list[SeccionTransferibleOut]:
-    """Secciones válidas como origen/destino de movimientos TEAMS/DEVOL:
-    GENERAL activas + manejadores de ruteo FO (transferibles aunque
-    inactivos). No altera el contrato de GET /secciones."""
+    """Secciones válidas como origen/destino de movimientos TEAMS/DEVOL
+    (RF-9): GENERAL activas + la sección única de ruteo FO (transferible
+    aunque inactiva). Las secciones legacy FO_PAQUETE/FO_EN_USO NO se
+    emiten. No altera el contrato de GET /secciones."""
     return [
         SeccionTransferibleOut(**s)
         for s in await inventario.listar_secciones_transferibles(session)
     ]
+
+
+@router.get("/resumen-general", response_model=ResumenGeneralOut)
+async def resumen_general(
+    session: SessionDep, actor_ctx: ActorDep
+) -> ResumenGeneralOut:
+    """Valor Total del inventario (RF-4): suma de Stock Actual × Valor
+    Unitario sobre los materiales activos del Inventario General (secciones
+    GENERAL activas) y del Inventario FO, calculado por PostgreSQL con
+    aritmética NUMERIC exacta y redondeo a 3 decimales solo al final
+    (`fn_valor_total_inventario`). SOLO LECTURA — sin escritura y sin
+    cálculo en Python.
+
+    Default-deny (RF-8): exige actor autenticado. Inventario vacío → 0
+    (nunca null ni error)."""
+    assert_authenticated(actor_ctx)
+    valor_total = (
+        await session.execute(select(func.fn_valor_total_inventario()))
+    ).scalar_one()
+    return ResumenGeneralOut(valor_total=valor_total, moneda="MXN")
 
 
 @router.get("/secciones/{almacen_id}", response_model=list[SeccionStockOut])
@@ -148,7 +170,8 @@ async def sumar_cantidad(
     actor_ctx: ActorDep,
 ) -> SumarCantidadOut:
     """`+Cantidad`: suma directa al stock actual del material (Inventario
-    General o módulos FO), SIN pasar por el flujo de transferencia.
+    General o Inventario FO), SIN pasar por el flujo de transferencia.
+    Sin campos de módulo (RF-1); cantidad decimal (RF-6).
 
     Delegado 100 % a `fn_sumar_cantidad`: la suma, la validación (cantidad
     > 0, material activo, registro existente) y el evento inmutable
@@ -164,7 +187,6 @@ async def sumar_cantidad(
         nuevo = await transaccional.sumar_cantidad(
             session,
             destino=payload.destino,
-            modulo=payload.modulo,
             material_id=payload.material_id,
             cantidad=payload.cantidad,
             usuario=actor_ctx.actor_id,
@@ -182,7 +204,6 @@ async def sumar_cantidad(
     )
     return SumarCantidadOut(
         destino=payload.destino,
-        modulo=payload.modulo,
         material_id=payload.material_id,
         stock_nuevo=resultado["stock_nuevo"],
         reenvio_idempotente=reenvio,
@@ -195,8 +216,9 @@ async def mover_material(
     session: SessionDep,
     actor_ctx: ActorDep,
 ) -> MoverMaterialOut:
-    """`Mover`: transferencia directa entre Inventario General y módulos FO
-    (cantidad parcial), sin la lógica de TEAMS/DEVOL.
+    """`Mover`: transferencia directa entre Inventario General e Inventario
+    FO (cantidad parcial), sin la lógica de TEAMS/DEVOL. Sin campos de
+    módulo (RF-1); cantidad decimal (RF-6).
 
     Delegado 100 % a `fn_mover_material`: descuento del origen,
     acreditación del destino (fila creada solo con stock > 0) y evento
@@ -213,9 +235,7 @@ async def mover_material(
         return await transaccional.mover_material(
             session,
             origen=payload.origen,
-            origen_modulo=payload.origen_modulo,
             destino=payload.destino,
-            destino_modulo=payload.destino_modulo,
             material_id=payload.material_id,
             cantidad=payload.cantidad,
             usuario=actor_ctx.actor_id,
@@ -233,9 +253,7 @@ async def mover_material(
     return MoverMaterialOut(
         material_id=payload.material_id,
         origen=payload.origen,
-        origen_modulo=payload.origen_modulo,
         destino=payload.destino,
-        destino_modulo=payload.destino_modulo,
         stock_origen=resultado["stock_origen"],
         stock_destino=resultado["stock_destino"],
         reenvio_idempotente=reenvio,

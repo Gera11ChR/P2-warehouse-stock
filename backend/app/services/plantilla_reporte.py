@@ -24,6 +24,7 @@ import re
 from copy import copy
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -78,9 +79,10 @@ _GEOMETRIA: dict[str, _Geometria] = {
 
 @dataclass(frozen=True)
 class LineaActa:
-    """Línea ya resuelta del acta: (cantidad, descripción, U.M.)."""
+    """Línea ya resuelta del acta: (cantidad, descripción, U.M.).
+    `cantidad` es Decimal (RF-6: cantidades con hasta 3 decimales)."""
 
-    cantidad: int
+    cantidad: Decimal
     descripcion: str
     u_m: str | None
 
@@ -93,9 +95,10 @@ def sanitizar_celda(valor):
 
     Todo texto cuyo contenido (sin espacios líderes) inicie con `=`, `+`,
     `-` o `@` se prefija con una comilla simple, de modo que openpyxl lo
-    escriba como cadena y no como fórmula. Los números se devuelven tal
-    cual (no son texto)."""
-    if valor is None or isinstance(valor, (int, float)):
+    escriba como cadena y no como fórmula. Los números (int/float/Decimal)
+    se devuelven tal cual (no son texto; openpyxl los escribe como celdas
+    numéricas)."""
+    if valor is None or isinstance(valor, (int, float, Decimal)):
         return valor
     texto = str(valor)
     if texto.lstrip().startswith(("=", "+", "-", "@")):

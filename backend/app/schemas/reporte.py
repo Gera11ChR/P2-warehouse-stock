@@ -12,6 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.schemas._tipos import CantidadDecimal
+
 ActaTipo = Literal["ENTREGA", "CONSUMO"]
 
 
@@ -25,14 +27,15 @@ class ActaItemOut(BaseModel):
     descripcion: str
     categoria: str | None = None
     u_m: str | None = None
-    # ENTREGA: cantidad entregada al equipo.
-    cantidad: int | None = None
+    # ENTREGA: cantidad entregada al equipo. Decimal (RF-6).
+    cantidad: CantidadDecimal | None = None
     # ENTREGA (0026): sección de origen de la línea (carritos multi-origen).
     origen_almacen_id: int | None = None
     origen_nombre: str | None = None
     # CONSUMO: tomada / consumida (registradas por fn_cerrar_seguimiento).
-    cantidad_tomada: int | None = None
-    cantidad_consumida: int | None = None
+    # Decimales (RF-6).
+    cantidad_tomada: CantidadDecimal | None = None
+    cantidad_consumida: CantidadDecimal | None = None
 
 
 class ActaOut(BaseModel):

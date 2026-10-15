@@ -9,6 +9,7 @@ import hashlib
 import io
 import zipfile
 from datetime import date
+from decimal import Decimal
 from typing import Any, cast
 
 import pytest
@@ -36,7 +37,7 @@ def _plantilla(formato: str) -> Worksheet:
 def _generar(
     formato: str, n: int, tipo: str = "ENTREGA"
 ) -> tuple[bytes, Worksheet]:
-    lineas = [LineaActa(i + 1, f"MATERIAL {i}", "PZ") for i in range(n)]
+    lineas = [LineaActa(Decimal(i + 1), f"MATERIAL {i}", "PZ") for i in range(n)]
     data = pr.generar_acta(
         tipo=cast(pr.TipoActa, tipo),
         formato=cast(pr.FormatoActa, formato),
@@ -188,7 +189,7 @@ def test_sanitizacion_anti_formula(valor, esperado) -> None:
 
 
 def test_celda_maliciosa_se_escribe_como_texto_no_como_formula() -> None:
-    lineas = [LineaActa(1, "=cmd|' /C calc'!A0", "@x")]
+    lineas = [LineaActa(Decimal(1), "=cmd|' /C calc'!A0", "@x")]
     data = pr.generar_acta(
         tipo="ENTREGA", formato="normal", fecha=date(2026, 10, 2), lineas=lineas
     )

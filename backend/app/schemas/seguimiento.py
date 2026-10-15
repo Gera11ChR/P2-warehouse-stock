@@ -11,15 +11,18 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas._tipos import CantidadDecimal, CantidadMovimiento
+
 
 class SeguimientoItemIn(BaseModel):
     """Línea de apertura: material y cantidad tomada del inventario del
-    equipo (validación autoritativa en fn_crear_seguimiento)."""
+    equipo (validación autoritativa en fn_crear_seguimiento).
+    `cantidad_tomada` decimal con hasta 3 decimales (RF-6)."""
 
     model_config = ConfigDict(extra="forbid")
 
     material_id: int = Field(gt=0, description="Referencia a id_lista inmutable")
-    cantidad_tomada: int = Field(gt=0)
+    cantidad_tomada: CantidadMovimiento
 
 
 class SeguimientoCreate(BaseModel):
@@ -39,12 +42,13 @@ class SeguimientoCreate(BaseModel):
 
 
 class ConsumoLine(BaseModel):
-    """Línea de consumo del cierre (cantidad consumida de un material)."""
+    """Línea de consumo del cierre (cantidad consumida de un material).
+    Decimal con hasta 3 decimales (RF-6)."""
 
     model_config = ConfigDict(extra="forbid")
 
     material_id: int = Field(gt=0)
-    cantidad_consumida: int = Field(ge=0)
+    cantidad_consumida: CantidadDecimal
 
 
 class CerrarSeguimientoRequest(BaseModel):
@@ -70,8 +74,8 @@ class SeguimientoItemOut(BaseModel):
 
     id: int
     material_id: int
-    cantidad_tomada: int
-    cantidad_consumida: int | None
+    cantidad_tomada: CantidadMovimiento
+    cantidad_consumida: CantidadDecimal | None
 
 
 class SeguimientoOut(BaseModel):

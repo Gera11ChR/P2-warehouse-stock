@@ -3,7 +3,7 @@
 Estrategia de aislamiento (FASE 5, decisión D3): TRUNCATE + resiembra.
 La suite opera EXCLUSIVAMENTE sobre la base de datos `p2_test`; la BD de
 desarrollo `p2` jamás es tocada. El esquema se migra con `alembic upgrade
-head` (cadena completa 0001 -> 0023, idéntica a producción).
+head` (cadena completa 0001 -> 0027, idéntica a producción).
 
 Regla crítica: P2_DATABASE_URL se fija ANTES de importar `app.*`
 (app.config lee la variable en tiempo de importación).

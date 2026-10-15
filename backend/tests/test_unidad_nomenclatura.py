@@ -185,8 +185,11 @@ async def test_REQ_UNI_007_seguimiento_abierto_duplicado_409(
     assert (await client.post(url, json=payload)).status_code == 201
     resp = await client.post(url, json=payload)
     assert resp.status_code == 409
-    assert "La unidad ID" in _mensaje(resp)
-    assert "ya posee un seguimiento abierto" in _mensaje(resp)
+    # REQ-UNI-007 (POST-0024, sin excepciones): el RAISE oficial de
+    # fn_crear_seguimiento dice "La unidad ID % ya posee un seguimiento
+    # abierto." — jamás la nomenclatura antigua.
+    assert _mensaje(resp) == "La unidad ID 1 ya posee un seguimiento abierto."
+    _sin_equipo(_mensaje(resp))
 
 
 async def test_REQ_UNI_007_devolucion_sin_stock_400(client: AsyncClient) -> None:
@@ -271,6 +274,8 @@ async def test_REQ_UNI_007_funciones_almacenadas_sin_literal_equipo(session) -> 
     ):
         assert requerida in nombres, requerida
 
+    # REQ-UNI-007 (POST-0024, sin excepciones): ningún RAISE EXCEPTION de
+    # una función pública puede contener la nomenclatura antigua ("equipo").
     ofensores = [
         (nombre, literal)
         for nombre, definicion in filas

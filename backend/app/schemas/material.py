@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas._tipos import CantidadDecimal
+
 SUPPORTED_UNITS = (
     "PZ",
     "LT",
@@ -64,7 +66,11 @@ class UmsUpdate(BaseModel):
 class MaterialCreate(BaseModel):
     """Alta de material. Selector dual de categorías: `categoria_id` (rama A)
     o `nueva_categoria` (rama B, texto libre). El campo legacy `tipo` no existe.
-    `id_lista` es autogenerado por PostgreSQL: no se acepta en el payload."""
+    `id_lista` es autogenerado por PostgreSQL: no se acepta en el payload.
+
+    RF-3 (C-3): el alta NO recibe `valor_unitario` — el material nace en
+    `1.000` (DEFAULT de PostgreSQL) y el valor se modifica después (solo
+    administradores, RF-8). `stock_inicial` admite decimales (RF-6)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -74,7 +80,7 @@ class MaterialCreate(BaseModel):
     nueva_categoria: str | None = Field(default=None, max_length=100)
     u_m: str | None = None
     stock_minimo: int | None = Field(default=None, ge=0)
-    stock_inicial: int | None = Field(default=None, ge=0)
+    stock_inicial: CantidadDecimal | None = None
     seccion_id: int | None = None
 
     @model_validator(mode="after")
@@ -108,6 +114,11 @@ class MaterialUpdate(BaseModel):
     al Inventario General, nunca a inventarios de Equipos ni de Fibra
     Óptica.
 
+    `valor_unitario` (RF-2/RF-8): atributo de catálogo editable SOLO por
+    administradores (el gate RBAC vive en el PATCH /catalogo/{id_lista} por
+    PRESENCIA del campo); un `null` explícito es no-op (E15). La auditoría
+    del cambio la emite el trigger `tg_auditar_modificacion_material`.
+
     Ergonomía `justificacion_opcional` (REQ-ERG-003): `motivo` es OPCIONAL
     incluso cuando se envía `stock_actual` — se acepta `null`, cadena vacía
     o campo omitido, y el evento AJUSTE_INVENTARIO registra el motivo tal
@@ -121,7 +132,8 @@ class MaterialUpdate(BaseModel):
     nueva_categoria: str | None = Field(default=None, max_length=100)
     u_m: str | None = None
     stock_minimo: int | None = Field(default=None, ge=0)
-    stock_actual: int | None = Field(default=None, ge=0)
+    stock_actual: CantidadDecimal | None = None
+    valor_unitario: CantidadDecimal | None = None
     motivo: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
 
@@ -144,6 +156,7 @@ class MaterialOut(BaseModel):
     categoria: str | None
     u_m: str | None
     stock_minimo: int | None
+    valor_unitario: CantidadDecimal
     is_active: bool
 
 

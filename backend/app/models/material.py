@@ -1,4 +1,15 @@
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, text
+from decimal import Decimal
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -20,12 +31,21 @@ class Categoria(Base):
 
 class CatalogoMaterial(Base):
     """Catálogo maestro. `id_lista` es INMUTABLE: se genera una única vez y
-    jamás se reutiliza ni renumera, incluso tras eliminación lógica."""
+    jamás se reutiliza ni renumera, incluso tras eliminación lógica.
+
+    `valor_unitario` (RF-2/RF-3, migración 0027): atributo financiero de
+    catálogo en MXN con hasta 3 decimales; nace en `1.000` (DEFAULT) y se
+    edita solo por administradores (RBAC en el PATCH). Es atributo de
+    catálogo — NO un saldo de inventario —, por lo que su edición sigue el
+    patrón de campos de catálogo (UPDATE + trigger de auditoría
+    `tg_auditar_modificacion_material`, RF-7)."""
 
     __tablename__ = "catalogo_materiales"
     __table_args__ = (
         CheckConstraint("stock_minimo IS NULL OR stock_minimo >= 0",
                         name="ck_catalogo_stock_minimo_non_negative"),
+        CheckConstraint("valor_unitario >= 0",
+                        name="ck_catalogo_valor_unitario_non_negative"),
         Index(
             "uq_catalogo_codigo_active",
             "codigo",
@@ -44,6 +64,9 @@ class CatalogoMaterial(Base):
     )
     u_m: Mapped[str | None] = mapped_column(String(50))
     stock_minimo: Mapped[int | None] = mapped_column(Integer)
+    valor_unitario: Mapped[Decimal] = mapped_column(
+        Numeric(12, 3), nullable=False, server_default=text("1.000")
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )

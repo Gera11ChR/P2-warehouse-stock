@@ -3,13 +3,22 @@
 Cada fábrica usa exclusivamente la API pública HTTP (cliente httpx ASGI),
 de modo que todo fixture transita por el mismo camino de producción:
 validación Pydantic -> routers -> services -> Stored Functions.
+
+Cambio 2026-10-fo-unificado-valor-unitario (RF-1/RF-6): el Inventario FO
+es ÚNICO por material (sin `modulo`) y las cantidades son decimales
+(hasta 3 dp); los helpers FO dejaron de recibir `modulo`.
 """
 
 from httpx import AsyncClient, Response
 
+# Números serializados a JSON (la API los recibe como literales JSON; los
+# Decimal de la respuesta se comparan por valor, no por tipo Python).
+Cantidad = int | float
+
 ALMACEN_GENERAL = 1
-ALMACEN_PAQUETE = 2
-ALMACEN_EN_USO = 3
+# Los ids de las secciones FO legacy (FO_PAQUETE/FO_EN_USO) son HISTÓRICOS
+# (RF-9): solo sobreviven como origen/destino de movimientos previos a la
+# migración 0027. La sección viva de ruteo es 'FO' (ver `seccion_fo`).
 
 
 async def crear_material(
@@ -21,7 +30,7 @@ async def crear_material(
     stock_minimo: int | None = None,
     categoria_id: int | None = None,
     nueva_categoria: str | None = None,
-    stock_inicial: int | None = None,
+    stock_inicial: Cantidad | None = None,
     seccion_id: int | None = None,
     expect: int = 201,
 ) -> dict:
@@ -53,9 +62,9 @@ async def crear_equipo(
     integrantes: list[str] | None = None,
     expect: int = 201,
 ) -> dict:
-    """Crea un equipo por API pública. Por defecto incluye al actor `qa`
+    """Crea una unidad por API pública. Por defecto incluye al actor `qa`
     como integrante: los flujos con aislamiento por equipo (0014, SEC-003 /
-    V1/V3) exigen que el actor operador sea integrante del equipo."""
+    V1/V3) exigen que el actor operador sea integrante de la unidad."""
     payload: dict = {"nombre": nombre}
     if integrantes is None:
         integrantes = ["qa"]
@@ -70,7 +79,7 @@ async def carga_inicial(
     *,
     almacen_id: int = ALMACEN_GENERAL,
     material_id: int,
-    cantidad: int,
+    cantidad: Cantidad,
     expect: int = 200,
 ) -> dict:
     resp = await client.post(
@@ -91,7 +100,7 @@ async def borrador_teams(
     almacen_id: int,
     equipo_id: int,
     material_id: int,
-    cantidad: int,
+    cantidad: Cantidad,
     observaciones: str | None = None,
     expect: int = 201,
 ) -> dict:
@@ -114,7 +123,7 @@ async def borrador_devol(
     equipo_id: int,
     almacen_id: int,
     material_id: int,
-    cantidad: int,
+    cantidad: Cantidad,
     expect: int = 201,
 ) -> dict:
     resp = await client.post(
@@ -161,7 +170,7 @@ async def ajustar_stock(
     *,
     almacen_id: int,
     material_id: int,
-    nuevo_stock: int,
+    nuevo_stock: Cantidad,
     motivo: str = "Ajuste QA",
     expect: int = 200,
 ) -> dict:
@@ -190,29 +199,47 @@ async def stock_seccion(
 async def inventario_equipo(
     client: AsyncClient, equipo_id: int
 ) -> dict[int, dict]:
-    """Mapa {material_id: fila} del inventario AUTÓNOMO del equipo
+    """Mapa {material_id: fila} del inventario AUTÓNOMO de la unidad
     (GET /api/v1/equipos/{id}/inventario, REQ-DOMAIN-001/002).
 
     Solo filas físicas de `inventario_equipos` con stock real originado en
     movimientos TEAMS/DEVOL auditados: cero filas fantasma (stock 0) y cero
-    materiales inactivos. Un equipo nuevo devuelve [] (200)."""
+    materiales inactivos. Una unidad nueva devuelve [] (200)."""
     resp = await client.get(f"/api/v1/equipos/{equipo_id}/inventario")
     assert resp.status_code == 200, resp.text
     return {f["material_id"]: f for f in resp.json()}
 
 
+async def inventario_fo(client: AsyncClient) -> dict[int, dict]:
+    """Mapa {material_id: fila} del Inventario FO unificado
+    (GET /api/v1/fibra, RF-1)."""
+    resp = await client.get("/api/v1/fibra")
+    assert resp.status_code == 200, resp.text
+    return {f["material_id"]: f for f in resp.json()}
+
+
+async def seccion_fo(client: AsyncClient) -> dict:
+    """Sección de ruteo única `FO` (RF-1/RF-9) vía el endpoint
+    `/inventario/secciones/transferibles` (id dinámico: la tabla secciones
+    no se trunca entre tests)."""
+    resp = await client.get("/api/v1/inventario/secciones/transferibles")
+    assert resp.status_code == 200, resp.text
+    fo = [s for s in resp.json() if s["tipo"] == "FO"]
+    assert len(fo) == 1, resp.text
+    return fo[0]
+
+
 async def fibra_carga_inicial(
     client: AsyncClient,
     *,
-    modulo: str,
     material_id: int,
-    cantidad: int,
+    cantidad: Cantidad,
     motivo: str | None = "Carga inicial FO QA",
     expect: int = 200,
 ) -> dict:
-    """Alta única de inventario FO (fn_cargar_stock_inicial_fibra)."""
+    """Alta única de inventario en el Inventario FO unificado
+    (fn_cargar_stock_inicial_fibra, RF-1): SIN `modulo`."""
     payload: dict = {
-        "modulo": modulo,
         "material_id": material_id,
         "cantidad": cantidad,
     }
@@ -226,17 +253,16 @@ async def fibra_carga_inicial(
 async def fibra_ajuste(
     client: AsyncClient,
     *,
-    modulo: str,
     material_id: int,
-    nuevo_stock: int,
+    nuevo_stock: Cantidad,
     motivo: str = "Ajuste FO QA",
     expect: int = 200,
 ) -> dict:
-    """Ajuste administrativo FO (fn_ajustar_stock_fibra)."""
+    """Ajuste administrativo del Inventario FO unificado
+    (fn_ajustar_stock_fibra, RF-1): SIN `modulo`."""
     resp = await client.post(
         "/api/v1/fibra/ajuste",
         json={
-            "modulo": modulo,
             "material_id": material_id,
             "nuevo_stock": nuevo_stock,
             "motivo": motivo,

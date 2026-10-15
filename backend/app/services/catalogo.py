@@ -87,6 +87,7 @@ async def _to_out(session: AsyncSession, material: CatalogoMaterial) -> Material
         categoria=nombre_categoria,
         u_m=material.u_m,
         stock_minimo=material.stock_minimo,
+        valor_unitario=material.valor_unitario,
         is_active=material.is_active,
     )
 
@@ -231,6 +232,13 @@ async def actualizar(
         # (Task 3.4); incluirlos aquí rompería el flush del ORM.
         exclude={"categoria_id", "nueva_categoria", "stock_actual", "motivo"},
     )
+    # RF-8 / E15 (dictamen @sec-ops, condición N2): `valor_unitario: null`
+    # explícito es NO-OP — sin escritura y sin evento de auditoría (la
+    # columna es NOT NULL; el null explícito no es un valor válido). Solo
+    # un valor numérico presente llega al setattr (la auditoría la emite
+    # el trigger tg_auditar_modificacion_material, RF-7).
+    if update.get("valor_unitario") is None:
+        update.pop("valor_unitario", None)
     for field, value in update.items():
         setattr(material, field, value)
     if categoria_id is not None:

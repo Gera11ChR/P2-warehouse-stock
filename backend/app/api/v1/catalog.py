@@ -271,6 +271,10 @@ async def actualizar_material(
 ) -> MaterialOut:
     """Edición de material (alcance Inventario General, REQ-UI-004).
 
+    RBAC (RF-8, dictamen @sec-ops): la PRESENCIA de `valor_unitario` en el
+    payload exige rol administrador (403) — el gate se evalúa al inicio.
+    Los demás campos conservan `assert_authenticated`.
+
     El stock JAMÁS se actualiza por ORM: si `stock_actual` viene en el
     payload, el ajuste se enruta a `fn_ajustar_stock_general` →
     `fn_ajustar_stock_almacen` (Constitution 2.4): el diferencial, la
@@ -278,6 +282,8 @@ async def actualizar_material(
     Atomicidad 4.1: todo ocurre dentro del mismo `session.begin()` — si el
     ajuste falla, la edición del material también revierte."""
     assert_authenticated(actor_ctx)
+    if "valor_unitario" in payload.model_fields_set:
+        require_admin(actor_ctx)
     async with session.begin():
         material = await catalogo_svc.actualizar(
             session, id_lista, payload, actor=actor_ctx.actor_id
