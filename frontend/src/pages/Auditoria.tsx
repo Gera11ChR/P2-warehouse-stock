@@ -5,6 +5,8 @@ import { listEventos } from '../services/auditoria'
 import { listSecciones } from '../services/inventory'
 import { listEquipos } from '../services/equipos'
 import { TIPOS_ACCION_AUDITORIA } from '../types'
+import { etiquetaSeccionPorId } from '../utils/seccionLabel'
+import { presentarDetallesAuditoria } from '../utils/auditoriaPresentacion'
 
 function formatFecha(iso: string): string {
   const d = new Date(iso)
@@ -48,8 +50,10 @@ export default function Auditoria() {
   // NUNCA filtra/oculta eventos de materiales inactivos: el historial
   // es un ledger append-only inmutable.
 
+  // RF-9/RF-10: orígenes/destinos FO históricos (no listados) y el Inventario
+  // FO se muestran como «Inventario FO» sin mutar el dato.
   const nombreSeccion = (id: number | null): string =>
-    secciones.find((s) => s.almacen_id === id)?.nombre ?? `Sección ${id}`
+    etiquetaSeccionPorId(id, secciones)
   const nombreEquipo = (id: number | null): string =>
     equipos.find((e) => e.equipo_id === id)?.nombre ?? `Unidad ${id}`
 
@@ -242,7 +246,7 @@ export default function Auditoria() {
                     <tr key={`${e.id}-detalles`} className="bg-slate-50">
                       <td colSpan={8} className="px-4 py-2">
                         <pre className="overflow-x-auto rounded-md bg-slate-800 p-3 text-xs text-slate-100">
-                          {JSON.stringify(e.detalles, null, 2)}
+                          {JSON.stringify(presentarDetallesAuditoria(e.detalles), null, 2)}
                         </pre>
                       </td>
                     </tr>

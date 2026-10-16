@@ -3,9 +3,12 @@ import {
   AlertTriangle,
   ArrowRightLeft,
   Boxes,
+  Coins,
   Layers,
 } from 'lucide-react'
 import type { SeccionStockRow } from '../types'
+import { useResumenGeneral } from '../hooks/useResumenGeneral'
+import MonedaMxn from './MonedaMxn'
 
 interface KpiCardsProps {
   stock: SeccionStockRow[]
@@ -14,7 +17,7 @@ interface KpiCardsProps {
 interface CardDef {
   key: string
   label: string
-  value: number
+  value?: number
   icon: typeof Boxes
   iconClass: string
   note?: string
@@ -23,6 +26,11 @@ interface CardDef {
 export default function KpiCards({
   stock,
 }: KpiCardsProps) {
+  // Valor Total (RF-4/RF-5, C-1): GLOBAL (General + Inventario FO), calculado
+  // por PostgreSQL y servido por /inventario/resumen-general. No reacciona
+  // al filtro de sección ni se recalcula en el cliente.
+  const resumen = useResumenGeneral()
+
   // ============================================================================
   // AGREGACIÓN VISUAL (permitida por prompt maestro como proyección visual)
   // ============================================================================
@@ -47,6 +55,12 @@ export default function KpiCards({
         value: totalMateriales,
         icon: Boxes,
         iconClass: 'bg-blue-500',
+      },
+      {
+        key: 'valor_total',
+        label: 'Valor Total',
+        icon: Coins,
+        iconClass: 'bg-teal-500',
       },
       {
         key: 'stock_total',
@@ -74,7 +88,7 @@ export default function KpiCards({
   }, [stock])
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
       {cards.map((card) => {
         const Icon = card.icon
         return (
@@ -89,9 +103,23 @@ export default function KpiCards({
             </div>
             <div className="flex-1">
               <p className="text-sm text-slate-500">{card.label}</p>
-              <p className="text-2xl font-semibold text-slate-800">
-                {card.value.toLocaleString('es-MX')}
-              </p>
+              {card.key === 'valor_total' ? (
+                <ValorTotal
+                  estado={
+                    resumen.isPending
+                      ? 'cargando'
+                      : resumen.isError
+                        ? 'error'
+                        : 'listo'
+                  }
+                  valor={resumen.data?.valor_total}
+                  onReintentar={() => void resumen.refetch()}
+                />
+              ) : (
+                <p className="text-2xl font-semibold text-slate-800">
+                  {(card.value ?? 0).toLocaleString('es-MX')}
+                </p>
+              )}
               {card.note && (
                 <p className="text-xs text-slate-400">{card.note}</p>
               )}
@@ -100,5 +128,51 @@ export default function KpiCards({
         )
       })}
     </div>
+  )
+}
+
+interface ValorTotalProps {
+  estado: 'cargando' | 'error' | 'listo'
+  valor: number | undefined
+  onReintentar: () => void
+}
+
+/** Cifra del indicador Valor Total con estado explícito de carga/error
+ *  (RF-5): nunca se muestra un valor inventado ni un 0 por defecto. */
+function ValorTotal({ estado, valor, onReintentar }: ValorTotalProps) {
+  if (estado === 'cargando') {
+    return (
+      <p
+        role="status"
+        aria-busy="true"
+        className="text-sm font-medium text-slate-400"
+      >
+        Cargando valor…
+      </p>
+    )
+  }
+  if (estado === 'error' || valor === undefined) {
+    return (
+      <div role="alert" className="text-sm">
+        <p className="font-medium text-red-600">
+          No se pudo obtener el Valor Total.
+        </p>
+        <button
+          type="button"
+          onClick={onReintentar}
+          className="text-xs font-medium text-blue-600 underline hover:text-blue-800"
+        >
+          Reintentar
+        </button>
+      </div>
+    )
+  }
+  return (
+    <p
+      className="text-2xl font-semibold text-slate-800"
+      data-testid="valor-total"
+    >
+      <MonedaMxn valor={valor} />
+    </p>
   )
 }

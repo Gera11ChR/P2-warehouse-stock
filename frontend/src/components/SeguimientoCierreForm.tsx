@@ -87,7 +87,9 @@ export default function SeguimientoCierreForm({
         if (issue.message.includes('duplicado')) {
           mensajes.push(issue.message)
         } else if (issue.path[2] === 'cantidad_consumida') {
-          mensajes.push('El consumido debe ser un entero mayor o igual a 0.')
+          mensajes.push(
+            'El consumido debe ser un número mayor o igual a 0, con máximo 3 decimales.',
+          )
         } else {
           mensajes.push(issue.message)
         }
@@ -139,7 +141,8 @@ export default function SeguimientoCierreForm({
                 type="number"
                 min={0}
                 max={item.cantidad_tomada}
-                step={1}
+                step={0.001}
+                inputMode="decimal"
                 required
                 value={consumidos[item.material_id] ?? ''}
                 onChange={(event) => {

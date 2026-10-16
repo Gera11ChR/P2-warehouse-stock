@@ -211,6 +211,12 @@ async def actualizar(
     if material is None or not material.is_active:
         return None
 
+    # RF-7 (Drift T7 H-1): el actor DEBE fijarse ANTES de mutar el ORM.
+    # `session.execute` auto-vacía (autoflush) los cambios pendientes, de modo
+    # que un `set_config` posterior a `setattr` llegaría DESPUÉS del UPDATE y
+    # el trigger tg_auditar_modificacion_material registraría el rol de BD.
+    await _set_actor(session, actor)
+
     if payload.categoria_id is not None:
         await _validar_categoria(session, payload.categoria_id)
 
@@ -244,7 +250,6 @@ async def actualizar(
     if categoria_id is not None:
         material.categoria_id = categoria_id
 
-    await _set_actor(session, actor)
     await session.flush()
     return await _to_out(session, material)
 

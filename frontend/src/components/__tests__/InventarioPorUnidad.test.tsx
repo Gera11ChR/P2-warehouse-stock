@@ -55,6 +55,7 @@ const FILA = {
   u_m: 'PZ',
   stock_minimo: 50,
   stock_actual: 1,
+  valor_unitario: 1,
   alerta_stock: true,
   ultimo_movimiento_id: null,
   stock_minimo_local: null,
@@ -112,6 +113,25 @@ describe('Inventario por Unidad — nomenclatura (RF-1..RF-3)', () => {
 })
 
 describe('Consulta de Unidad (RF-9..RF-16)', () => {
+  it('RF-3: la tabla muestra la columna Valor Unitario de solo lectura con cifra y MXN', async () => {
+    vi.mocked(inventarioEquipo).mockResolvedValue([
+      FILA,
+      { ...FILA, material_id: 8, codigo: 'CON-ACO-002', valor_unitario: 12.345 },
+    ])
+    renderPagina()
+
+    const fila1 = (await screen.findByText('CON-ACO-001')).closest('tr')!
+    const fila2 = screen.getByText('CON-ACO-002').closest('tr')!
+    expect(
+      screen.getByRole('columnheader', { name: 'Valor Unitario' }),
+    ).toBeInTheDocument()
+    expect(fila1).toHaveTextContent(/1\.00\s*MXN/)
+    expect(fila2).toHaveTextContent(/12\.345\s*MXN/)
+    // Solo lectura: la celda no contiene controles editables.
+    expect(within(fila1).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(fila1).queryByRole('spinbutton')).not.toBeInTheDocument()
+  })
+
   it('RF-9/RF-10 REQ-UNI-010/011: select con 3 opciones y "Inventario Unidad" por defecto', async () => {
     renderPagina()
     const select = await screen.findByLabelText('Consulta')

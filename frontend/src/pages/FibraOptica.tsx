@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
 import { Eye, Pencil, Trash2 } from 'lucide-react'
 import MaterialDetailDrawer from '../components/MaterialDetailDrawer'
 import Modal from '../components/Modal'
@@ -9,7 +8,7 @@ import SumarCantidadDialog from '../components/SumarCantidadDialog'
 import MoverMaterialDialog from '../components/MoverMaterialDialog'
 import { useSeccionesTransferibles } from '../hooks/useSeccionesTransferibles'
 import { useOperadorRapido } from '../hooks/useOperadorRapido'
-import { etiquetaSeccion } from '../utils/seccionLabel'
+import { ETIQUETA_INVENTARIO_FO, etiquetaSeccion } from '../utils/seccionLabel'
 import FibraMaterialForm from '../components/FibraMaterialForm'
 import {
   eliminarFibraMaterial,
@@ -19,18 +18,12 @@ import {
 import { listCatalog, listCategorias } from '../services/catalog'
 import { useUms } from '../hooks/useUms'
 import { useToast } from '../hooks/useToasts'
+import { mensajeErrorApi as errorMessage } from '../utils/errorMensaje'
+import { invalidarResumenGeneral } from '../hooks/queryKeys'
+import MonedaMxn from '../components/MonedaMxn'
 import { stockLevel } from '../utils/stockLevel'
 import type { StockLevel } from '../utils/stockLevel'
-import type { FibraMaterialUpdatePayload, FibraModulo, FibraStockRow } from '../types'
-
-interface FibraOpticaProps {
-  sub: string
-}
-
-const MODULO_POR_SUB: Record<string, FibraModulo> = {
-  paquete: 'PAQUETE',
-  'en-uso': 'EN_USO',
-}
+import type { FibraMaterialUpdatePayload, FibraStockRow } from '../types'
 
 const LEVEL_CLASS: Record<StockLevel, string> = {
   normal: 'bg-green-100 text-green-700',
@@ -38,21 +31,7 @@ const LEVEL_CLASS: Record<StockLevel, string> = {
   critical: 'bg-red-100 text-red-700',
 }
 
-function errorMessage(error: unknown): string {
-  if (axios.isAxiosError(error)) {
-    const detail = error.response?.data as
-      | { error?: { message?: string } }
-      | undefined
-    if (detail?.error?.message) {
-      return detail.error.message
-    }
-  }
-  return 'Ocurrió un error'
-}
-
-export default function FibraOptica({ sub }: FibraOpticaProps) {
-  const esEnUso = sub === 'en-uso'
-  const modulo = MODULO_POR_SUB[sub] ?? 'PAQUETE'
+export default function FibraOptica() {
   const { pushToast, pushError } = useToast()
   const queryClient = useQueryClient()
 
@@ -72,13 +51,13 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
   // QUERIES
   // ============================================================================
 
-  // Inventario FO independiente (REQ-DOMAIN-003/004): raíz autónoma con
-  // esquema estándar (CÓDIGO, DESCRIPCIÓN, U.M., STOCK ACTUAL, STOCK
-  // MÍNIMO, ALERTA STOCK). La métrica de cada fila la gobierna `u_m`
-  // (REQ-DOMAIN-005); el legado "carretes/metros" está deprecado.
+  // Inventario FO único (RF-1): una sola tabla, una fila por material, con
+  // esquema estándar (CÓDIGO, DESCRIPCIÓN, U.M., STOCK ACTUAL, VALOR
+  // UNITARIO, STOCK MÍNIMO, ALERTA STOCK). La métrica de cada fila la
+  // gobierna `u_m`.
   const stockQuery = useQuery({
-    queryKey: ['fibra', modulo],
-    queryFn: () => listFibraStock(modulo),
+    queryKey: ['fibra'],
+    queryFn: listFibraStock,
   })
 
   // Inventarios candidatos como destino de «Mover» (General + raíces FO).
@@ -134,14 +113,22 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
     }: {
       id: number
       payload: FibraMaterialUpdatePayload
-    }) => updateFibraMaterial(modulo, id, payload),
+    }) => updateFibraMaterial(id, payload),
     onSuccess: () => {
-      // REQ-TRF-INV-002: invalidar la clave del módulo tras cada mutación
-      // CRUD FO para evitar stock obsoleto en la UI. La edición de catálogo
-      // también invalida ['catalogo'] y ['categorias'] (join de presentación).
-      queryClient.invalidateQueries({ queryKey: ['fibra', modulo] })
+      // REQ-TRF-INV-002: invalidar el Inventario FO tras cada mutación CRUD
+      // para evitar stock obsoleto en la UI. La edición de catálogo también
+      // invalida ['catalogo'] y ['categorias'] (join de presentación), la
+      // Auditoría (ajuste de stock / cambio de Valor Unitario) y el Valor
+      // Total (RF-4/RF-5: refleja el estado persistido).
+      queryClient.invalidateQueries({ queryKey: ['fibra'] })
       queryClient.invalidateQueries({ queryKey: ['catalogo'] })
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
+      queryClient.invalidateQueries({ queryKey: ['auditoria'] })
+      // RF-3: el Valor Unitario es del catálogo y se ve en las TRES tablas
+      // (General, FO y por Unidad): se recargan sin esperar el staleTime.
+      queryClient.invalidateQueries({ queryKey: ['stock'] })
+      queryClient.invalidateQueries({ queryKey: ['equipo'] })
+      void invalidarResumenGeneral(queryClient)
       pushToast('Material modificado')
       setEditOpen(false)
     },
@@ -150,14 +137,16 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
 
   const deleteMut = useMutation({
     mutationFn: ({ id, motivo }: { id: number; motivo?: string }) =>
-      eliminarFibraMaterial(modulo, id, motivo),
+      eliminarFibraMaterial(id, motivo),
     onSuccess: () => {
       // REQ-TRF-INV-002 + traza forense: el evento ELIMINACION_FO se ve en
       // la página Auditoría, por eso se invalida ['auditoria'] además del
-      // stock del módulo.
-      queryClient.invalidateQueries({ queryKey: ['fibra', modulo] })
+      // Inventario FO y del Valor Total (la existencia eliminada deja de
+      // contar).
+      queryClient.invalidateQueries({ queryKey: ['fibra'] })
       queryClient.invalidateQueries({ queryKey: ['auditoria'] })
-      pushToast('Material eliminado del inventario FO')
+      void invalidarResumenGeneral(queryClient)
+      pushToast('Material eliminado del Inventario FO')
       setDeleteOpen(false)
       setDrawerOpen(false)
       setSelected(null)
@@ -211,8 +200,7 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
 
   // Contexto fijo de los operadores rápidos (presentación; el stock
   // definitivo lo confirma el servidor).
-  const tipoSeccionFo = modulo === 'PAQUETE' ? 'FO_PAQUETE' : 'FO_EN_USO'
-  const origenSeccion = seccionesDestino.find((s) => s.tipo === tipoSeccionFo)
+  const origenSeccion = seccionesDestino.find((s) => s.tipo === 'FO')
   const origenValue =
     origenSeccion !== undefined ? String(origenSeccion.almacen_id) : undefined
   const contextoOperacion = selected
@@ -221,10 +209,7 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
         descripcion: selected.descripcion,
         um: selected.u_m,
         stockActual: selected.stock_actual,
-        origenLabel:
-          modulo === 'PAQUETE'
-            ? 'Fibra Óptica - Paquete'
-            : 'Fibra Óptica - En Uso',
+        origenLabel: ETIQUETA_INVENTARIO_FO,
       }
     : null
   const destinosMover = seccionesDestino
@@ -235,11 +220,11 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
       tipo: s.tipo,
     }))
 
-  // Operadores rápidos (REQ-P2-INV-001/005) sobre FO Paquete/En Uso: clave de
+  // Operadores rápidos (REQ-P2-INV-001/005) sobre el Inventario FO: clave de
   // idempotencia por apertura, errores traducidos, toast con el stock del
   // servidor y recarga de stocks (origen y destino).
   const operador = useOperadorRapido({
-    inventario: tipoSeccionFo,
+    inventario: 'FO',
     material:
       selected && contextoOperacion
         ? { materialId: selected.material_id, ...contextoOperacion }
@@ -251,12 +236,11 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
     <div className="space-y-4">
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-2xl font-semibold text-slate-800">
-          Fibra Óptica — {esEnUso ? 'En Uso' : 'Paquete'}
+          {ETIQUETA_INVENTARIO_FO}
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          {esEnUso
-            ? 'Inventario independiente EN USO. La unidad de medida (U.M.) de cada fila define su métrica.'
-            : 'Inventario independiente PAQUETE. La unidad de medida (U.M.) de cada fila define su métrica.'}
+          Inventario único de fibra óptica. La unidad de medida (U.M.) de cada
+          fila define su métrica.
         </p>
       </div>
 
@@ -308,7 +292,7 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
       {stockQuery.isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
           <p className="text-red-700">
-            No se pudo obtener el inventario de fibra ({modulo}).
+            No se pudo obtener el Inventario FO. Reintenta en unos segundos.
           </p>
         </div>
       )}
@@ -323,6 +307,7 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
                 <th className="px-4 py-3">Descripción</th>
                 <th className="px-4 py-3">U.M.</th>
                 <th className="px-4 py-3">Stock Actual</th>
+                <th className="px-4 py-3">Valor Unitario</th>
                 <th className="px-4 py-3">Stock Mínimo</th>
                 <th className="px-4 py-3">Alerta Stock</th>
               </tr>
@@ -359,6 +344,9 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-700">
+                      <MonedaMxn valor={row.valor_unitario} />
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
                       {row.stock_minimo != null ? row.stock_minimo : '—'}
                     </td>
                     <td className="px-4 py-3">
@@ -377,13 +365,13 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
           </table>
           {rows.length === 0 && (
             <p className="p-6 text-center text-sm text-slate-500">
-              Sin materiales en el inventario {modulo}.
+              Sin materiales en el Inventario FO.
             </p>
           )}
         </div>
       )}
 
-      {/* Drawer de detalle (REQ-CRUD-002): lectura pura del módulo FO —
+      {/* Drawer de detalle (REQ-CRUD-002): lectura pura del Inventario FO —
           cerrar deselecciona la fila. */}
       <MaterialDetailDrawer
         open={drawerOpen && selected !== null}
@@ -394,6 +382,7 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
         }}
         descripcion={selected?.descripcion ?? null}
         stockActual={selected?.stock_actual ?? 0}
+        valorUnitario={selected?.valor_unitario}
         stockMinimo={selected?.stock_minimo ?? null}
         alertaStock={selected?.alerta_stock ?? false}
         um={selected?.u_m ?? null}
@@ -415,7 +404,7 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
         material={contextoOperacion}
         destinos={destinosMover}
         origenValue={origenValue}
-        origenTipo={tipoSeccionFo}
+        origenTipo="FO"
         onClose={operador.cerrar}
         {...operador.mover}
       />
@@ -436,6 +425,7 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
               descripcion: selected.descripcion,
               u_m: selected.u_m,
               stock_minimo: selected.stock_minimo,
+              valor_unitario: selected.valor_unitario,
               categoria_id:
                 categoriaIdPorMaterial[selected.material_id] ?? null,
               categoria: categoriaPorMaterial[selected.material_id] ?? null,
@@ -469,7 +459,7 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
               <span className="font-semibold">
                 {selected.stock_actual.toLocaleString('es-MX')}
               </span>{' '}
-              {selected.u_m ?? ''} de stock en el inventario {modulo}. La
+              {selected.u_m ?? ''} de stock en el Inventario FO. La
               eliminación física de la fila queda registrada en Auditoría
               (ELIMINACION_FO) con el stock eliminado y el motivo.
             </p>
@@ -528,19 +518,19 @@ export default function FibraOptica({ sub }: FibraOpticaProps) {
         <ConfirmDialog
           open={deleteOpen}
           title="Eliminar Material"
-          message={`¿Seguro que deseas eliminar el material ${selected?.codigo ?? ''} del inventario ${modulo}?`}
+          message={`¿Seguro que deseas eliminar el material ${selected?.codigo ?? ''} del Inventario FO?`}
           onConfirm={handleConfirmDelete}
           onCancel={() => setDeleteOpen(false)}
         />
       )}
 
       <p className="text-xs text-slate-400">
-        El inventario <span className="font-mono">{modulo}</span> se consume
-        vía <span className="font-mono">/fibra/&lt;modulo&gt;</span> y ahora se
-        gestiona directamente desde esta sección (Ver Detalle, Modificar,
-        Eliminar). Las transferencias (TRANSF) y devoluciones (DEVOL) siguen operando en la página
-        Transferencias: el CRUD FO no altera el ruteo ni el inventario que
-        consumen.
+        El Inventario FO se consume vía{' '}
+        <span className="font-mono">/fibra</span> y se gestiona directamente
+        desde esta sección (Ver Detalle, Modificar, Eliminar). Las
+        transferencias (TRANSF) y devoluciones (DEVOL) siguen operando en la
+        página Transferencias: el CRUD FO no altera el ruteo ni el inventario
+        que consumen.
       </p>
     </div>
   )

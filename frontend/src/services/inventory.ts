@@ -1,6 +1,7 @@
 import api from './api'
 import type {
   MoverMaterialOut,
+  ResumenGeneral,
   Seccion,
   SeccionStockRow,
   SeccionTransferible,
@@ -47,6 +48,18 @@ export async function listSeccionesTransferibles(): Promise<
   const { data } = await api.get<SeccionTransferible[]>(
     '/inventario/secciones/transferibles',
   )
+  return data
+}
+
+/**
+ * GET /inventario/resumen-general — Valor Total del inventario (General +
+ * Inventario FO) en MXN (RF-4/RF-5). `valor_total` lo calcula PostgreSQL
+ * (`fn_valor_total_inventario`): el frontend lo MUESTRA, nunca lo recalcula.
+ * Requiere actor autenticado (default-deny). FAIL-CLOSED: un error se
+ * propaga; jamás se reinterpreta como 0.
+ */
+export async function getResumenGeneral(): Promise<ResumenGeneral> {
+  const { data } = await api.get<ResumenGeneral>('/inventario/resumen-general')
   return data
 }
 

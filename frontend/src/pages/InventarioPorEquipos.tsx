@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
+import { mensajeErrorApi as errorMessage } from '../utils/errorMensaje'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import {
   listEquipos,
@@ -26,18 +26,6 @@ import { useToast } from '../hooks/useToasts'
 import type { Equipo, InventarioEquipoRow } from '../types'
 import UnidadConsultaDetalle from '../components/UnidadConsultaDetalle'
 import { CONSULTA_OPCIONES, type ConsultaVista } from '../utils/consultaUnidad'
-
-function errorMessage(error: unknown): string {
-  if (axios.isAxiosError(error)) {
-    const detail = error.response?.data as
-      | { error?: { message?: string } }
-      | undefined
-    if (detail?.error?.message) {
-      return detail.error.message
-    }
-  }
-  return 'Ocurrió un error'
-}
 
 const TABS = [
   { value: 'consulta', label: 'Consulta' },

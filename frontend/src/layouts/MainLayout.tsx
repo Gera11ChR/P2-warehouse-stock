@@ -1,18 +1,21 @@
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import Header from '../components/Header'
-import SeccionGeneral from '../pages/SeccionGeneral'
-import FibraOptica from '../pages/FibraOptica'
-import InventarioPorEquipos from '../pages/InventarioPorEquipos'
-import Transferencias from '../pages/Transferencias'
-import Reportes from '../pages/Reportes'
-import Auditoria from '../pages/Auditoria'
 import { NavigationContext } from '../hooks/navigationContext'
 import type { NavigationTarget } from '../types'
 
+// Code-splitting por página (Constitución §7.2.2: `vite build` sin advertencias
+// de tamaño de chunk). Cada página se descarga al navegar a ella.
+const SeccionGeneral = lazy(() => import('../pages/SeccionGeneral'))
+const FibraOptica = lazy(() => import('../pages/FibraOptica'))
+const InventarioPorEquipos = lazy(() => import('../pages/InventarioPorEquipos'))
+const Transferencias = lazy(() => import('../pages/Transferencias'))
+const Reportes = lazy(() => import('../pages/Reportes'))
+const Auditoria = lazy(() => import('../pages/Auditoria'))
+
 const LABELS: Record<string, string> = {
   'seccion-general': 'Sección General',
-  'fibra-optica': 'Fibra Óptica',
+  'fibra-optica': 'Inventario FO',
   'inventario-por-equipos': 'Inventario por Unidad',
   transferencias: 'Transferencias',
   reportes: 'Reportes',
@@ -20,8 +23,6 @@ const LABELS: Record<string, string> = {
 }
 
 const SUB_LABELS: Record<string, string> = {
-  paquete: 'Paquete',
-  'en-uso': 'En Uso',
   entrega: 'Entrega',
   consumo: 'Consumo',
 }
@@ -48,22 +49,28 @@ export default function MainLayout() {
         <div className="flex min-w-0 flex-1 flex-col">
           <Header breadcrumb={breadcrumb} onSearch={handleSearch} />
           <main className="flex-1 overflow-y-auto p-6">
-            {route.page === 'seccion-general' && (
-              <SeccionGeneral globalSearch={globalSearch} />
-            )}
-            {route.page === 'fibra-optica' && (
-              <FibraOptica sub={route.sub ?? 'paquete'} />
-            )}
-            {route.page === 'inventario-por-equipos' && <InventarioPorEquipos />}
-            {route.page === 'transferencias' && <Transferencias />}
-            {route.page === 'reportes' && (
-              <Reportes
-                key={`${route.sub ?? ''}-${route.equipoId ?? ''}`}
-                initialSub={route.sub}
-                initialEquipoId={route.equipoId}
-              />
-            )}
-            {route.page === 'auditoria' && <Auditoria />}
+            <Suspense
+              fallback={
+                <p role="status" className="text-sm text-slate-500">
+                  Cargando…
+                </p>
+              }
+            >
+              {route.page === 'seccion-general' && (
+                <SeccionGeneral globalSearch={globalSearch} />
+              )}
+              {route.page === 'fibra-optica' && <FibraOptica />}
+              {route.page === 'inventario-por-equipos' && <InventarioPorEquipos />}
+              {route.page === 'transferencias' && <Transferencias />}
+              {route.page === 'reportes' && (
+                <Reportes
+                  key={`${route.sub ?? ''}-${route.equipoId ?? ''}`}
+                  initialSub={route.sub}
+                  initialEquipoId={route.equipoId}
+                />
+              )}
+              {route.page === 'auditoria' && <Auditoria />}
+            </Suspense>
           </main>
         </div>
       </div>

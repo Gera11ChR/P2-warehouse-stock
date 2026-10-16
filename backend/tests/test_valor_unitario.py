@@ -357,6 +357,73 @@ async def test_RF_008_no_admin_en_patch_fibra_con_valor_403(
     assert await _valor_db(session, m["id_lista"]) == Decimal("1.000")
 
 
+async def test_RF_008_no_admin_en_patch_fibra_null_y_mixto_403(
+    client: AsyncClient, session
+) -> None:
+    """RF-8 (dictamen @sec-ops T7, L-3): en PATCH /fibra/materiales/{id} la
+    PRESENCIA de `valor_unitario` basta para el 403 — también con `null`
+    explícito y combinado con otros campos editables — y no se escribe nada
+    (ni la descripción ni el valor)."""
+    m = await crear_material(client, descripcion="FO RBAC presencia")
+    await fibra_carga_inicial(client, material_id=m["id_lista"], cantidad=5)
+    for body in (
+        {"valor_unitario": None},
+        {"valor_unitario": 2.5, "descripcion": "Intento mixto"},
+    ):
+        resp = await client.patch(
+            f"/api/v1/fibra/materiales/{m['id_lista']}", json=body
+        )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["error"]["code"] == "AUTHORIZATION_FAILED"
+    assert await _valor_db(session, m["id_lista"]) == Decimal("1.000")
+    desc = (
+        await session.execute(
+            text("SELECT descripcion FROM catalogo_materiales WHERE id_lista=:m"),
+            {"m": m["id_lista"]},
+        )
+    ).scalar_one()
+    assert desc == "FO RBAC presencia"
+
+
+async def test_RF_008_admin_en_patch_fibra_valor_y_null_noop(
+    client: AsyncClient, client_admin: AsyncClient, session
+) -> None:
+    """RF-8/E15 en la ruta passthrough de FO: el admin persiste 2.5 (200,
+    número JSON, un evento de auditoría) y un `null` explícito posterior es
+    NO-OP (200, valor intacto, sin evento nuevo, nunca 500)."""
+    m = await crear_material(client, descripcion="FO admin valor")
+    await fibra_carga_inicial(client, material_id=m["id_lista"], cantidad=5)
+
+    resp = await client_admin.patch(
+        f"/api/v1/fibra/materiales/{m['id_lista']}",
+        json={"valor_unitario": 2.5},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["valor_unitario"] == 2.5
+    assert await _valor_db(session, m["id_lista"]) == Decimal("2.500")
+    assert len(await _eventos_valor(session, m["id_lista"])) == 1
+
+    resp = await client_admin.patch(
+        f"/api/v1/fibra/materiales/{m['id_lista']}",
+        json={"valor_unitario": None},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["valor_unitario"] == 2.5
+    assert await _valor_db(session, m["id_lista"]) == Decimal("2.500")
+    assert len(await _eventos_valor(session, m["id_lista"])) == 1
+
+
+async def test_RF_008_patch_catalogo_modulo_extra_422(
+    client: AsyncClient, client_admin: AsyncClient
+) -> None:
+    """RF-1/RF-8: `modulo` en PATCH /catalogo/{id} → 422 (extra="forbid")."""
+    m = await crear_material(client, descripcion="Catalogo sin modulo")
+    resp = await client_admin.patch(
+        f"/api/v1/catalogo/{m['id_lista']}", json={"modulo": "PAQUETE"}
+    )
+    assert resp.status_code == 422, resp.text
+
+
 async def test_RF_008_admin_con_null_noop_sin_evento(
     client: AsyncClient, client_admin: AsyncClient, session
 ) -> None:

@@ -41,8 +41,8 @@ ACTOR_QA = "qa"
 
 SECCIONES_SEMILLA = [
     ("Inventario General", "GENERAL", True),
-    ("Fibra Optica - Paquete", "FO_PAQUETE", False),
-    ("Fibra Optica - En Uso", "FO_EN_USO", False),
+    # 0027: sección única de ruteo FO (FO_PAQUETE/FO_EN_USO son solo históricas).
+    ("Inventario FO", "FO", False),
 ]
 
 UMS_SEMILLA = [
@@ -81,7 +81,7 @@ TABLAS_DOMINIO = [
 
 
 def pytest_configure(config: object) -> None:
-    """Aplica la cadena de migraciones completa (0001 -> 0022) sobre
+    """Aplica la cadena de migraciones completa (0001 -> head, incl. 0027) sobre
     p2_test antes de recolectar las pruebas — valida las migraciones de la
     Fase 1 en cada ejecución."""
     env = {**os.environ, "P2_DATABASE_URL": TEST_DB_URL}

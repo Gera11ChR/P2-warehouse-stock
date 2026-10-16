@@ -136,4 +136,47 @@ describe('SeguimientoCierreForm validación', () => {
       observaciones_cierre: 'Cierre de obra',
     })
   })
+
+  it('RF-6: el campo Consumido admite decimales (step 0.001, inputMode decimal)', () => {
+    renderForm()
+    const campo = screen.getAllByLabelText('Consumido')[0]
+    expect(campo).toHaveAttribute('step', '0.001')
+    expect(campo).toHaveAttribute('inputmode', 'decimal')
+  })
+
+  it('RF-6: un consumido decimal (1.5) es válido y se envía como número', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm(onSubmit)
+
+    const inputs = screen.getAllByLabelText('Consumido')
+    await user.type(inputs[0], '1.5')
+    await user.type(inputs[1], '0.001')
+    await user.click(cerrar())
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      consumidos: [
+        { material_id: 10, cantidad_consumida: 1.5 },
+        { material_id: 20, cantidad_consumida: 0.001 },
+      ],
+    })
+  })
+
+  it('RF-6: un consumido con 4 decimales bloquea el envío con el mensaje nuevo', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm(onSubmit)
+
+    const inputs = screen.getAllByLabelText('Consumido')
+    await user.type(inputs[0], '1.2345')
+    await user.type(inputs[1], '1')
+    await user.click(cerrar())
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(
+      screen.getByText(
+        'El consumido debe ser un número mayor o igual a 0, con máximo 3 decimales.',
+      ),
+    ).toBeInTheDocument()
+  })
 })

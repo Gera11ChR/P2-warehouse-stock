@@ -3,7 +3,6 @@ import {
   Boxes,
   Cable,
   FileBarChart,
-  Package,
   ShieldCheck,
   Wrench,
 } from 'lucide-react'
@@ -20,15 +19,9 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Sección General', page: 'seccion-general', icon: Boxes },
-  {
-    label: 'Fibra Óptica',
-    page: 'fibra-optica',
-    icon: Cable,
-    children: [
-      { label: 'Paquete', page: 'fibra-optica', sub: 'paquete', icon: Package },
-      { label: 'En Uso', page: 'fibra-optica', sub: 'en-uso', icon: Wrench },
-    ],
-  },
+  // RF-1/RF-10: una sola entrada, sin subentradas. La ruta interna
+  // `fibra-optica` se conserva (identificador técnico, no texto visible).
+  { label: 'Inventario FO', page: 'fibra-optica', icon: Cable },
   { label: 'Inventario por Unidad', page: 'inventario-por-equipos', icon: Wrench },
   { label: 'Transferencias', page: 'transferencias', icon: ArrowRightLeft },
   { label: 'Reportes', page: 'reportes', icon: FileBarChart },

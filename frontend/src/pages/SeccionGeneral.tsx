@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
 import KpiCards from '../components/KpiCards'
 import FilterToolbar from '../components/FilterToolbar'
 import type { FilterState } from '../components/FilterToolbar'
@@ -29,21 +28,11 @@ import type {
 } from '../services/catalog'
 import { listSecciones, stockSeccion } from '../services/inventory'
 import { useToast } from '../hooks/useToasts'
+import { mensajeErrorApi as errorMessage } from '../utils/errorMensaje'
+import { invalidarResumenGeneral } from '../hooks/queryKeys'
 import type { InventoryRow } from '../types'
 
 const PAGE_SIZE = 10
-
-function errorMessage(error: unknown): string {
-  if (axios.isAxiosError(error)) {
-    const detail = error.response?.data as
-      | { error?: { message?: string } }
-      | undefined
-    if (detail?.error?.message) {
-      return detail.error.message
-    }
-  }
-  return 'Ocurrió un error'
-}
 
 export default function SeccionGeneral({
   globalSearch,
@@ -209,19 +198,19 @@ export default function SeccionGeneral({
       queryClient.invalidateQueries({ queryKey: ['stock', effectiveAlmacenId] })
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
       queryClient.invalidateQueries({ queryKey: ['catalogo'] })
-      // REQ-CARGA-001/002: si la carga inicial aterrizó en una raíz FO, el
-      // stock vive en inventario_fibra — invalidar el módulo correspondiente
-      // para reflejarlo sin stock obsoleto en la UI.
+      // REQ-CARGA-001/002: si la carga inicial aterrizó en el Inventario FO,
+      // el stock vive en inventario_fibra — invalidar ['fibra'] para
+      // reflejarlo sin stock obsoleto en la UI.
       if (variables.seccion_id != null && variables.stock_inicial != null) {
         const seccionDestinoObj = seccionesDestino.find(
           (s) => s.almacen_id === variables.seccion_id,
         )
-        if (seccionDestinoObj?.tipo === 'FO_PAQUETE') {
-          queryClient.invalidateQueries({ queryKey: ['fibra', 'PAQUETE'] })
-        } else if (seccionDestinoObj?.tipo === 'FO_EN_USO') {
-          queryClient.invalidateQueries({ queryKey: ['fibra', 'EN_USO'] })
+        if (seccionDestinoObj?.tipo === 'FO') {
+          queryClient.invalidateQueries({ queryKey: ['fibra'] })
         }
       }
+      // RF-4/RF-5: la carga inicial cambia existencias → Valor Total.
+      void invalidarResumenGeneral(queryClient)
       pushToast('Material creado')
       setFormMode(null)
     },
@@ -232,9 +221,18 @@ export default function SeccionGeneral({
     mutationFn: ({ id, payload }: { id: number; payload: MaterialUpdatePayload }) =>
       updateMaterial(id, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['stock', effectiveAlmacenId] })
+      // RF-3: el Valor Unitario es del catálogo → recargar el stock de TODAS
+      // las secciones (prefijo ['stock']), no solo la visible.
+      queryClient.invalidateQueries({ queryKey: ['stock'] })
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
       queryClient.invalidateQueries({ queryKey: ['catalogo'] })
+      // Tras editar stock o Valor Unitario: el Inventario FO (mismo
+      // catálogo), la Auditoría (ajuste / MATERIAL_MODIFICADO) y el Valor
+      // Total reflejan lo persistido (RF-4/RF-5/RF-7).
+      queryClient.invalidateQueries({ queryKey: ['fibra'] })
+      queryClient.invalidateQueries({ queryKey: ['equipo'] })
+      queryClient.invalidateQueries({ queryKey: ['auditoria'] })
+      void invalidarResumenGeneral(queryClient)
       pushToast('Material modificado')
       setFormMode(null)
     },
@@ -256,6 +254,7 @@ export default function SeccionGeneral({
       queryClient.invalidateQueries({ queryKey: ['equipo'] })
       queryClient.invalidateQueries({ queryKey: ['fibra'] })
       queryClient.invalidateQueries({ queryKey: ['auditoria'] })
+      void invalidarResumenGeneral(queryClient)
       pushToast('Material eliminado')
       setDeleteOpen(false)
       setSelected(null)
@@ -392,6 +391,7 @@ export default function SeccionGeneral({
         }}
         descripcion={selected?.descripcion ?? null}
         stockActual={selected?.stock_actual ?? 0}
+        valorUnitario={selected?.valor_unitario}
         stockMinimo={selected?.stock_minimo ?? null}
         alertaStock={selected?.alerta_stock ?? false}
         um={selected?.u_m ?? null}
@@ -435,6 +435,7 @@ export default function SeccionGeneral({
                   descripcion: selected.descripcion,
                   u_m: selected.u_m,
                   stock_minimo: selected.stock_minimo,
+                  valor_unitario: selected.valor_unitario,
                   categoria_id: categoriaIdPorMaterial[selected.material_id] ?? null,
                   categoria: categoriaPorMaterial[selected.material_id] ?? null,
                   is_active: true,

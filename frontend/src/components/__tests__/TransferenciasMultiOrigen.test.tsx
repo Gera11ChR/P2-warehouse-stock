@@ -22,8 +22,7 @@ vi.mock('../../hooks/useSeccionesTransferibles', () => ({
   useSeccionesTransferibles: () => ({
     data: [
       { almacen_id: 1, nombre: 'Inventario General', tipo: 'GENERAL', transferible: true },
-      { almacen_id: 2, nombre: 'Fibra Optica - Paquete', tipo: 'FO_PAQUETE', transferible: true },
-      { almacen_id: 3, nombre: 'Fibra Optica - En Uso', tipo: 'FO_EN_USO', transferible: true },
+      { almacen_id: 2, nombre: 'Inventario FO', tipo: 'FO', transferible: true },
     ],
   }),
 }))
@@ -31,7 +30,10 @@ vi.mock('../../services/equipos', () => ({
   listEquipos: vi.fn(),
   inventarioEquipo: vi.fn().mockResolvedValue([]),
 }))
-vi.mock('../../services/inventory', () => ({ stockSeccion: vi.fn() }))
+vi.mock('../../services/inventory', () => ({
+  stockSeccion: vi.fn(),
+  getResumenGeneral: vi.fn().mockResolvedValue({ valor_total: 0, moneda: 'MXN' }),
+}))
 vi.mock('../../services/fibra', () => ({ listFibraStock: vi.fn() }))
 vi.mock('../../services/movimientos', () => ({
   listMovimientos: vi.fn(),
@@ -43,15 +45,12 @@ vi.mock('../../services/movimientos', () => ({
 
 const filaGeneral = {
   material_id: 10, codigo: 'GEN-1', descripcion: 'Conector General', u_m: 'PZ',
-  stock_minimo: null, stock_actual: 100, alerta_stock: false,
+  stock_minimo: null, stock_actual: 100, valor_unitario: 3.5, alerta_stock: false,
 }
-const filaPaquete = {
-  modulo: 'PAQUETE', material_id: 20, codigo: 'FO-1', descripcion: 'Cable Paquete',
-  u_m: 'METRO (M)', stock_minimo: null, stock_actual: 50, alerta_stock: false,
-}
-const filaEnUso = {
-  modulo: 'EN_USO', material_id: 30, codigo: 'FO-2', descripcion: 'Cable En Uso',
-  u_m: 'METRO (M)', stock_minimo: null, stock_actual: 30, alerta_stock: false,
+const filaFo = {
+  material_id: 20, codigo: 'FO-1', descripcion: 'Cable FO',
+  u_m: 'METRO (M)', stock_minimo: null, stock_actual: 50, valor_unitario: 8.25,
+  alerta_stock: false,
 }
 
 function renderPagina() {
@@ -67,8 +66,7 @@ function renderPagina() {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(stockSeccion).mockResolvedValue([filaGeneral] as never)
-  vi.mocked(listFibraStock).mockImplementation((async (modulo: string) =>
-    modulo === 'PAQUETE' ? [filaPaquete] : [filaEnUso]) as never)
+  vi.mocked(listFibraStock).mockResolvedValue([filaFo])
   vi.mocked(listEquipos).mockResolvedValue([
     { equipo_id: 5, nombre: 'Unidad QA', descripcion: null, is_active: true, integrantes: [] },
   ])
@@ -89,18 +87,16 @@ async function agregarDesde(
 }
 
 describe('Carrito multi-origen', () => {
-  it('RF-1/RF-15 REQ-TRFM-001/015: el carrito conserva líneas de General y FO al cambiar de sección y rotula el origen de cada una', async () => {
+  it('RF-1/RF-15 REQ-TRFM-001/015: el carrito conserva líneas de General e Inventario FO al cambiar de sección y rotula el origen de cada una', async () => {
     const user = userEvent.setup()
     renderPagina()
 
     await agregarDesde(user, '1', 'Conector General')
-    await agregarDesde(user, '2', 'Cable Paquete')
-    await agregarDesde(user, '3', 'Cable En Uso')
+    await agregarDesde(user, '2', 'Cable FO')
 
-    expect(screen.getByText('Carrito (3)')).toBeInTheDocument()
+    expect(screen.getByText('Carrito (2)')).toBeInTheDocument()
     expect(screen.getByTestId('origen-linea-10')).toHaveTextContent('Inventario General')
-    expect(screen.getByTestId('origen-linea-20')).toHaveTextContent('Fibra Óptica - Paquete')
-    expect(screen.getByTestId('origen-linea-30')).toHaveTextContent('Fibra Óptica - En Uso')
+    expect(screen.getByTestId('origen-linea-20')).toHaveTextContent('Inventario FO')
   })
 
   it('RF-15: volver a una sección ya usada no duplica ni pierde líneas (material ya agregado deshabilitado)', async () => {
@@ -108,7 +104,7 @@ describe('Carrito multi-origen', () => {
     renderPagina()
 
     await agregarDesde(user, '1', 'Conector General')
-    await agregarDesde(user, '2', 'Cable Paquete')
+    await agregarDesde(user, '2', 'Cable FO')
     const [selSeccion] = await screen.findAllByRole('combobox')
     await user.selectOptions(selSeccion, '1')
     const celda = await screen.findByText('Conector General', { selector: 'td' })
@@ -121,8 +117,7 @@ describe('Carrito multi-origen', () => {
     renderPagina()
 
     await agregarDesde(user, '1', 'Conector General')
-    await agregarDesde(user, '2', 'Cable Paquete')
-    await agregarDesde(user, '3', 'Cable En Uso')
+    await agregarDesde(user, '2', 'Cable FO')
     const combos = await screen.findAllByRole('combobox')
     await user.selectOptions(combos[1], '5') // Unidad destino
     await user.click(screen.getByRole('button', { name: 'Confirmar Transferencia' }))
@@ -135,7 +130,6 @@ describe('Carrito multi-origen', () => {
     expect(payload.detalle).toEqual([
       { material_id: 10, cantidad: 1, origen_almacen_id: 1 },
       { material_id: 20, cantidad: 1, origen_almacen_id: 2 },
-      { material_id: 30, cantidad: 1, origen_almacen_id: 3 },
     ])
     await waitFor(() => expect(procesarMovimiento).toHaveBeenCalled())
     expect(vi.mocked(procesarMovimiento).mock.calls[0][0]).toBe(1)
@@ -160,7 +154,7 @@ describe('Carrito multi-origen', () => {
     const user = userEvent.setup()
     renderPagina()
     await agregarDesde(user, '1', 'Conector General')
-    await agregarDesde(user, '2', 'Cable Paquete')
+    await agregarDesde(user, '2', 'Cable FO')
     const li10 = screen.getByTestId('origen-linea-10').closest('li') as HTMLElement
     const li20 = screen.getByTestId('origen-linea-20').closest('li') as HTMLElement
     expect(li10).toHaveTextContent('Disponible: 100')
@@ -178,7 +172,6 @@ describe('Historial e invalidaciones multi-origen', () => {
     detalle: [
       { material_id: 10, cantidad: 1, origen_almacen_id: 1 },
       { material_id: 20, cantidad: 1, origen_almacen_id: 2 },
-      { material_id: 30, cantidad: 1, origen_almacen_id: 3 },
     ],
   }
 
@@ -186,10 +179,8 @@ describe('Historial e invalidaciones multi-origen', () => {
     vi.mocked(listMovimientos).mockResolvedValue([mixto] as never)
     renderPagina()
     const fila = (await screen.findByText('9')).closest('tr') as HTMLElement
-    expect(fila).toHaveTextContent(
-      'Inventario General + Fibra Óptica - Paquete + Fibra Óptica - En Uso → Unidad QA',
-    )
-    expect(fila).toHaveTextContent('3') // líneas
+    expect(fila).toHaveTextContent('Inventario General + Inventario FO → Unidad QA')
+    expect(fila).toHaveTextContent('2') // líneas
     expect(screen.getAllByRole('row').filter((r) => r.textContent?.includes('Unidad QA'))).toHaveLength(1)
   })
 
@@ -208,8 +199,8 @@ describe('Historial e invalidaciones multi-origen', () => {
       const claves = espiar.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey))
       expect(claves).toEqual(
         expect.arrayContaining([
-          '["stock",1]', '["stock",2]', '["stock",3]',
-          '["fibra","PAQUETE"]', '["fibra","EN_USO"]',
+          '["stock",1]', '["stock",2]',
+          '["fibra"]', '["inventario","resumen-general"]',
         ]),
       )
     })
@@ -221,6 +212,23 @@ describe('Historial e invalidaciones multi-origen', () => {
     ] as never)
     renderPagina()
     const fila = (await screen.findByText('4')).closest('tr') as HTMLElement
-    expect(fila).toHaveTextContent('Fibra Óptica - Paquete → Unidad QA')
+    expect(fila).toHaveTextContent('Inventario FO → Unidad QA')
+  })
+
+  it('RF-9: un origen de línea fuera de las secciones transferibles (FO histórico) se rotula «Inventario FO» y no «Sección N»', async () => {
+    vi.mocked(listMovimientos).mockResolvedValue([
+      {
+        ...mixto,
+        id: 6,
+        detalle: [
+          { material_id: 10, cantidad: 1, origen_almacen_id: 1 },
+          { material_id: 30, cantidad: 1, origen_almacen_id: 77 },
+        ],
+      },
+    ] as never)
+    renderPagina()
+    const fila = (await screen.findByText('6')).closest('tr') as HTMLElement
+    expect(fila).toHaveTextContent('Inventario General + Inventario FO → Unidad QA')
+    expect(fila).not.toHaveTextContent('Sección 77')
   })
 })

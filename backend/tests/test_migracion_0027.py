@@ -205,3 +205,159 @@ def test_RF_E14_downgrade_aborta_con_fracciones_y_upgrade_limpio() -> None:
         assert Decimal(
             sql("SELECT valor_unitario FROM catalogo_materiales")[0][0]
         ) == Decimal("1.000")
+
+
+def test_RF_001_E13_migracion_repetida_es_idempotente_sin_duplicar_eventos() -> None:
+    """E13 (RF-1/RF-7): reintentar la migración (`upgrade 0027` y
+    `upgrade head` estando ya aplicada) es un NO-OP a nivel de Alembic: no
+    duplica eventos FO_UNIFICADO, no vuelve a fusionar ni altera
+    existencias, valor_unitario ni el conteo/contenido del ledger."""
+    with esquema_en("0026"):
+        m = sql(
+            "INSERT INTO catalogo_materiales (codigo, descripcion, u_m) "
+            "VALUES ('R1','Fibra reintento','PZ') RETURNING id_lista"
+        )[0][0]
+        sql(
+            "INSERT INTO inventario_fibra (modulo, material_id, stock_actual) "
+            "VALUES ('PAQUETE', %s, 4), ('EN_USO', %s, 6)",
+            (m, m),
+        )
+        alembic("upgrade", "0027")
+
+        def _estado() -> tuple:
+            return (
+                [
+                    (f[0], Decimal(f[1]))
+                    for f in sql(
+                        "SELECT material_id, stock_actual FROM inventario_fibra"
+                    )
+                ],
+                sql(
+                    "SELECT count(*) FROM auditoria_eventos "
+                    "WHERE tipo_accion = 'FO_UNIFICADO'"
+                )[0][0],
+                _audit_rows_despues(),
+                [
+                    Decimal(v[0])
+                    for v in sql("SELECT valor_unitario FROM catalogo_materiales")
+                ],
+                sql("SELECT version_num FROM alembic_version"),
+            )
+
+        primero = _estado()
+        assert primero[0] == [(m, Decimal("10.000"))]
+        assert primero[1] == 1  # un solo evento de fusión
+        assert primero[4] == [("0027",)] or primero[4][0][0] >= "0027"
+
+        # Reintentos: ambos terminan en éxito y no cambian NADA.
+        alembic("upgrade", "0027")
+        alembic("upgrade", "head")
+        assert _estado() == primero
+
+
+def _scopes(actor: str | None = None) -> list[tuple[str, str]]:
+    """(actor_id, tipo de sección) de actor_almacen_scopes, ordenado."""
+    filtro = "WHERE sc.actor_id = %s " if actor else ""
+    return [
+        (f[0], f[1])
+        for f in sql(
+            "SELECT sc.actor_id, s.tipo FROM actor_almacen_scopes sc "
+            "JOIN secciones s ON s.almacen_id = sc.almacen_id "
+            + filtro
+            + "ORDER BY sc.actor_id, s.tipo",
+            (actor,) if actor else None,
+        )
+    ]
+
+
+def test_RF_009_D2_scopes_legacy_se_copian_a_la_seccion_fo_y_downgrade_los_retira() -> None:
+    """D-2 (RF-9, dictamen @arq-reviewer/@sec-ops T7): la migración copia los
+    scopes de FO_PAQUETE/FO_EN_USO a la sección FO (continuidad de permisos
+    de perfiles operativos), sin otorgar nada a actores sin scope legacy,
+    de forma idempotente, conservando los scopes legacy; y el downgrade
+    retira los scopes copiados (no queda bloqueado por su propio upgrade)."""
+    with esquema_en("0026"):
+        ids = {
+            t: sql("SELECT almacen_id FROM secciones WHERE tipo = %s", (t,))[0][0]
+            for t in ("GENERAL", "FO_PAQUETE", "FO_EN_USO")
+        }
+        sql(
+            "INSERT INTO actor_almacen_scopes (actor_id, almacen_id) VALUES "
+            "('op-paquete', %s), ('op-en-uso', %s), ('op-ambos', %s), "
+            "('op-ambos', %s), ('op-general', %s)",
+            (
+                ids["FO_PAQUETE"],
+                ids["FO_EN_USO"],
+                ids["FO_PAQUETE"],
+                ids["FO_EN_USO"],
+                ids["GENERAL"],
+            ),
+        )
+        antes_legacy = _scopes()
+
+        alembic("upgrade", "0027")
+        despues = _scopes()
+        # Copiados a FO: solo actores con scope legacy; uno por actor.
+        fo = [a for a, t in despues if t == "FO"]
+        assert fo == ["op-ambos", "op-en-uso", "op-paquete"]
+        # Sin concesión a actores sin scope legacy.
+        assert "op-general" not in fo
+        # Los scopes legacy previos se conservan intactos.
+        assert [x for x in despues if x[1] != "FO"] == antes_legacy
+
+        # Idempotencia: reintentos no duplican ni cambian nada.
+        alembic("upgrade", "0027")
+        alembic("upgrade", "head")
+        assert _scopes() == despues
+
+        # Downgrade: retira los scopes FO copiados y NO aborta por ellos.
+        alembic("downgrade", "0026")
+        assert _scopes() == antes_legacy
+        assert not any(
+            s[0] == "Inventario FO" for s in sql("SELECT nombre FROM secciones")
+        )
+        alembic("upgrade", "0027")
+
+
+def test_RF_009_D2_scope_concedido_directo_a_fo_sigue_bloqueando_el_downgrade() -> None:
+    """D-2: un scope concedido DIRECTAMENTE a la sección FO (actor sin scope
+    legacy) no es derivado de la migración: el downgrade lo respeta y
+    ABORTA con error explícito (sin pérdida silenciosa de permisos)."""
+    with esquema_en("head"):
+        fo_id = sql("SELECT almacen_id FROM secciones WHERE tipo = 'FO'")[0][0]
+        sql(
+            "INSERT INTO actor_almacen_scopes (actor_id, almacen_id) "
+            "VALUES ('op-directo-fo', %s)",
+            (fo_id,),
+        )
+        r = alembic("downgrade", "0026", ok=False)
+        assert r.returncode != 0
+        assert "inventario fo" in (r.stderr + r.stdout).lower()
+        assert _scopes("op-directo-fo") == [("op-directo-fo", "FO")]
+
+
+def test_RF_009_D2_actor_con_scope_legacy_y_fo_directo_downgrade_conserva_legacy() -> None:
+    """D-2, caso límite documentado: un actor con scope legacy Y scope FO
+    concedido directamente pierde solo el scope FO en el downgrade (la
+    sección FO no existe en 0026); su scope legacy —permiso efectivo previo
+    a 0027— se conserva y el downgrade termina limpio."""
+    with esquema_en("0026"):
+        legacy = sql("SELECT almacen_id FROM secciones WHERE tipo = 'FO_EN_USO'")[0][0]
+        sql(
+            "INSERT INTO actor_almacen_scopes (actor_id, almacen_id) "
+            "VALUES ('op-mixto', %s)",
+            (legacy,),
+        )
+        alembic("upgrade", "0027")
+        fo_id = sql("SELECT almacen_id FROM secciones WHERE tipo = 'FO'")[0][0]
+        # El upgrade ya le copió FO; añade además un scope «directo» (no-op
+        # por PK, pero documenta el caso): sigue habiendo exactamente uno.
+        sql(
+            "INSERT INTO actor_almacen_scopes (actor_id, almacen_id) "
+            "VALUES ('op-mixto', %s) ON CONFLICT DO NOTHING",
+            (fo_id,),
+        )
+        assert _scopes("op-mixto") == [("op-mixto", "FO"), ("op-mixto", "FO_EN_USO")]
+        alembic("downgrade", "0026")
+        assert _scopes("op-mixto") == [("op-mixto", "FO_EN_USO")]
+        alembic("upgrade", "0027")

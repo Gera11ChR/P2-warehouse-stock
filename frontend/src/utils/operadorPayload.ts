@@ -1,5 +1,5 @@
 import type { SeccionTransferible } from '../types'
-import { CANTIDAD_MAX_INT4 } from './cantidad'
+import { CANTIDAD_MAX_DECIMAL, esCantidadDecimalValida, formatearCantidad } from './cantidad'
 
 // ============================================================================
 // BUILDER PURO DE PAYLOADS — +Cantidad / Mover (REQ-P2-INV-001/003/004/007)
@@ -13,22 +13,22 @@ import { CANTIDAD_MAX_INT4 } from './cantidad'
 // (cortan errores obvios antes de enviar); la decisión final es de FastAPI y
 // PostgreSQL. `cantidad` = campo oficial del contrato.
 //
-// Mapeo de tipo de inventario (`SeccionTransferible['tipo']`) -> contrato:
-//   GENERAL    -> destino/origen = 'GENERAL'            (sin módulo)
-//   FO_PAQUETE -> destino/origen = 'FO' + modulo 'PAQUETE'
-//   FO_EN_USO  -> destino/origen = 'FO' + modulo 'EN_USO'
+// Mapeo de tipo de inventario (`SeccionTransferible['tipo']`) -> contrato
+// (1:1, RF-1): el Inventario FO es único, sin módulos. Enviar `modulo`,
+// `origen_modulo` o `destino_modulo` es 422.
+//   GENERAL -> destino/origen = 'GENERAL'
+//   FO      -> destino/origen = 'FO'
+//
+// `cantidad`: decimal > 0 con hasta 3 decimales y 12 dígitos (RF-6).
 // ============================================================================
 
 /** Tipo de inventario tal como lo publica /inventario/secciones/transferibles. */
 export type TipoInventario = SeccionTransferible['tipo']
 export type InventarioContrato = 'GENERAL' | 'FO'
-export type ModuloFo = 'PAQUETE' | 'EN_USO'
 
 /** Cuerpo de POST /api/v1/inventario/sumar-cantidad. */
 export interface SumarCantidadPayload {
   destino: InventarioContrato
-  /** Obligatorio cuando destino = FO; ausente cuando GENERAL. */
-  modulo?: ModuloFo
   material_id: number
   cantidad: number
   clave_idempotencia?: string
@@ -37,9 +37,7 @@ export interface SumarCantidadPayload {
 /** Cuerpo de POST /api/v1/inventario/mover. */
 export interface MoverMaterialPayload {
   origen: InventarioContrato
-  origen_modulo?: ModuloFo
   destino: InventarioContrato
-  destino_modulo?: ModuloFo
   material_id: number
   cantidad: number
   clave_idempotencia?: string
@@ -59,23 +57,10 @@ export type ResultadoPayload<T> =
 /** Longitud máxima de `clave_idempotencia` en el contrato (min 1, max 100). */
 export const CLAVE_IDEMPOTENCIA_MAX = 100
 
-interface InventarioResuelto {
-  inventario: InventarioContrato
-  modulo?: ModuloFo
-}
-
-/** GENERAL -> {GENERAL}; FO_PAQUETE/FO_EN_USO -> {FO, modulo}; otro -> null. */
-export function resolverInventario(tipo: string): InventarioResuelto | null {
-  switch (tipo) {
-    case 'GENERAL':
-      return { inventario: 'GENERAL' }
-    case 'FO_PAQUETE':
-      return { inventario: 'FO', modulo: 'PAQUETE' }
-    case 'FO_EN_USO':
-      return { inventario: 'FO', modulo: 'EN_USO' }
-    default:
-      return null
-  }
+/** GENERAL -> 'GENERAL'; FO -> 'FO'; otro (incl. orígenes FO históricos,
+ *  que ya no se ofrecen) -> null. */
+export function resolverInventario(tipo: string): InventarioContrato | null {
+  return tipo === 'GENERAL' || tipo === 'FO' ? tipo : null
 }
 
 function fallo<T>(
@@ -100,15 +85,11 @@ function validarComunes(
       mensaje: 'No se pudo identificar el material de la operación.',
     }
   }
-  if (
-    !Number.isSafeInteger(cantidad) ||
-    cantidad <= 0 ||
-    cantidad > CANTIDAD_MAX_INT4
-  ) {
+  if (!esCantidadDecimalValida(cantidad)) {
     return {
       ok: false,
       codigo: 'CANTIDAD_INVALIDA',
-      mensaje: `La cantidad debe ser un entero entre 1 y ${CANTIDAD_MAX_INT4.toLocaleString('es-MX')}.`,
+      mensaje: `La cantidad debe ser mayor que 0, con máximo 3 decimales y no exceder ${formatearCantidad(CANTIDAD_MAX_DECIMAL)}.`,
     }
   }
   if (clave === undefined) return { ok: true, clave: undefined }
@@ -150,11 +131,10 @@ export function construirPayloadSumar(
   if (!comunes.ok) return fallo(comunes.codigo, comunes.mensaje)
 
   const payload: SumarCantidadPayload = {
-    destino: destino.inventario,
+    destino,
     material_id: entrada.materialId,
     cantidad: entrada.cantidad,
   }
-  if (destino.modulo) payload.modulo = destino.modulo
   if (comunes.clave !== undefined) payload.clave_idempotencia = comunes.clave
   return { ok: true, payload }
 }
@@ -178,12 +158,8 @@ export function construirPayloadMover(
       'El inventario de origen o destino no admite esta operación.',
     )
   }
-  // El contrato identifica los inventarios por (tipo, módulo): GENERAL ->
-  // GENERAL o FO/PAQUETE -> FO/PAQUETE son «destino = origen» (422).
-  if (
-    origen.inventario === destino.inventario &&
-    origen.modulo === destino.modulo
-  ) {
+  // GENERAL -> GENERAL o FO -> FO son «destino = origen» (422).
+  if (origen === destino) {
     return fallo(
       'DESTINO_IGUAL_ORIGEN',
       'El inventario destino debe ser distinto del origen.',
@@ -197,13 +173,11 @@ export function construirPayloadMover(
   if (!comunes.ok) return fallo(comunes.codigo, comunes.mensaje)
 
   const payload: MoverMaterialPayload = {
-    origen: origen.inventario,
-    destino: destino.inventario,
+    origen,
+    destino,
     material_id: entrada.materialId,
     cantidad: entrada.cantidad,
   }
-  if (origen.modulo) payload.origen_modulo = origen.modulo
-  if (destino.modulo) payload.destino_modulo = destino.modulo
   if (comunes.clave !== undefined) payload.clave_idempotencia = comunes.clave
   return { ok: true, payload }
 }

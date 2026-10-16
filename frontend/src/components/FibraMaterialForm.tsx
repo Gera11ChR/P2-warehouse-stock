@@ -8,11 +8,18 @@ import type {
 } from '../types'
 import { UNIDADES } from '../types'
 import { MATERIAL_FIELD_LABELS } from '../utils/materialFields'
+import {
+  formatearCantidad,
+  mensajeCantidadInvalida,
+  validarCantidad,
+} from '../utils/cantidad'
+import { validarValorUnitario } from '../schemas/valorUnitario'
+import CampoCantidad from './CampoCantidad'
 
 interface FibraMaterialFormProps {
   /** Fila FO seleccionada con categoría resuelta (join de presentación). */
   initial: FibraMaterialRowEditable
-  /** Stock registrado del módulo FO: base de la proyección del diferencial. */
+  /** Stock registrado del Inventario FO: base de la proyección del diferencial. */
   stockActual: number
   alertaStock: boolean
   categorias: Categoria[]
@@ -22,16 +29,22 @@ interface FibraMaterialFormProps {
    * vacío se conserva el fallback `UNIDADES` (constante del dominio).
    */
   ums: Ums[]
+  /**
+   * RBAC VISUAL (RF-8; no es seguridad): `false` deshabilita el campo
+   * Valor Unitario y jamás lo envía. La autoridad es el backend (403 por
+   * presencia del campo). Por omisión es editable y solo se envía si cambió.
+   */
+  esAdmin?: boolean
   onSubmit: (payload: FibraMaterialUpdatePayload) => void
   onCancel: () => void
 }
 
 /**
- * Formulario de edición para las secciones de Fibra Óptica
+ * Formulario de edición del Inventario FO
  * (REQ-CATFO-001, REQ-STOCK-001): modo SOLO edición — espejo simplificado
  * del MaterialForm de Inventario General. Edita Descripción, STOCK ACTUAL
- * (con proyección visual del diferencial), Stock Mínimo, U.M., Código/SKU
- * y Categoría (selector dual). Si el operador cambia el STOCK ACTUAL, el
+ * (decimal, con proyección visual del diferencial), Valor Unitario (MXN,
+ * RF-3/RF-8), Stock Mínimo, U.M., Código/SKU y Categoría (selector dual). Si el operador cambia el STOCK ACTUAL, el
  * motivo es OPCIONAL (ergonomía `justificacion_opcional`, REQ-ERG-004): el
  * frontend envía SOLO stock_actual + motivo (NUNCA el delta) y el backend
  * calcula el diferencial en PostgreSQL con auditoría 'AJUSTE_INVENTARIO_FO'.
@@ -42,6 +55,7 @@ export default function FibraMaterialForm({
   alertaStock = false,
   categorias,
   ums = [],
+  esAdmin = true,
   onSubmit,
   onCancel,
 }: FibraMaterialFormProps) {
@@ -69,18 +83,45 @@ export default function FibraMaterialForm({
     String(stockActual),
   )
   const [motivo, setMotivo] = useState('')
-  const [stockError, setStockError] = useState<string | null>(null)
+  // Valor Unitario (RF-3): se envía SOLO si el administrador lo cambió
+  // (la presencia del campo en el PATCH exige rol admin → 403 si no lo es).
+  const [valorUnitario, setValorUnitario] = useState(
+    String(initial.valor_unitario),
+  )
+  const [intentado, setIntentado] = useState(false)
+
+  // Validación PRELIMINAR (el backend decide). Decimales hasta 3 (RF-6).
+  const stockValidacion = validarCantidad(stockActualEditado, {
+    permitirCero: true,
+  })
+  const stockError: string | null =
+    stockActualEditado !== '' && !stockValidacion.ok
+      ? mensajeCantidadInvalida(stockValidacion.motivo)
+      : null
 
   // Proyección UX (simulación visual previa al commit). El diferencial NO se
   // envía: el backend recalcula el delta y audita vía fn_ajustar_stock_fibra.
-  const stockEditadoNum =
-    stockActualEditado === '' ? null : Number(stockActualEditado)
+  const stockEditadoNum = stockValidacion.ok ? stockValidacion.cantidad : null
   const stockModificado =
-    stockEditadoNum !== null &&
-    Number.isFinite(stockEditadoNum) &&
-    stockEditadoNum >= 0 &&
-    stockEditadoNum !== stockActual
-  const diferencial = stockModificado ? stockEditadoNum - stockActual : null
+    stockEditadoNum !== null && stockEditadoNum !== stockActual
+  const diferencial =
+    stockModificado && stockEditadoNum !== null
+      ? stockEditadoNum - stockActual
+      : null
+
+  const valorValidacion = validarValorUnitario(valorUnitario)
+  const valorModificado =
+    esAdmin &&
+    valorValidacion.ok &&
+    valorValidacion.valor !== initial.valor_unitario
+  const valorError: string | null =
+    esAdmin && !valorValidacion.ok
+      ? valorUnitario === ''
+        ? intentado
+          ? 'Ingresa el Valor Unitario (0 o mayor).'
+          : null
+        : valorValidacion.mensaje
+      : null
 
   // U.M.: catálogo activo ordenado por nombre; fallback a la constante del
   // dominio si la página no provee el catálogo de unidades (ums = []).
@@ -94,6 +135,11 @@ export default function FibraMaterialForm({
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
+    setIntentado(true)
+    // Un valor inválido bloquea el envío con el error en línea (el backend
+    // vuelve a validar: 422 por escala/rango; sin redondeo silencioso).
+    if (stockError !== null) return
+    if (esAdmin && !valorValidacion.ok) return
 
     // Campos de catálogo: se envían siempre (espejo de MaterialForm) para
     // preservar la semántica del modal "Modificar Material" FO.
@@ -106,25 +152,19 @@ export default function FibraMaterialForm({
       stock_minimo: stockMinimo === '' ? null : Number(stockMinimo),
     }
 
-    const stockEditado =
-      stockActualEditado === '' ? null : Number(stockActualEditado)
-
     // stock_actual SOLO se incluye si el usuario modificó el valor registrado.
-    if (
-      stockEditado !== null &&
-      Number.isFinite(stockEditado) &&
-      stockEditado !== stockActual
-    ) {
-      if (stockEditado < 0) {
-        setStockError('El Stock Actual no puede ser negativo.')
-        return
-      }
+    if (stockModificado && stockEditadoNum !== null) {
       // REQ-STOCK-002: el backend calcula el delta y lo enruta a
       // fn_ajustar_stock_fibra. El frontend NO envía el diferencial:
       // solo stock_actual + motivo. Ergonomía REQ-ERG-004: el motivo es
       // OPCIONAL — vacío se envía como null.
-      payload.stock_actual = stockEditado
+      payload.stock_actual = stockEditadoNum
       payload.motivo = motivo.trim() || null
+    }
+
+    // RF-8: valor_unitario SOLO si el administrador lo cambió.
+    if (valorModificado && valorValidacion.ok) {
+      payload.valor_unitario = valorValidacion.valor
     }
 
     onSubmit(payload)
@@ -146,19 +186,13 @@ export default function FibraMaterialForm({
       </div>
 
       <div>
-        <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          {MATERIAL_FIELD_LABELS.stock_actual}
-        </label>
-        <input
-          type="number"
-          min={0}
-          step={1}
+        <CampoCantidad
+          id="fibra-stock-actual"
+          label={MATERIAL_FIELD_LABELS.stock_actual}
           value={stockActualEditado}
-          onChange={(event) => {
-            setStockActualEditado(event.target.value)
-            setStockError(null)
-          }}
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          onChange={setStockActualEditado}
+          error={stockError}
+          ayuda="Hasta 3 decimales (por ejemplo 7.250)."
         />
         {!stockModificado && (
           <p className="mt-1 text-xs text-slate-500">
@@ -169,15 +203,12 @@ export default function FibraMaterialForm({
         {stockModificado && diferencial !== null && (
           <p className="mt-1 text-xs text-slate-500">
             Proyección visual — Stock actual registrado:{' '}
-            {stockActual.toLocaleString('es-MX')} → Nuevo:{' '}
-            {stockEditadoNum.toLocaleString('es-MX')} (diferencial{' '}
+            {formatearCantidad(stockActual)} → Nuevo:{' '}
+            {formatearCantidad(stockEditadoNum ?? stockActual)} (diferencial{' '}
             {diferencial >= 0 ? '+' : ''}
-            {diferencial.toLocaleString('es-MX')}). El saldo confirmado lo
+            {formatearCantidad(diferencial)}). El saldo confirmado lo
             calcula y audita el backend.
           </p>
-        )}
-        {stockError && (
-          <p className="mt-1 text-xs font-medium text-red-600">{stockError}</p>
         )}
 
         {stockModificado && (
@@ -204,6 +235,22 @@ export default function FibraMaterialForm({
             </div>
           </div>
         )}
+      </div>
+
+      <div>
+        <CampoCantidad
+          id="fibra-valor-unitario"
+          label={`${MATERIAL_FIELD_LABELS.valor_unitario} (MXN)`}
+          value={valorUnitario}
+          onChange={setValorUnitario}
+          error={valorError}
+          ayuda={
+            esAdmin
+              ? 'Decimal mayor o igual a 0, hasta 3 decimales. Cada cambio queda registrado en Auditoría.'
+              : 'Solo un administrador puede modificar el Valor Unitario.'
+          }
+          disabled={!esAdmin}
+        />
       </div>
 
       <div>

@@ -2,7 +2,11 @@ import { useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import OperadorRapidoDialog from './OperadorRapidoDialog'
 import CampoCantidad from './CampoCantidad'
-import { mensajeCantidadInvalida, validarCantidad } from '../utils/cantidad'
+import {
+  formatearCantidad,
+  mensajeCantidadInvalida,
+  validarCantidad,
+} from '../utils/cantidad'
 import { resolverInventario } from '../utils/operadorPayload'
 import type { TipoInventario } from '../utils/operadorPayload'
 import type { MaterialOperacionContexto } from './SumarCantidadDialog'
@@ -20,11 +24,11 @@ import type { MaterialOperacionContexto } from './SumarCantidadDialog'
 //    conscientemente («— Selecciona destino —») y es obligatorio.
 //  - El origen nunca aparece como destino. Se excluye por `value` y, cuando
 //    hay `tipo`, TODO inventario del mismo tipo que el origen (el contrato
-//    identifica los inventarios por tipo/módulo: GENERAL->GENERAL o
-//    FO_PAQUETE->FO_PAQUETE sería «destino = origen», 422).
+//    identifica los inventarios por tipo: GENERAL->GENERAL o FO->FO sería
+//    «destino = origen», 422).
 //  - La cantidad por defecto es el stock completo (REQ-P2-INV-003); regla:
-//    entero, 1 <= cantidad <= stock del origen y <= INT4 (mismas reglas
-//    numéricas que +Cantidad, utils/cantidad.ts). Si excede el stock se
+//    decimal, 0 < cantidad <= stock del origen, hasta 3 decimales (mismas
+//    reglas numéricas que +Cantidad, utils/cantidad.ts). Si excede el stock se
 //    explica; el servidor responde 400 si el stock real es menor.
 //  - El botón de confirmar nombra cantidad, material y destino, está
 //    deshabilitado con motivo visible mientras el formulario sea inválido y,
@@ -33,14 +37,14 @@ import type { MaterialOperacionContexto } from './SumarCantidadDialog'
 // Contrato de props (cableado por @state-agent):
 //   open / onClose, material (origen, contexto fijo, o null = cerrado)
 //   destinos   inventarios destino candidatos {value, label, tipo?}. `value`
-//              es opaco (id de sección); `tipo` ('GENERAL'|'FO_PAQUETE'|
-//              'FO_EN_USO') permite construir el payload sin consultar de
+//              es opaco (id de sección); `tipo` ('GENERAL'|'FO')
+//              permite construir el payload sin consultar de
 //              nuevo la sección.
 //   origenValue  `value` del origen: se excluye de las opciones.
 //   origenTipo   tipo del origen (si se omite se deduce de `origenValue`).
 //   onSubmit({ destino, destinoTipo, cantidad })  `destino` = `value`
 //              elegido; `destinoTipo` = `tipo` de esa opción (si se informó);
-//              cantidad entera 1..min(stock, INT4). Puede devolver promesa;
+//              cantidad decimal 0..stock (≤ 3 decimales). Puede devolver promesa;
 //              el padre gestiona `isSubmitting` / `errorMessage` (usar
 //              `traducirErrorOperador` sobre 400/403/404/409/422) y cierra
 //              solo tras la respuesta aceptada. Sin `onSubmit` Confirmar queda
@@ -150,7 +154,7 @@ function Contenido({
 
   const confirmLabel =
     valido && cantidad !== null && destinoElegido
-      ? `Mover ${cantidad.toLocaleString('es-MX')} ${um} a ${destinoElegido.label}`.replace(
+      ? `Mover ${formatearCantidad(cantidad)} ${um} a ${destinoElegido.label}`.replace(
           /\s+/g,
           ' ',
         )
@@ -204,7 +208,7 @@ function Contenido({
           label: 'Cantidad',
           value:
             cantidad !== null
-              ? `${cantidad.toLocaleString('es-MX')} ${um}`.trim()
+              ? `${formatearCantidad(cantidad)} ${um}`.trim()
               : '—',
         },
       ]}
@@ -212,13 +216,13 @@ function Contenido({
         restante !== null && cantidad !== null ? (
           <>
             {material.origenLabel}:{' '}
-            {material.stockActual.toLocaleString('es-MX')} −{' '}
-            {cantidad.toLocaleString('es-MX')} ={' '}
-            <strong>{restante.toLocaleString('es-MX')}</strong> {um}
+            {formatearCantidad(material.stockActual)} −{' '}
+            {formatearCantidad(cantidad)} ={' '}
+            <strong>{formatearCantidad(restante)}</strong> {um}
             {destinoElegido && (
               <>
                 {' '}
-                · {destinoElegido.label}: +{cantidad.toLocaleString('es-MX')}{' '}
+                · {destinoElegido.label}: +{formatearCantidad(cantidad)}{' '}
                 {um}
               </>
             )}
@@ -298,7 +302,7 @@ function Contenido({
           onBlur={() => setTocadoCantidad(true)}
           onKeyDown={handleKeyDown}
           error={errorCantidad}
-          ayuda={`Por defecto se mueve todo el stock (${material.stockActual.toLocaleString('es-MX')}). Puedes indicar una cantidad parcial.`}
+          ayuda={`Por defecto se mueve todo el stock (${formatearCantidad(material.stockActual)}). Puedes indicar una cantidad parcial.`}
           disabled={isSubmitting}
           inputRef={cantidadRef}
         />

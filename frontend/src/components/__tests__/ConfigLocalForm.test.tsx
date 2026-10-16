@@ -12,6 +12,7 @@ const material: InventarioEquipoRow = {
   u_m: 'METRO (M)',
   stock_minimo: 5,
   stock_actual: 42,
+  valor_unitario: 1,
   alerta_stock: false,
   ultimo_movimiento_id: 7,
   stock_minimo_local: null,

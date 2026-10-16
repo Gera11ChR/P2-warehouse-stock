@@ -105,7 +105,7 @@ Six operational screens (one React page each) over ten backend routers:
 | **pyotp + cryptography** | `>= 2.9` / `>= 44` | MFA primitives: Fernet key handling and TOTP attempt/lockout knobs in `app/config.py` — **not yet exposed by any endpoint** (see §10) |
 | **uvicorn** | ASGI server | Local/production serving (`--reload` in development) |
 
-Canonical DDL lives in `backend/db/ddl.sql`; runtime wiring in `backend/app/{main,config,db,errors,security,telemetry}.py`.
+The schema's source of truth is the Alembic migrations in `backend/alembic/versions/` (head `0027`); `backend/db/ddl.sql` is kept only as a **historical reference** (it predates the unified Inventario FO and `valor_unitario`). Runtime wiring in `backend/app/{main,config,db,errors,security,telemetry}.py`.
 
 ### 2.2 Frontend — `frontend/`
 
@@ -114,7 +114,7 @@ Canonical DDL lives in `backend/db/ddl.sql`; runtime wiring in `backend/app/{mai
 | **React + React DOM** | `^19.2.8` | UI runtime |
 | **TypeScript** | `~6.0.2` | Compile-time contract enforcement (`tsc -b` gates `npm run build`) |
 | **Vite** | `^8.2.2` | Dev server + bundler; proxies `/api` → `http://localhost:8000` |
-| **TanStack Query** | `^5.102.8` | Server-state layer: keyed caches (`['stock', id]`, `['fibra', modulo]`…) and post-mutation invalidation |
+| **TanStack Query** | `^5.102.8` | Server-state layer: keyed caches (`['stock', id]`, `['fibra']`, `['inventario','resumen-general']`…) and post-mutation invalidation |
 | **axios** | `^1.20.0` | Single HTTP client (`src/services/api.ts`), injects the `X-Actor` identity header |
 | **Zod** | `^4.6.5` | Client-side form validation (`src/schemas/*`) before submission |
 | **Tailwind CSS** | `^4.3.3` | Styling via the `@tailwindcss/vite` plugin (no `tailwind.config` — v4 CSS-first setup) |
@@ -307,7 +307,7 @@ P2/
 │   │   ├── services/          # Domain services; transaccional.py = DB delegation
 │   │   ├── models/            # SQLAlchemy models (reads)
 │   │   └── {main,config,db,errors,security,telemetry}.py
-│   ├── db/ddl.sql             # Canonical DDL (stored functions, triggers, ledger)
+│   ├── db/ddl.sql             # HISTORICAL reference only — source of truth: alembic/versions (head 0027)
 │   ├── scripts/               # seed_catalogo_oficial.py · dev-db.sh
 │   ├── tests/                 # 23 files · 303 tests · isolated p2_test
 │   ├── pyproject.toml         # Dependencies + pytest config
@@ -354,8 +354,9 @@ All routers are mounted under `/api/v1`. Interactive documentation is served at 
 | | `GET /equipos/{id}/inventario` · `PATCH /equipos/{id}/inventario/{material_id}` | Crew-scoped inventory |
 | **Seguimientos (CONSUMO)** | `POST/GET /equipos/{id}/seguimientos` · `GET …/{seguimiento_id}` | CONSUMO lifecycle per crew |
 | | `POST …/{seguimiento_id}/agregar-todo` · `POST …/{seguimiento_id}/cerrar` | Idempotent "add all" and close (Acta de Consumo recorded on close) |
-| **Fiber optics** | `GET /fibra/{modulo}` · `POST /fibra/carga-inicial` · `POST /fibra/ajuste` | FO stock, initial load, adjustment |
-| | `PATCH /fibra/{modulo}/materiales/{id}` · `DELETE /fibra/{modulo}/materiales/{id}?motivo=` | FO CRUD (motivo mandatory on delete only when stock > 0) |
+| **Fiber optics (Inventario FO)** | `GET /fibra` · `POST /fibra/carga-inicial` · `POST /fibra/ajuste` | Unified FO stock (one row per material, with `valor_unitario`), initial load, adjustment |
+| | `PATCH /fibra/materiales/{id}` · `DELETE /fibra/materiales/{id}?motivo=` | FO CRUD (motivo mandatory on delete only when stock > 0; `valor_unitario` admin-only) |
+| **Inventory summary** | `GET /inventario/resumen-general` | Valor Total (General + Inventario FO) in MXN, computed by `fn_valor_total_inventario()` |
 | **Audit** | `GET /auditoria` | Immutable, human-readable ledger |
 | **Reports** | `GET /reportes/entrega` · `GET /reportes/consumo` | Actas de Entrega / Consumo: JSON listing or XLSX injected onto corporate templates (`normal` / `extenso`) |
 

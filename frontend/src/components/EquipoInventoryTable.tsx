@@ -1,6 +1,7 @@
 import type { InventarioEquipoRow } from '../types'
 import { stockLevel } from '../utils/stockLevel'
 import type { StockLevel } from '../utils/stockLevel'
+import MonedaMxn from './MonedaMxn'
 
 const LEVEL_CLASS: Record<StockLevel, string> = {
   normal: 'bg-green-100 text-green-700',
@@ -42,6 +43,7 @@ export default function EquipoInventoryTable({
             <th className="px-4 py-3">Categoría</th>
             <th className="px-4 py-3">U.M.</th>
             <th className="px-4 py-3">Stock Actual</th>
+            <th className="px-4 py-3">Valor Unitario</th>
             <th className="px-4 py-3">Stock Mínimo</th>
             <th className="px-4 py-3">Alerta Stock</th>
             {onConfigurar && <th className="px-4 py-3" />}
@@ -71,6 +73,10 @@ export default function EquipoInventoryTable({
                   >
                     {row.stock_actual.toLocaleString('es-MX')}
                   </span>
+                </td>
+                {/* Solo lectura (RF-3): el valor pertenece al catálogo. */}
+                <td className="px-4 py-3 text-slate-700">
+                  <MonedaMxn valor={row.valor_unitario} />
                 </td>
                 <td className="px-4 py-3 text-slate-700">
                   {row.stock_minimo_efectivo != null

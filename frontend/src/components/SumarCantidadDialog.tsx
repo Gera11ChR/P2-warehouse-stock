@@ -3,7 +3,8 @@ import type { KeyboardEvent } from 'react'
 import OperadorRapidoDialog from './OperadorRapidoDialog'
 import CampoCantidad from './CampoCantidad'
 import {
-  CANTIDAD_MAX_INT4,
+  CANTIDAD_MAX_DECIMAL,
+  formatearCantidad,
   mensajeCantidadInvalida,
   validarCantidad,
 } from '../utils/cantidad'
@@ -16,9 +17,10 @@ import {
 // pertenecen a FastAPI + PostgreSQL (fn_sumar_cantidad). Las validaciones de
 // aquí son preliminares y nunca sustituyen al servidor.
 //
-// Reglas del campo (utils/cantidad.ts): entero > 0, solo dígitos, máximo
-// 2.147.483.647 (INT4). Rechaza vacío, 0, negativos, decimales, notación
-// científica, texto y espacios. Errores en línea (aria-invalid +
+// Reglas del campo (utils/cantidad.ts): decimal > 0, hasta 3 decimales y 12
+// dígitos (máximo 999,999,999.999; RF-6). Rechaza vacío, 0, negativos, más de
+// 3 decimales (sin redondeo silencioso), notación científica, texto, coma
+// decimal y espacios. Errores en línea (aria-invalid +
 // aria-describedby), envío con Enter, botón deshabilitado con motivo visible
 // y foco al campo inválido si se intenta enviar.
 //
@@ -28,7 +30,7 @@ import {
 // Contrato de props (cableado por @state-agent):
 //   open / onClose           control del diálogo (el padre guarda la selección)
 //   material                 contexto fijo de la operación (o null = cerrado)
-//   onSubmit(cantidad)       cantidad entera 1..INT4. Puede devolver una
+//   onSubmit(cantidad)       cantidad decimal > 0 (≤ 3 decimales). Puede devolver una
 //                            promesa; el padre indica `isSubmitting` y
 //                            `errorMessage` (usar `traducirErrorOperador`
 //                            sobre la respuesta 400/403/404/409/422) y cierra
@@ -49,7 +51,7 @@ export interface MaterialOperacionContexto {
   descripcion: string | null
   um: string | null
   stockActual: number
-  /** Nombre del inventario origen (p. ej. «Inventario General», «Fibra Óptica - Paquete»). */
+  /** Nombre del inventario origen (p. ej. «Inventario General», «Inventario FO»). */
   origenLabel: string
 }
 
@@ -85,14 +87,15 @@ function Contenido({
 
   const validacion = validarCantidad(valor)
   const cantidad = validacion.ok ? validacion.cantidad : null
-  // Preliminar: el stock resultante no puede rebasar INT4 (el servidor decide).
+  // Preliminar: el stock resultante no puede rebasar el máximo decimal (el
+  // servidor decide; se responde 400 por desbordamiento).
   const desborda =
-    cantidad !== null && material.stockActual + cantidad > CANTIDAD_MAX_INT4
+    cantidad !== null && material.stockActual + cantidad > CANTIDAD_MAX_DECIMAL
 
   const mensajeInvalido: string | null = !validacion.ok
     ? mensajeCantidadInvalida(validacion.motivo)
     : desborda
-      ? `El stock resultante superaría el máximo permitido (${CANTIDAD_MAX_INT4.toLocaleString('es-MX')}). Reduce la cantidad.`
+      ? `El stock resultante superaría el máximo permitido (${formatearCantidad(CANTIDAD_MAX_DECIMAL)}). Reduce la cantidad.`
       : null
   const invalido = mensajeInvalido !== null
   // Un valor ya escrito y erróneo se señala de inmediato; el campo vacío solo
@@ -105,7 +108,7 @@ function Contenido({
   const um = material.um ?? ''
   const confirmLabel =
     cantidad !== null && !invalido
-      ? `Sumar ${cantidad.toLocaleString('es-MX')} ${um} a ${material.codigo}`.replace(
+      ? `Sumar ${formatearCantidad(cantidad)} ${um} a ${material.codigo}`.replace(
           /\s+/g,
           ' ',
         )
@@ -148,16 +151,16 @@ function Contenido({
         { label: 'Inventario', value: material.origenLabel },
         {
           label: 'Stock actual',
-          value: `${material.stockActual.toLocaleString('es-MX')} ${um}`.trim(),
+          value: `${formatearCantidad(material.stockActual)} ${um}`.trim(),
         },
       ]}
       proyeccion={
         cantidad !== null && !invalido ? (
           <>
-            Stock {material.stockActual.toLocaleString('es-MX')} +{' '}
-            {cantidad.toLocaleString('es-MX')} ={' '}
+            Stock {formatearCantidad(material.stockActual)} +{' '}
+            {formatearCantidad(cantidad)} ={' '}
             <strong>
-              {(material.stockActual + cantidad).toLocaleString('es-MX')}
+              {formatearCantidad(material.stockActual + cantidad)}
             </strong>{' '}
             {um}
           </>
@@ -183,7 +186,7 @@ function Contenido({
         onBlur={() => setTocado(true)}
         onKeyDown={handleKeyDown}
         error={errorCampo}
-        ayuda="Número entero mayor que 0. Presiona Enter para confirmar."
+        ayuda="Número mayor que 0, hasta 3 decimales (por ejemplo 2.5). Presiona Enter para confirmar."
         disabled={isSubmitting}
         inputRef={inputRef}
       />

@@ -32,6 +32,7 @@ interno de los tests de concurrencia es el requerido por la tarea.
 import json
 import os
 import threading
+from decimal import Decimal
 
 import psycopg
 import pytest
@@ -113,11 +114,11 @@ def carga_inicial_general(conn, material_id, cantidad):
     )
 
 
-def carga_inicial_fibra(conn, modulo, material_id, cantidad):
+def carga_inicial_fibra(conn, material_id, cantidad):
     _uno(
         conn,
-        "SELECT fn_cargar_stock_inicial_fibra(%s, %s, %s, %s)",
-        (modulo, material_id, cantidad, "carga FO QA"),
+        "SELECT fn_cargar_stock_inicial_fibra(%s, %s, %s)",
+        (material_id, cantidad, "carga FO QA"),
     )
 
 
@@ -130,12 +131,11 @@ def stock_general(conn, material_id):
     )
 
 
-def stock_fibra(conn, modulo, material_id):
+def stock_fibra(conn, material_id):
     fila = _uno(
         conn,
-        "SELECT stock_actual FROM inventario_fibra "
-        "WHERE modulo = %s AND material_id = %s",
-        (modulo, material_id),
+        "SELECT stock_actual FROM inventario_fibra WHERE material_id = %s",
+        (material_id,),
     )
     return None if fila is None else fila[0]
 
@@ -326,7 +326,7 @@ def test_sumar_cantidad_general(conn):
 
     nuevo = _valor(
         conn,
-        "SELECT fn_sumar_cantidad('GENERAL', NULL, %s, 5, 'qa', NULL)",
+        "SELECT fn_sumar_cantidad('GENERAL', %s, 5, 'qa', NULL)",
         (material_id,),
     )
     assert nuevo == 15
@@ -343,15 +343,15 @@ def test_sumar_cantidad_general(conn):
 
 def test_sumar_cantidad_fibra(conn):
     material_id = crear_material(conn)
-    carga_inicial_fibra(conn, "EN_USO", material_id, 10)
+    carga_inicial_fibra(conn, material_id, 10)
 
     nuevo = _valor(
         conn,
-        "SELECT fn_sumar_cantidad('FO', 'EN_USO', %s, 7, 'qa', NULL)",
+        "SELECT fn_sumar_cantidad('FO', %s, 7, 'qa', NULL)",
         (material_id,),
     )
     assert nuevo == 17
-    assert stock_fibra(conn, "EN_USO", material_id) == 17
+    assert stock_fibra(conn, material_id) == 17
     assert eventos(conn, "SUMA_CANTIDAD") == 1
 
 
@@ -362,14 +362,14 @@ def test_sumar_cantidad_validaciones(conn):
     for cantidad in (0, -3):
         msg = _falla(
             conn,
-            "SELECT fn_sumar_cantidad('GENERAL', NULL, %s, %s, 'qa', NULL)",
+            "SELECT fn_sumar_cantidad('GENERAL', %s, %s, 'qa', NULL)",
             (material_id, cantidad),
         )
         assert "mayor que cero" in msg
 
     msg = _falla(
         conn,
-        "SELECT fn_sumar_cantidad('ALMACEN', NULL, %s, 5, 'qa', NULL)",
+        "SELECT fn_sumar_cantidad('ALMACEN', %s, 5, 'qa', NULL)",
         (material_id,),
     )
     assert "GENERAL o FO" in msg
@@ -377,7 +377,7 @@ def test_sumar_cantidad_validaciones(conn):
     _ejecuta(conn, "UPDATE catalogo_materiales SET is_active = FALSE WHERE id_lista = %s", (material_id,))
     msg = _falla(
         conn,
-        "SELECT fn_sumar_cantidad('GENERAL', NULL, %s, 5, 'qa', NULL)",
+        "SELECT fn_sumar_cantidad('GENERAL', %s, 5, 'qa', NULL)",
         (material_id,),
     )
     assert "inactivo" in msg
@@ -385,7 +385,7 @@ def test_sumar_cantidad_validaciones(conn):
     otro = crear_material(conn, descripcion="Sin inventario")
     msg = _falla(
         conn,
-        "SELECT fn_sumar_cantidad('GENERAL', NULL, %s, 5, 'qa', NULL)",
+        "SELECT fn_sumar_cantidad('GENERAL', %s, 5, 'qa', NULL)",
         (otro,),
     )
     assert "No se encuentra registro de inventario" in msg
@@ -401,12 +401,12 @@ def test_sumar_cantidad_idempotencia(conn):
 
     _uno(
         conn,
-        "SELECT fn_sumar_cantidad('GENERAL', NULL, %s, 5, 'qa', 'clave-suma-1')",
+        "SELECT fn_sumar_cantidad('GENERAL', %s, 5, 'qa', 'clave-suma-1')",
         (material_id,),
     )
     msg = _falla(
         conn,
-        "SELECT fn_sumar_cantidad('GENERAL', NULL, %s, 5, 'qa', 'clave-suma-1')",
+        "SELECT fn_sumar_cantidad('GENERAL', %s, 5, 'qa', 'clave-suma-1')",
         (material_id,),
     )
     assert "ya fue ejecutada" in msg
@@ -435,12 +435,12 @@ def test_sumar_cantidad_atomicidad_rollback(conn):
     with psycopg.connect(PSYCOPG_TEST_URL, autocommit=False) as c:
         with c.cursor() as cur:
             cur.execute(
-                "SELECT fn_sumar_cantidad('GENERAL', NULL, %s, 5, 'qa', 'clave-rollback')",
+                "SELECT fn_sumar_cantidad('GENERAL', %s, 5, 'qa', 'clave-rollback')",
                 (material_id,),
             )
             with pytest.raises(RaiseException):
                 cur.execute(
-                    "SELECT fn_mover_material('GENERAL', NULL, 'FO', 'PAQUETE', "
+                    "SELECT fn_mover_material('GENERAL', 'FO', "
                     "%s, 999, 'qa', NULL)",
                     (material_id,),
                 )
@@ -465,13 +465,13 @@ def test_mover_general_a_fo(conn):
 
     resultado = _valor(
         conn,
-        "SELECT fn_mover_material('GENERAL', NULL, 'FO', 'PAQUETE', %s, 4, 'qa', NULL)",
+        "SELECT fn_mover_material('GENERAL', 'FO', %s, 4, 'qa', NULL)",
         (material_id,),
     )
     assert resultado["stock_origen"] == 6
     assert resultado["stock_destino"] == 4
     assert stock_general(conn, material_id) == 6
-    assert stock_fibra(conn, "PAQUETE", material_id) == 4  # fila creada con stock > 0
+    assert stock_fibra(conn, material_id) == 4  # fila creada con stock > 0
     assert eventos(conn, "MOVIMIENTO_INVENTARIO") == 1
     detalles = _valor(
         conn,
@@ -488,28 +488,56 @@ def test_mover_general_a_fo(conn):
 def test_mover_fo_a_general(conn):
     material_id = crear_material(conn)
     carga_inicial_general(conn, material_id, 6)
-    carga_inicial_fibra(conn, "PAQUETE", material_id, 4)
+    carga_inicial_fibra(conn, material_id, 4)
 
     _uno(
         conn,
-        "SELECT fn_mover_material('FO', 'PAQUETE', 'GENERAL', NULL, %s, 2, 'qa', NULL)",
+        "SELECT fn_mover_material('FO', 'GENERAL', %s, 2, 'qa', NULL)",
         (material_id,),
     )
     assert stock_general(conn, material_id) == 8
-    assert stock_fibra(conn, "PAQUETE", material_id) == 2
+    assert stock_fibra(conn, material_id) == 2
 
 
-def test_mover_entre_modulos_fo(conn):
+def test_mover_fo_a_fo_rechazado_y_decimales(conn):
+    """0027: ya no hay dos módulos FO; FO -> FO es destino = origen y se
+    rechaza con el error canónico. Se cubre además la escala NUMERIC(12,3)."""
     material_id = crear_material(conn)
-    carga_inicial_fibra(conn, "PAQUETE", material_id, 10)
+    carga_inicial_fibra(conn, material_id, 10)
 
-    _uno(
+    msg = _falla(
         conn,
-        "SELECT fn_mover_material('FO', 'PAQUETE', 'FO', 'EN_USO', %s, 4, 'qa', NULL)",
+        "SELECT fn_mover_material('FO', 'FO', %s, 4, 'qa', NULL)",
         (material_id,),
     )
-    assert stock_fibra(conn, "PAQUETE", material_id) == 6
-    assert stock_fibra(conn, "EN_USO", material_id) == 4
+    assert "no puede ser igual al origen" in msg
+    assert stock_fibra(conn, material_id) == 10
+
+    # Decimales válidos: 2.5 se acepta y se conserva exacto.
+    carga_inicial_general(conn, material_id, 5)
+    _uno(
+        conn,
+        "SELECT fn_mover_material('GENERAL', 'FO', %s, 2.5, 'qa', NULL)",
+        (material_id,),
+    )
+    assert stock_general(conn, material_id) == Decimal("2.5")
+    assert stock_fibra(conn, material_id) == Decimal("12.5")
+
+    # Escala > 3 decimales: rechazo sin redondeo silencioso.
+    msg = _falla(
+        conn,
+        "SELECT fn_mover_material('GENERAL', 'FO', %s, 1.0005, 'qa', NULL)",
+        (material_id,),
+    )
+    assert "La cantidad admite máximo 3 decimales." in msg
+    msg = _falla(
+        conn,
+        "SELECT fn_sumar_cantidad('FO', %s, 1.0005, 'qa', NULL)",
+        (material_id,),
+    )
+    assert "La cantidad admite máximo 3 decimales." in msg
+    assert stock_general(conn, material_id) == Decimal("2.5")
+    assert stock_fibra(conn, material_id) == Decimal("12.5")
 
 
 def test_mover_semantica_dispersa_fila_origen_conservada(conn):
@@ -520,7 +548,7 @@ def test_mover_semantica_dispersa_fila_origen_conservada(conn):
 
     _uno(
         conn,
-        "SELECT fn_mover_material('GENERAL', NULL, 'FO', 'EN_USO', %s, 10, 'qa', NULL)",
+        "SELECT fn_mover_material('GENERAL', 'FO', %s, 10, 'qa', NULL)",
         (material_id,),
     )
     fila_origen = _uno(
@@ -530,27 +558,27 @@ def test_mover_semantica_dispersa_fila_origen_conservada(conn):
         (material_id,),
     )
     assert fila_origen == (0,)  # fila CONSERVADA con stock 0
-    assert stock_fibra(conn, "EN_USO", material_id) == 10
+    assert stock_fibra(conn, material_id) == 10
     # Un nuevo +Cantidad sobre la fila conservada funciona sin carga inicial.
-    _uno(conn, "SELECT fn_sumar_cantidad('GENERAL', NULL, %s, 3, 'qa', NULL)", (material_id,))
+    _uno(conn, "SELECT fn_sumar_cantidad('GENERAL', %s, 3, 'qa', NULL)", (material_id,))
     assert stock_general(conn, material_id) == 3
 
 
 def test_mover_casos_borde(conn):
     material_id = crear_material(conn)
     carga_inicial_general(conn, material_id, 10)
-    carga_inicial_fibra(conn, "PAQUETE", material_id, 10)
+    carga_inicial_fibra(conn, material_id, 10)
 
     # destino = origen
     msg = _falla(
         conn,
-        "SELECT fn_mover_material('GENERAL', NULL, 'GENERAL', NULL, %s, 2, 'qa', NULL)",
+        "SELECT fn_mover_material('GENERAL', 'GENERAL', %s, 2, 'qa', NULL)",
         (material_id,),
     )
     assert "no puede ser igual al origen" in msg
     msg = _falla(
         conn,
-        "SELECT fn_mover_material('FO', 'PAQUETE', 'FO', 'PAQUETE', %s, 2, 'qa', NULL)",
+        "SELECT fn_mover_material('FO', 'FO', %s, 2, 'qa', NULL)",
         (material_id,),
     )
     assert "no puede ser igual al origen" in msg
@@ -559,7 +587,7 @@ def test_mover_casos_borde(conn):
     for cantidad in (0, -5):
         msg = _falla(
             conn,
-            "SELECT fn_mover_material('GENERAL', NULL, 'FO', 'PAQUETE', %s, %s, 'qa', NULL)",
+            "SELECT fn_mover_material('GENERAL', 'FO', %s, %s, 'qa', NULL)",
             (material_id, cantidad),
         )
         assert "mayor que cero" in msg
@@ -567,7 +595,7 @@ def test_mover_casos_borde(conn):
     # cantidad > stock origen
     msg = _falla(
         conn,
-        "SELECT fn_mover_material('GENERAL', NULL, 'FO', 'PAQUETE', %s, 11, 'qa', NULL)",
+        "SELECT fn_mover_material('GENERAL', 'FO', %s, 11, 'qa', NULL)",
         (material_id,),
     )
     assert "Stock insuficiente" in msg
@@ -576,14 +604,14 @@ def test_mover_casos_borde(conn):
     otro = crear_material(conn, descripcion="Sin fila origen")
     msg = _falla(
         conn,
-        "SELECT fn_mover_material('GENERAL', NULL, 'FO', 'PAQUETE', %s, 1, 'qa', NULL)",
+        "SELECT fn_mover_material('GENERAL', 'FO', %s, 1, 'qa', NULL)",
         (otro,),
     )
     assert "No se encuentra registro de inventario" in msg
 
     # Ningún extremo modificado; ledger limpio (REQ-P2-INV-004).
     assert stock_general(conn, material_id) == 10
-    assert stock_fibra(conn, "PAQUETE", material_id) == 10
+    assert stock_fibra(conn, material_id) == 10
     assert eventos(conn, "MOVIMIENTO_INVENTARIO") == 0
 
 
@@ -593,18 +621,18 @@ def test_mover_idempotencia(conn):
 
     _uno(
         conn,
-        "SELECT fn_mover_material('GENERAL', NULL, 'FO', 'PAQUETE', %s, 3, 'qa', 'clave-mover-1')",
+        "SELECT fn_mover_material('GENERAL', 'FO', %s, 3, 'qa', 'clave-mover-1')",
         (material_id,),
     )
     msg = _falla(
         conn,
-        "SELECT fn_mover_material('GENERAL', NULL, 'FO', 'PAQUETE', %s, 3, 'qa', 'clave-mover-1')",
+        "SELECT fn_mover_material('GENERAL', 'FO', %s, 3, 'qa', 'clave-mover-1')",
         (material_id,),
     )
     assert "ya fue ejecutada" in msg
 
     assert stock_general(conn, material_id) == 7  # descontado UNA sola vez
-    assert stock_fibra(conn, "PAQUETE", material_id) == 3
+    assert stock_fibra(conn, material_id) == 3
     assert eventos(conn, "MOVIMIENTO_INVENTARIO") == 1
     assert _valor(
         conn,
@@ -897,7 +925,7 @@ def test_concurrencia_sumas_paralelas_for_update(conn):
     hilos = [
         threading.Thread(
             target=_hilo(
-                "SELECT fn_sumar_cantidad('GENERAL', NULL, %s, 5, 'qa', NULL)",
+                "SELECT fn_sumar_cantidad('GENERAL', %s, 5, 'qa', NULL)",
                 (material_id,),
                 resultado,
                 0,
@@ -906,7 +934,7 @@ def test_concurrencia_sumas_paralelas_for_update(conn):
         ),
         threading.Thread(
             target=_hilo(
-                "SELECT fn_sumar_cantidad('GENERAL', NULL, %s, 7, 'qa', NULL)",
+                "SELECT fn_sumar_cantidad('GENERAL', %s, 7, 'qa', NULL)",
                 (material_id,),
                 resultado,
                 1,
@@ -927,14 +955,14 @@ def test_concurrencia_sumas_paralelas_for_update(conn):
 def test_concurrencia_movimientos_opuestos_sin_deadlock(conn):
     material_id = crear_material(conn)
     carga_inicial_general(conn, material_id, 10)
-    carga_inicial_fibra(conn, "PAQUETE", material_id, 10)
+    carga_inicial_fibra(conn, material_id, 10)
 
     resultado = [None, None]
     barrera = threading.Barrier(2)
     hilos = [
         threading.Thread(
             target=_hilo(
-                "SELECT fn_mover_material('GENERAL', NULL, 'FO', 'PAQUETE', %s, 3, 'qa', NULL)",
+                "SELECT fn_mover_material('GENERAL', 'FO', %s, 3, 'qa', NULL)",
                 (material_id,),
                 resultado,
                 0,
@@ -943,7 +971,7 @@ def test_concurrencia_movimientos_opuestos_sin_deadlock(conn):
         ),
         threading.Thread(
             target=_hilo(
-                "SELECT fn_mover_material('FO', 'PAQUETE', 'GENERAL', NULL, %s, 2, 'qa', NULL)",
+                "SELECT fn_mover_material('FO', 'GENERAL', %s, 2, 'qa', NULL)",
                 (material_id,),
                 resultado,
                 1,
@@ -959,7 +987,7 @@ def test_concurrencia_movimientos_opuestos_sin_deadlock(conn):
 
     # Resultado determinista independiente del orden de serialización.
     assert stock_general(conn, material_id) == 9
-    assert stock_fibra(conn, "PAQUETE", material_id) == 11
+    assert stock_fibra(conn, material_id) == 11
     assert eventos(conn, "MOVIMIENTO_INVENTARIO") == 2
 
 
@@ -972,7 +1000,7 @@ def test_concurrencia_suma_y_mover_mismo_material(conn):
     hilos = [
         threading.Thread(
             target=_hilo(
-                "SELECT fn_sumar_cantidad('GENERAL', NULL, %s, 5, 'qa', NULL)",
+                "SELECT fn_sumar_cantidad('GENERAL', %s, 5, 'qa', NULL)",
                 (material_id,),
                 resultado,
                 0,
@@ -981,7 +1009,7 @@ def test_concurrencia_suma_y_mover_mismo_material(conn):
         ),
         threading.Thread(
             target=_hilo(
-                "SELECT fn_mover_material('GENERAL', NULL, 'FO', 'EN_USO', %s, 3, 'qa', NULL)",
+                "SELECT fn_mover_material('GENERAL', 'FO', %s, 3, 'qa', NULL)",
                 (material_id,),
                 resultado,
                 1,
@@ -996,6 +1024,6 @@ def test_concurrencia_suma_y_mover_mismo_material(conn):
     assert resultado == ["ok", "ok"]
 
     assert stock_general(conn, material_id) == 12  # (10+5)-3 o (10-3)+5
-    assert stock_fibra(conn, "EN_USO", material_id) == 3
+    assert stock_fibra(conn, material_id) == 3
     assert eventos(conn, "SUMA_CANTIDAD") == 1
     assert eventos(conn, "MOVIMIENTO_INVENTARIO") == 1

@@ -39,15 +39,14 @@ describe('traducirErrorOperador — por código HTTP', () => {
     expect(r.mensaje).not.toMatch(/cero/)
   })
 
-  it('400 desborde (fuera de rango): cota INT4', () => {
-    const r = traducirErrorOperador(
-      400,
-      cuerpo('integer out of range'),
-      sumar,
-    )
-    expect(r.campo).toBe('cantidad')
-    expect(r.mensaje).toContain('2,147,483,647')
-  })
+  it.each(['numeric field overflow out of range', 'La cantidad o el stock resultante excede el rango soportado'])(
+    '400 desborde (%s): máximo decimal 999,999,999.999',
+    (mensaje) => {
+      const r = traducirErrorOperador(400, cuerpo(mensaje), sumar)
+      expect(r.campo).toBe('cantidad')
+      expect(r.mensaje).toContain('999,999,999.999')
+    },
+  )
 
   it('400 sin cuerpo reconocible: cae al mensaje de cantidad', () => {
     const r = traducirErrorOperador(400, undefined, sumar)
@@ -141,55 +140,47 @@ describe('traducirErrorOperador — por código HTTP', () => {
     expect(m.mensaje).toMatch(/distinto del origen/)
   })
 
-  it('422 módulo FO ausente (Pydantic): apunta al destino', () => {
+  it('422 campo `modulo` rechazado (extra_forbidden): mensaje de diálogo sin filtrar el nombre del campo', () => {
     const r = traducirErrorOperador(
       422,
       {
         detail: [
           {
-            type: 'value_error',
-            loc: ['body'],
-            msg: 'Value error, destino_modulo es obligatorio cuando destino = FO.',
+            type: 'extra_forbidden',
+            loc: ['body', 'destino_modulo'],
+            msg: 'Extra inputs are not permitted',
           },
         ],
       },
       mover,
     )
-    expect(r.campo).toBe('destino')
-    expect(r.mensaje).toMatch(/módulo de Fibra Óptica/)
-    expect(r.mensaje).not.toContain('destino_modulo')
+    expect(r.campo).toBe('dialogo')
+    expect(r.mensaje).not.toContain('modulo')
   })
 
-  it('422 cantidad fuera de INT4 (detail Pydantic less_than_equal)', () => {
+  it.each([
+    ['decimal_max_places', /máximo 3 decimales/],
+    ['decimal_max_digits', /999,999,999\.999/],
+    ['greater_than', /mayor que 0/],
+    ['decimal_parsing', /número válido/],
+  ])('422 cantidad (Pydantic %s)', (type, esperado) => {
     const r = traducirErrorOperador(
       422,
-      {
-        detail: [
-          {
-            type: 'less_than_equal',
-            loc: ['body', 'cantidad'],
-            msg: 'Input should be less than or equal to 2147483647',
-          },
-        ],
-      },
+      { detail: [{ type, loc: ['body', 'cantidad'], msg: 'x' }] },
       sumar,
     )
     expect(r.campo).toBe('cantidad')
-    expect(r.mensaje).toContain('2,147,483,647')
+    expect(r.mensaje).toMatch(esperado)
   })
 
-  it('422 cantidad con tipo inválido: pide entero válido', () => {
+  it('422 de PostgreSQL (P0001) «La cantidad admite máximo 3 decimales.»: apunta a la cantidad, sin redondeo', () => {
     const r = traducirErrorOperador(
       422,
-      {
-        detail: [
-          { type: 'int_parsing', loc: ['body', 'cantidad'], msg: 'bad int' },
-        ],
-      },
+      cuerpo('La cantidad admite máximo 3 decimales.'),
       sumar,
     )
     expect(r.campo).toBe('cantidad')
-    expect(r.mensaje).toMatch(/entero válido/)
+    expect(r.mensaje).toMatch(/no redondea/)
   })
 
   it('422 con forma {detail:{error:{...}}} y sin pistas: mensaje genérico', () => {

@@ -1,12 +1,12 @@
 import type { KeyboardEvent, Ref } from 'react'
 
 // ============================================================================
-// CAMPO DE CANTIDAD ENTERA (compartido por +Cantidad y Mover)
+// CAMPO DE CANTIDAD DECIMAL (compartido por +Cantidad, Mover y ajustes; RF-6)
 //
-// Campo de texto con `inputMode="numeric"` (NO `type="number"`): así el valor
+// Campo de texto con `inputMode="decimal"` (NO `type="number"`): así el valor
 // crudo llega intacto y se pueden rechazar con mensaje propio el texto, la
-// notación científica, los decimales, los negativos y los espacios (un
-// `type="number"` los sanea en silencio). La validación vive en
+// notación científica, el exceso de decimales (> 3, sin redondeo silencioso),
+// los negativos y los espacios (un `type="number"` los sanea en silencio). La validación vive en
 // utils/cantidad.ts; este componente solo presenta el estado.
 //
 // Accesibilidad: label asociado, `aria-invalid`, `aria-describedby` apuntando
@@ -53,7 +53,7 @@ export default function CampoCantidad({
         id={id}
         ref={inputRef}
         type="text"
-        inputMode="numeric"
+        inputMode="decimal"
         autoComplete="off"
         spellCheck={false}
         value={value}

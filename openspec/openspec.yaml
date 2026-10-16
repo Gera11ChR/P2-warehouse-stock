@@ -107,8 +107,10 @@ paths:
                       material_id:
                         type: integer
                       cantidad:
-                        type: integer
-                        minimum: 1
+                        type: number
+                        exclusiveMinimum: 0
+                        maximum: 999999999.999
+                        description: "Decimal > 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999). Sobre-precisión (más de 3 decimales) o valor fuera de rango → 422; nunca se redondea en silencio"
                       origen_almacen_id:
                         type: [integer, "null"]
                         description: "TEAMS: sección de origen de la línea (General o FO). Prohibido en DEVOL."
@@ -118,7 +120,7 @@ paths:
         "403":
           description: "Actor sin scope sobre alguna de las secciones de origen (o sin acceso a la unidad)"
         "422":
-          description: "Línea sin origen, sección inexistente o GENERAL inactiva, origen por línea en DEVOL o payload inválido"
+          description: "Línea sin origen, sección inexistente o GENERAL inactiva, origen por línea en DEVOL, cantidad con escala/rango decimal inválido (más de 3 decimales, <= 0 o > 999999999.999) o payload inválido"
   /api/v1/movimientos/procesar:
     post:
       summary: "Ejecutar transferencia TEAMS o devolución DEVOL"
@@ -138,7 +140,7 @@ paths:
         "200":
           description: "Movimiento procesado exitosamente vía fn_procesar_movimiento (estado CONFIRMADO; en un borrador TEAMS mixto cada línea se descuenta de SU origen en una sola transacción). Si es TEAMS, el trigger tg_acta_entrega registra el Acta de Entrega con snapshot jsonb en la misma transacción (evento ACTA_ENTREGA_GENERADA)"
         "400":
-          description: "Stock insuficiente en el origen de alguna línea (rollback total) o movimiento en estado no válido"
+          description: "Stock insuficiente en el origen de alguna línea (rollback total), desbordamiento numérico NUMERIC(12,3) (SQLSTATE 22003) o movimiento en estado no válido"
   /api/v1/movimientos/{movimiento_id}/cancelar:
     post:
       summary: "Cancelar y revertir un movimiento CONFIRMADO"
@@ -179,14 +181,19 @@ paths:
                 material_id:
                   type: integer
                 cantidad:
-                  type: integer
+                  type: number
+                  minimum: 0
+                  maximum: 999999999.999
+                  description: "Decimal >= 0, hasta 3 decimales (escala/rango decimal NUMERIC(12,3))"
                 motivo:
                   type: string
       responses:
         "200":
           description: "Inventario inicial registrado vía fn_cargar_stock_inicial"
         "400":
-          description: "Cantidad negativa o registro de inventario ya existente"
+          description: "Cantidad negativa, registro de inventario ya existente o desbordamiento numérico (SQLSTATE 22003)"
+        "422":
+          description: "Cantidad con más de 3 decimales o fuera del rango decimal NUMERIC(12,3), o payload inválido"
   /api/v1/ajustes/stock-almacen:
     post:
       summary: "Ajuste administrativo de existencias (conciliación)"
@@ -207,7 +214,10 @@ paths:
                 material_id:
                   type: integer
                 nuevo_stock:
-                  type: integer
+                  type: number
+                  minimum: 0
+                  maximum: 999999999.999
+                  description: "Decimal >= 0, hasta 3 decimales (escala/rango decimal NUMERIC(12,3))"
                 motivo:
                   type: string
                   description: "Opcional (ergonomía justificacion_opcional): se acepta null, cadena vacía o campo omitido"
@@ -215,9 +225,65 @@ paths:
         "200":
           description: "Stock ajustado vía fn_ajustar_stock_almacen"
         "400":
-          description: "Stock final negativo"
+          description: "Stock final negativo o desbordamiento numérico (SQLSTATE 22003)"
         "404":
           description: "Sin registro de inventario previo (requiere carga inicial)"
+        "422":
+          description: "nuevo_stock con más de 3 decimales o fuera del rango decimal NUMERIC(12,3), o payload inválido"
+  /api/v1/catalogo:
+    get:
+      summary: "Listar el catálogo activo de materiales (incluye valor_unitario)"
+      operationId: "listarMateriales"
+      responses:
+        "200":
+          description: "Catálogo activo con rango ordinal opcional (start_index); cada material expone su valor_unitario en MXN"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialListOut"
+        "422":
+          description: "Filtros o rangos inválidos"
+    post:
+      summary: "Crear material del catálogo (con stock_inicial decimal opcional)"
+      operationId: "crearMaterial"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaterialCreate"
+      responses:
+        "201":
+          description: "Material creado; valor_unitario inicial 1.000 MXN (el alta no acepta valor_unitario)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialOut"
+        "422":
+          description: "Payload inválido (extra forbid: valor_unitario no se acepta en el alta; stock_inicial con más de 3 decimales o fuera de rango)"
+  /api/v1/catalogo/{id_lista}:
+    patch:
+      summary: "Modificar un material del catálogo (alcance Inventario General); valor_unitario solo administrador"
+      operationId: "actualizarMaterial"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaterialUpdate"
+      responses:
+        "200":
+          description: "Material actualizado (la edición de valor_unitario queda auditada por trigger; stock_actual, si se envía, se ajusta vía fn_ajustar_stock_general en la misma transacción). `valor_unitario: null` explícito es un no-op: no escribe ni audita"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialOut"
+        "403":
+          description: "La presencia de `valor_unitario` en el payload exige rol administrador (AUTHORIZATION_FAILED); se evalúa antes de cualquier escritura"
+        "404":
+          description: "Material no encontrado"
+        "422":
+          description: "Campo no permitido (extra forbid), valor_unitario/stock_actual negativo, con más de 3 decimales o fuera del rango NUMERIC(12,3)"
   /api/v1/catalogo/categorias/{categoria_id}:
     put:
       summary: "Modificar una categoría existente"
@@ -297,6 +363,21 @@ paths:
           description: "Equipo no encontrado o inactivo"
         "422":
           description: "Payload inválido (integrantes duplicados, más de 50, nombre vacío)"
+  /api/v1/equipos/{equipo_id}/inventario:
+    get:
+      summary: "Inventario autónomo del equipo (stock decimal y valor_unitario)"
+      operationId: "inventarioEquipo"
+      responses:
+        "200":
+          description: "Filas físicas con stock del equipo (materiales activos, stock > 0); un equipo nuevo devuelve []. stock_actual decimal y valor_unitario por JOIN al catálogo maestro; stock_minimo y los identificadores permanecen enteros"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InventarioEquipoOut"
+        "422":
+          description: "equipo_id inválido"
   /api/v1/equipos/{equipo_id}/inventario/{material_id}:
     patch:
       summary: "Configurar parámetros locales de inventario de equipo"
@@ -401,9 +482,11 @@ paths:
                             material_id:
                               type: integer
                             cantidad_tomada:
-                              type: integer
+                              type: number
+                              description: "Decimal (NUMERIC(12,3))"
                             cantidad_consumida:
-                              type: [integer, "null"]
+                              type: [number, "null"]
+                              description: "Decimal (NUMERIC(12,3)); null mientras el seguimiento está ABIERTA"
         "404":
           description: "Seguimiento no encontrado o no pertenece al equipo"
         "409":
@@ -433,8 +516,10 @@ paths:
                         type: integer
                         exclusiveMinimum: 0
                       cantidad_consumida:
-                        type: integer
+                        type: number
                         minimum: 0
+                        maximum: 999999999.999
+                        description: "Decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3))"
                 observaciones_cierre:
                   type: [string, "null"]
                   maxLength: 2000
@@ -448,17 +533,69 @@ paths:
         "409":
           description: "Seguimiento no se encuentra en estado ABIERTA (doble cierre)"
         "422":
-          description: "Falta la línea de consumo de algún material, consumo negativo o duplicado, o payload inválido (incluye el campo retirado `sobrantes`)"
+          description: "Falta la línea de consumo de algún material, consumo negativo, duplicado o con más de 3 decimales, o payload inválido (incluye el campo retirado `sobrantes`)"
+  /api/v1/inventario/secciones:
+    get:
+      summary: "Listar secciones de inventario (GENERAL y FO)"
+      operationId: "listarSecciones"
+      responses:
+        "200":
+          description: "Lista de secciones de inventario"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SeccionOut"
   /api/v1/inventario/secciones/transferibles:
     get:
-      summary: "Secciones válidas como origen/destino de transferencias (GENERAL activas + manejadores FO)"
+      summary: "Secciones válidas como origen/destino de transferencias (GENERAL activas + la sección única FO)"
       operationId: "seccionesTransferibles"
       responses:
         "200":
-          description: "Lista de secciones transferibles"
+          description: "Lista de secciones transferibles; tipo ∈ {GENERAL, FO}. Los valores legacy FO_PAQUETE/FO_EN_USO ya no se emiten"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SeccionTransferibleOut"
+  /api/v1/inventario/secciones/{almacen_id}:
+    get:
+      summary: "Stock de una sección de inventario (stock decimal y valor_unitario)"
+      operationId: "stockSeccion"
+      responses:
+        "200":
+          description: "Filas de stock de la sección; stock_actual decimal y valor_unitario por JOIN al catálogo maestro"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SeccionStockOut"
+        "404":
+          description: "Sección no encontrada"
+        "422":
+          description: "almacen_id inválido"
+  /api/v1/inventario/resumen-general:
+    get:
+      summary: "Valor Total del inventario (Stock Actual × Valor Unitario) en MXN"
+      operationId: "resumenGeneral"
+      description: "Solo lectura. Suma sobre el Inventario General (secciones GENERAL activas) y el Inventario FO, calculada por PostgreSQL (fn_valor_total_inventario) con aritmética NUMERIC exacta y redondeo a 3 decimales solo al final; el cliente no recalcula. Inventario vacío → 0 (nunca null ni error). Default-deny: exige actor autenticado"
+      responses:
+        "200":
+          description: "Valor total y moneda"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResumenGeneralOut"
+        "403":
+          description: "Actor no autenticado o sin autorización (default-deny, AUTHORIZATION_FAILED)"
+        "422":
+          description: "Cabecera X-Actor ausente o inválida"
   /api/v1/inventario/sumar-cantidad:
     post:
-      summary: "+Cantidad: sumar una cantidad directa al stock existente (Inventario General o módulos FO)"
+      summary: "+Cantidad: sumar una cantidad directa al stock existente (Inventario General o Inventario FO)"
       operationId: "sumarCantidad"
       requestBody:
         required: true
@@ -466,6 +603,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required:
                 - destino
                 - material_id
@@ -474,21 +612,39 @@ paths:
                 destino:
                   type: string
                   enum: [GENERAL, FO]
-                modulo:
-                  type: string
-                  enum: [PAQUETE, EN_USO]
-                  description: "Obligatorio cuando destino = FO"
+                  description: "FO apunta al Inventario FO único por material (sin módulos); enviar `modulo` → 422"
                 material_id:
                   type: integer
+                  exclusiveMinimum: 0
                 cantidad:
-                  type: integer
+                  type: number
+                  maximum: 999999999.999
+                  description: "Decimal > 0, hasta 3 decimales (escala/rango decimal NUMERIC(12,3), máximo 999999999.999). La regla cantidad > 0 la aplica fn_sumar_cantidad (400); la sobre-precisión o el exceso de rango se rechazan con 422"
                 clave_idempotencia:
                   type: string
+                  minLength: 1
+                  maxLength: 100
       responses:
         "200":
-          description: "Stock incrementado vía fn_sumar_cantidad (evento inmutable SUMA_CANTIDAD, distinto de AJUSTE_*). Reenvío con la misma clave: resultado original con reenvio_idempotente=true"
+          description: "Stock incrementado vía fn_sumar_cantidad (evento inmutable SUMA_CANTIDAD, distinto de AJUSTE_*). stock_nuevo es decimal. Reenvío con la misma clave: resultado original con reenvio_idempotente=true"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [destino, material_id, stock_nuevo]
+                properties:
+                  destino:
+                    type: string
+                    enum: [GENERAL, FO]
+                  material_id:
+                    type: integer
+                  stock_nuevo:
+                    type: number
+                  reenvio_idempotente:
+                    type: boolean
+                    default: false
         "400":
-          description: "Cantidad menor o igual a cero"
+          description: "Cantidad menor o igual a cero, o desbordamiento numérico del stock resultante (SQLSTATE 22003)"
         "403":
           description: "Actor sin alcance sobre las secciones GENERAL activas implicadas (default-deny SEC-002)"
         "404":
@@ -496,10 +652,10 @@ paths:
         "409":
           description: "Más de una sección GENERAL activa con el material (destino no determinable) o clave de idempotencia en uso por otro actor"
         "422":
-          description: "Payload inválido (módulo FO ausente o no aplicable) o cantidad fuera del rango INT4"
+          description: "Payload inválido (campo no permitido, incluido `modulo`) o cantidad con más de 3 decimales / fuera del rango decimal NUMERIC(12,3)"
   /api/v1/inventario/mover:
     post:
-      summary: "Mover: transferencia directa de cantidad parcial entre Inventario General y módulos FO"
+      summary: "Mover: transferencia directa de cantidad parcial entre Inventario General e Inventario FO"
       operationId: "moverMaterial"
       requestBody:
         required: true
@@ -507,6 +663,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required:
                 - origen
                 - destino
@@ -516,26 +673,47 @@ paths:
                 origen:
                   type: string
                   enum: [GENERAL, FO]
-                origen_modulo:
-                  type: string
-                  enum: [PAQUETE, EN_USO]
                 destino:
                   type: string
                   enum: [GENERAL, FO]
-                destino_modulo:
-                  type: string
-                  enum: [PAQUETE, EN_USO]
+                  description: "FO apunta al Inventario FO único por material (sin módulos); enviar `origen_modulo`/`destino_modulo` → 422"
                 material_id:
                   type: integer
+                  exclusiveMinimum: 0
                 cantidad:
-                  type: integer
+                  type: number
+                  maximum: 999999999.999
+                  description: "Decimal > 0, hasta 3 decimales (escala/rango decimal NUMERIC(12,3), máximo 999999999.999). La regla cantidad > 0 la aplica fn_mover_material (400); la sobre-precisión o el exceso de rango se rechazan con 422"
                 clave_idempotencia:
                   type: string
+                  minLength: 1
+                  maxLength: 100
       responses:
         "200":
-          description: "Material movido vía fn_mover_material (evento inmutable MOVIMIENTO_INVENTARIO; fila destino creada solo con stock > 0; fila origen en 0 conservada). Reenvío con la misma clave: resultado original con reenvio_idempotente=true"
+          description: "Material movido vía fn_mover_material (evento inmutable MOVIMIENTO_INVENTARIO; fila destino creada solo con stock > 0; fila origen en 0 conservada). stock_origen y stock_destino son decimales. Reenvío con la misma clave: resultado original con reenvio_idempotente=true"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [material_id, origen, destino, stock_origen, stock_destino]
+                properties:
+                  material_id:
+                    type: integer
+                  origen:
+                    type: string
+                    enum: [GENERAL, FO]
+                  destino:
+                    type: string
+                    enum: [GENERAL, FO]
+                  stock_origen:
+                    type: number
+                  stock_destino:
+                    type: number
+                  reenvio_idempotente:
+                    type: boolean
+                    default: false
         "400":
-          description: "Cantidad menor o igual a cero o stock insuficiente en el origen (ningún inventario queda modificado)"
+          description: "Cantidad menor o igual a cero, stock insuficiente en el origen (ningún inventario queda modificado) o desbordamiento numérico (SQLSTATE 22003)"
         "403":
           description: "Actor sin alcance sobre las secciones GENERAL activas implicadas (default-deny SEC-002)"
         "404":
@@ -543,7 +721,7 @@ paths:
         "409":
           description: "Más de una sección GENERAL activa o ninguna activa (destino/origen no determinable) o clave de idempotencia en uso por otro actor"
         "422":
-          description: "Destino igual al origen, payload inválido (módulo FO ausente o no aplicable) o cantidad fuera del rango INT4"
+          description: "Destino igual al origen, payload inválido (campo no permitido, incluidos `origen_modulo`/`destino_modulo`) o cantidad con más de 3 decimales / fuera del rango decimal NUMERIC(12,3)"
   /api/v1/reportes/entrega:
     get:
       summary: "Acta(s) de Entrega (hito A: generadas al confirmar TEAMS) en JSON o XLSX sobre la plantilla corporativa"
@@ -578,7 +756,7 @@ paths:
             enum: [json, normal, extenso]
       responses:
         "200":
-          description: "json: listado de actas (snapshot jsonb). normal|extenso: adjunto application/vnd.openxmlformats-officedocument.spreadsheetml.sheet generado inyectando datos con OpenPyXL en la plantilla corporativa (estilo, celdas combinadas y logo conservados)"
+          description: "json: listado de actas (snapshot jsonb). normal|extenso: adjunto application/vnd.openxmlformats-officedocument.spreadsheetml.sheet generado inyectando datos con OpenPyXL en la plantilla corporativa (estilo, celdas combinadas y logo conservados). Las cantidades de las líneas (cantidad, cantidad_tomada, cantidad_consumida) son number decimal (hasta 3 decimales)"
         "403":
           description: "equipo_id al que el actor no pertenece"
         "404":
@@ -619,61 +797,527 @@ paths:
             enum: [json, normal, extenso]
       responses:
         "200":
-          description: "json: listado de actas (snapshot jsonb). normal|extenso: adjunto XLSX sobre la plantilla corporativa"
+          description: "json: listado de actas (snapshot jsonb). normal|extenso: adjunto XLSX sobre la plantilla corporativa. Las cantidades de las líneas (cantidad_tomada, cantidad_consumida) son number decimal (hasta 3 decimales)"
         "403":
           description: "equipo_id al que el actor no pertenece"
         "404":
           description: "Formato XLSX solicitado sin actas para los filtros indicados"
         "422":
           description: "Formato no soportado (p. ej. csv)"
-  /api/v1/fibra/{modulo}/materiales/{material_id}:
+  /api/v1/auditoria:
+    get:
+      summary: "Listar eventos del ledger de auditoría (solo lectura)"
+      operationId: "listarAuditoria"
+      parameters:
+        - name: material_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: tipo_accion
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: usuario
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: descripcion
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+      responses:
+        "200":
+          description: "Eventos inmutables append-only (los eventos históricos, incluidos FO_PAQUETE/FO_EN_USO, se conservan tal como se registraron); `cantidad` es number decimal (hasta 3 decimales) o null"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditoriaListOut"
+        "422":
+          description: "Parámetros de consulta inválidos"
+  /api/v1/fibra:
+    get:
+      summary: "Listar el Inventario FO unificado (una fila por material, con valor_unitario)"
+      operationId: "stockFibra"
+      responses:
+        "200":
+          description: "Filas físicas de inventario_fibra de materiales activos (cero fantasmas); stock_actual decimal y valor_unitario por JOIN al catálogo maestro. Reemplaza a GET /fibra/{modulo}"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FibraStockOut"
+        "422":
+          description: "Cabecera X-Actor ausente o inválida"
+  /api/v1/fibra/carga-inicial:
+    post:
+      summary: "Carga inicial del Inventario FO (alta única por material)"
+      operationId: "cargaInicialFibra"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FibraCargaInicialRequest"
+      responses:
+        "200":
+          description: "Fila de Inventario FO creada vía fn_cargar_stock_inicial_fibra (evento STOCK_INICIAL_FO)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FibraOperacionOut"
+        "400":
+          description: "Material con fila FO ya existente, cantidad negativa o desbordamiento numérico (SQLSTATE 22003)"
+        "422":
+          description: "Payload inválido: campo no permitido (extra forbid, incluido `modulo`), cantidad con más de 3 decimales o fuera del rango NUMERIC(12,3)"
+  /api/v1/fibra/ajuste:
+    post:
+      summary: "Ajuste administrativo de existencias del Inventario FO"
+      operationId: "ajusteFibra"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FibraAjusteRequest"
+      responses:
+        "200":
+          description: "Stock FO ajustado vía fn_ajustar_stock_fibra (evento AJUSTE_INVENTARIO_FO)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FibraOperacionOut"
+        "400":
+          description: "Stock final negativo o desbordamiento numérico (SQLSTATE 22003)"
+        "404":
+          description: "Sin fila en el Inventario FO (requiere carga inicial)"
+        "422":
+          description: "Payload inválido: campo no permitido (extra forbid, incluido `modulo`), nuevo_stock con más de 3 decimales o fuera del rango NUMERIC(12,3)"
+  /api/v1/fibra/materiales/{material_id}:
     patch:
-      summary: "Modificar material del inventario FO (catálogo + stock ajustado y auditado)"
+      summary: "Modificar material del Inventario FO (catálogo + stock ajustado y auditado); valor_unitario solo administrador"
       operationId: "actualizarMaterialFibra"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                descripcion:
-                  type: string
-                codigo:
-                  type: string
-                categoria_id:
-                  type: integer
-                nueva_categoria:
-                  type: string
-                u_m:
-                  type: string
-                stock_minimo:
-                  type: integer
-                stock_actual:
-                  type: integer
-                motivo:
-                  type: string
-                  description: "Opcional (ergonomía justificacion_opcional): se acepta null, cadena vacía o campo omitido"
+              $ref: "#/components/schemas/FibraMaterialUpdateRequest"
       responses:
         "200":
-          description: "Material FO actualizado: edición de catálogo auditada (trigger) y ajuste AJUSTE_INVENTARIO_FO vía fn_ajustar_stock_fibra en una única transacción atómica"
+          description: "Material FO actualizado: edición de catálogo auditada (trigger) y, si se envía stock_actual, ajuste AJUSTE_INVENTARIO_FO vía fn_ajustar_stock_fibra en una única transacción atómica. `valor_unitario: null` explícito es un no-op"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FibraMaterialOut"
+        "403":
+          description: "La presencia de `valor_unitario` en el payload exige rol administrador (AUTHORIZATION_FAILED); se evalúa antes de construir el payload de catálogo"
         "404":
-          description: "Material no encontrado (catálogo inexistente/inactivo) o sin fila en el módulo FO"
+          description: "Material no encontrado (catálogo inexistente/inactivo) o sin fila en el Inventario FO"
         "422":
-          description: "U.M. inexistente en el maestro ums o selector dual de categoría inválido"
+          description: "Campo no permitido (extra forbid, incluido `modulo`), U.M. inexistente en el maestro ums, selector dual de categoría inválido, o valor_unitario/stock_actual negativo, con más de 3 decimales o fuera del rango NUMERIC(12,3)"
     delete:
-      summary: "Eliminar fila de inventario FO del módulo (auditada ELIMINACION_FO)"
+      summary: "Eliminar la fila del material en el Inventario FO (auditada ELIMINACION_FO)"
       operationId: "eliminarMaterialFibra"
       parameters:
         - name: motivo
           in: query
           required: false
+          description: "Obligatorio y no vacío solo si la fila tiene stock_actual > 0 (REQ-DEL-004); con stock 0 es opcional"
           schema:
             type: string
       responses:
         "204":
-          description: "Fila de inventario FO eliminada vía fn_eliminar_inventario_fibra (evento ELIMINACION_FO con snapshot completo jsonb)"
+          description: "Fila de Inventario FO eliminada vía fn_eliminar_inventario_fibra (evento ELIMINACION_FO con snapshot completo jsonb); el catálogo y el Inventario General permanecen intactos"
         "404":
-          description: "Material inexistente/inactivo en el catálogo o sin fila en el módulo FO"
+          description: "Material inexistente/inactivo en el catálogo o sin fila en el Inventario FO"
+        "409":
+          description: "Error de integridad al confirmar la eliminación (restricción diferida), traducido a error controlado de dominio"
         "422":
           description: "Motivo vacío con stock_actual > 0 (REQ-DEL-004)"
+
+components:
+  schemas:
+    MaterialOut:
+      type: object
+      required: [id_lista, codigo, descripcion, categoria_id, categoria, u_m, stock_minimo, valor_unitario, is_active]
+      properties:
+        id_lista:
+          type: integer
+        codigo:
+          type: [string, "null"]
+        descripcion:
+          type: string
+        categoria_id:
+          type: [integer, "null"]
+        categoria:
+          type: [string, "null"]
+        u_m:
+          type: [string, "null"]
+        stock_minimo:
+          type: [integer, "null"]
+        valor_unitario:
+          type: number
+          minimum: 0
+          description: "Valor Unitario en MXN, decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        is_active:
+          type: boolean
+    MaterialListOut:
+      type: object
+      required: [materiales]
+      properties:
+        start_index:
+          type: integer
+          default: 1
+        materiales:
+          type: array
+          items:
+            $ref: "#/components/schemas/MaterialOut"
+    MaterialCreate:
+      type: object
+      additionalProperties: false
+      required: [descripcion]
+      description: "Sin valor_unitario: el alta lo fija en 1.000 MXN (extra forbid → 422 si se envía)"
+      properties:
+        descripcion:
+          type: string
+          minLength: 1
+          maxLength: 255
+        codigo:
+          type: [string, "null"]
+          maxLength: 50
+        categoria_id:
+          type: [integer, "null"]
+        nueva_categoria:
+          type: [string, "null"]
+          maxLength: 100
+        u_m:
+          type: [string, "null"]
+        stock_minimo:
+          type: [integer, "null"]
+          minimum: 0
+        stock_inicial:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 999999999.999
+          description: "Decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        seccion_id:
+          type: [integer, "null"]
+    MaterialUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        descripcion:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 255
+        codigo:
+          type: [string, "null"]
+          maxLength: 50
+        categoria_id:
+          type: [integer, "null"]
+        nueva_categoria:
+          type: [string, "null"]
+          maxLength: 100
+        u_m:
+          type: [string, "null"]
+        stock_minimo:
+          type: [integer, "null"]
+          minimum: 0
+        stock_actual:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 999999999.999
+          description: "Decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999); se enruta a fn_ajustar_stock_general (nunca por ORM)"
+        valor_unitario:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 999999999.999
+          description: "Decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999). Solo administrador: su presencia en el payload con otro rol → 403. null explícito = no-op (sin escritura ni auditoría)"
+        motivo:
+          type: [string, "null"]
+          maxLength: 500
+        is_active:
+          type: [boolean, "null"]
+    SeccionOut:
+      type: object
+      required: [almacen_id, nombre, tipo, is_active]
+      properties:
+        almacen_id:
+          type: integer
+        nombre:
+          type: string
+        tipo:
+          type: string
+        is_active:
+          type: boolean
+    SeccionTransferibleOut:
+      type: object
+      required: [almacen_id, nombre, tipo]
+      properties:
+        almacen_id:
+          type: integer
+        nombre:
+          type: string
+        tipo:
+          type: string
+          enum: [GENERAL, FO]
+          description: "Los valores legacy FO_PAQUETE/FO_EN_USO no se emiten"
+        transferible:
+          type: boolean
+          default: true
+    SeccionStockOut:
+      type: object
+      required: [material_id, codigo, descripcion, u_m, stock_minimo, stock_actual, valor_unitario, alerta_stock]
+      properties:
+        material_id:
+          type: integer
+        codigo:
+          type: [string, "null"]
+        descripcion:
+          type: string
+        u_m:
+          type: [string, "null"]
+        stock_minimo:
+          type: [integer, "null"]
+        stock_actual:
+          type: number
+          description: "Decimal, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        valor_unitario:
+          type: number
+          description: "MXN, decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        alerta_stock:
+          type: boolean
+    InventarioEquipoOut:
+      type: object
+      required: [equipo_id, material_id, codigo, descripcion, u_m, stock_minimo, stock_actual, valor_unitario, alerta_stock, ultimo_movimiento_id]
+      properties:
+        equipo_id:
+          type: integer
+        material_id:
+          type: integer
+        codigo:
+          type: [string, "null"]
+        descripcion:
+          type: string
+        u_m:
+          type: [string, "null"]
+        stock_minimo:
+          type: [integer, "null"]
+        stock_actual:
+          type: number
+          description: "Decimal, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        valor_unitario:
+          type: number
+          description: "MXN, decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        alerta_stock:
+          type: boolean
+        ultimo_movimiento_id:
+          type: [integer, "null"]
+        stock_minimo_local:
+          type: [integer, "null"]
+        categoria_local_id:
+          type: [integer, "null"]
+        um_local_id:
+          type: [integer, "null"]
+        stock_minimo_efectivo:
+          type: [integer, "null"]
+        categoria_efectiva:
+          type: [string, "null"]
+        um_efectivo:
+          type: [string, "null"]
+    ResumenGeneralOut:
+      type: object
+      required: [valor_total, moneda]
+      properties:
+        valor_total:
+          type: number
+          description: "Suma de Stock Actual × Valor Unitario (Inventario General activo + Inventario FO), calculada por fn_valor_total_inventario con redondeo a 3 decimales; por encima de ≈9×10^12 MXN `number` pierde precisión de sub-unidad (riesgo R6 aceptado)"
+        moneda:
+          type: string
+          const: "MXN"
+    FibraStockOut:
+      type: object
+      required: [material_id, codigo, descripcion, u_m, stock_minimo, stock_actual, valor_unitario, alerta_stock]
+      description: "Fila del Inventario FO unificado; sin campo de módulo"
+      properties:
+        material_id:
+          type: integer
+        codigo:
+          type: [string, "null"]
+        descripcion:
+          type: string
+        u_m:
+          type: [string, "null"]
+        stock_minimo:
+          type: [integer, "null"]
+        stock_actual:
+          type: number
+          description: "Decimal, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        valor_unitario:
+          type: number
+          description: "MXN, decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        alerta_stock:
+          type: boolean
+    FibraMaterialOut:
+      type: object
+      required: [material_id, codigo, descripcion, u_m, stock_minimo, stock_actual, valor_unitario, alerta_stock, categoria, categoria_id]
+      description: "Material del Inventario FO tras su edición; sin campo de módulo"
+      properties:
+        material_id:
+          type: integer
+        codigo:
+          type: [string, "null"]
+        descripcion:
+          type: string
+        u_m:
+          type: [string, "null"]
+        stock_minimo:
+          type: [integer, "null"]
+        stock_actual:
+          type: number
+          description: "Decimal, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        valor_unitario:
+          type: number
+          description: "MXN, decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        alerta_stock:
+          type: boolean
+        categoria:
+          type: [string, "null"]
+        categoria_id:
+          type: [integer, "null"]
+    FibraMaterialUpdateRequest:
+      type: object
+      additionalProperties: false
+      description: "extra forbid: cualquier campo no declarado (p. ej. `modulo`) → 422"
+      properties:
+        descripcion:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 255
+        codigo:
+          type: [string, "null"]
+          maxLength: 50
+        categoria_id:
+          type: [integer, "null"]
+        nueva_categoria:
+          type: [string, "null"]
+          maxLength: 100
+        u_m:
+          type: [string, "null"]
+        stock_minimo:
+          type: [integer, "null"]
+          minimum: 0
+        stock_actual:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 999999999.999
+          description: "Decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999); se enruta a fn_ajustar_stock_fibra (nunca por ORM)"
+        valor_unitario:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 999999999.999
+          description: "Decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999). Solo administrador: su presencia en el payload con otro rol → 403. null explícito = no-op"
+        motivo:
+          type: [string, "null"]
+          maxLength: 500
+          description: "Opcional (ergonomía justificacion_opcional): se acepta null, cadena vacía o campo omitido"
+    FibraCargaInicialRequest:
+      type: object
+      additionalProperties: false
+      required: [material_id, cantidad]
+      description: "extra forbid: cualquier campo no declarado (p. ej. `modulo`) → 422"
+      properties:
+        material_id:
+          type: integer
+          exclusiveMinimum: 0
+        cantidad:
+          type: number
+          minimum: 0
+          maximum: 999999999.999
+          description: "Decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        motivo:
+          type: [string, "null"]
+          maxLength: 500
+    FibraAjusteRequest:
+      type: object
+      additionalProperties: false
+      required: [material_id, nuevo_stock]
+      description: "extra forbid: cualquier campo no declarado (p. ej. `modulo`) → 422"
+      properties:
+        material_id:
+          type: integer
+          exclusiveMinimum: 0
+        nuevo_stock:
+          type: number
+          minimum: 0
+          maximum: 999999999.999
+          description: "Decimal >= 0, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999)"
+        motivo:
+          type: [string, "null"]
+          maxLength: 500
+          description: "Opcional (ergonomía justificacion_opcional): se acepta null, cadena vacía o campo omitido"
+    FibraOperacionOut:
+      type: object
+      required: [material_id]
+      description: "Confirmación de operación sobre el Inventario FO; ya no expone módulo"
+      properties:
+        material_id:
+          type: integer
+    AuditoriaOut:
+      type: object
+      required: [id, usuario, tipo_accion, material_id, equipo_origen_id, equipo_destino_id, almacen_origen_id, almacen_destino_id, cantidad, resultado, detalles, created_at, descripcion, codigo, categoria, estado_activo]
+      properties:
+        id:
+          type: integer
+        usuario:
+          type: [string, "null"]
+        tipo_accion:
+          type: string
+        material_id:
+          type: [integer, "null"]
+        equipo_origen_id:
+          type: [integer, "null"]
+        equipo_destino_id:
+          type: [integer, "null"]
+        almacen_origen_id:
+          type: [integer, "null"]
+        almacen_destino_id:
+          type: [integer, "null"]
+        cantidad:
+          type: [number, "null"]
+          description: "Decimal, hasta 3 decimales (escala NUMERIC(12,3), máximo 999999999.999) (solo lectura)"
+        resultado:
+          type: [string, "null"]
+        detalles:
+          type: [object, "null"]
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        descripcion:
+          type: [string, "null"]
+        codigo:
+          type: [string, "null"]
+        categoria:
+          type: [string, "null"]
+        estado_activo:
+          type: [boolean, "null"]
+    AuditoriaListOut:
+      type: object
+      required: [eventos]
+      properties:
+        eventos:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditoriaOut"

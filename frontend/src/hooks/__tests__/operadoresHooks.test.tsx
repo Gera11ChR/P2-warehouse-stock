@@ -30,11 +30,10 @@ function setup() {
 beforeEach(() => vi.clearAllMocks())
 
 describe('useSumarCantidad', () => {
-  it('GENERAL: devuelve el DTO del servidor e invalida ["stock"] + auditoría (no ["fibra"])', async () => {
+  it('GENERAL: devuelve el DTO del servidor e invalida ["stock"] + auditoría + Valor Total (no ["fibra"])', async () => {
     const { wrapper, claves } = setup()
     const out = {
       destino: 'GENERAL',
-      modulo: null,
       material_id: 1,
       stock_nuevo: 42,
       reenvio_idempotente: false,
@@ -48,24 +47,35 @@ describe('useSumarCantidad', () => {
       clave_idempotencia: 'sumar-k',
     })
     expect(r).toBe(out)
-    expect(claves()).toEqual(expect.arrayContaining([['stock'], ['auditoria']]))
-    expect(claves()).not.toContainEqual(['fibra', 'PAQUETE'])
+    expect(claves()).toEqual(
+      expect.arrayContaining([
+        ['stock'],
+        ['auditoria'],
+        ['inventario', 'resumen-general'],
+      ]),
+    )
+    expect(claves()).not.toContainEqual(['fibra'])
   })
 
-  it('FO EN_USO: invalida ["fibra","EN_USO"] y no ["stock"]', async () => {
+  it('FO: invalida ["fibra"] (inventario único, sin módulo) + Valor Total y no ["stock"]', async () => {
     const { wrapper, claves } = setup()
     vi.mocked(sumarCantidad).mockResolvedValue({} as never)
     const { result } = renderHook(() => useSumarCantidad(), { wrapper })
     await result.current.mutateAsync({
       destino: 'FO',
-      modulo: 'EN_USO',
       material_id: 1,
-      cantidad: 2,
+      cantidad: 2.5,
     })
     expect(claves()).toEqual(
-      expect.arrayContaining([['fibra', 'EN_USO'], ['auditoria']]),
+      expect.arrayContaining([
+        ['fibra'],
+        ['auditoria'],
+        ['inventario', 'resumen-general'],
+      ]),
     )
     expect(claves()).not.toContainEqual(['stock'])
+    expect(claves()).not.toContainEqual(['fibra', 'EN_USO'])
+    expect(claves()).not.toContainEqual(['fibra', 'PAQUETE'])
   })
 
   it('un rechazo (p. ej. 400) también recarga el stock afectado (pantalla posiblemente obsoleta)', async () => {
@@ -80,44 +90,62 @@ describe('useSumarCantidad', () => {
       }),
     ).rejects.toThrow('400')
     expect(claves()).toContainEqual(['stock'])
+    expect(claves()).toContainEqual(['inventario', 'resumen-general'])
   })
 })
 
 describe('useMoverMaterial', () => {
-  it('General → FO Paquete: invalida origen Y destino (["stock"] y ["fibra","PAQUETE"])', async () => {
+  it('General → FO: invalida origen Y destino (["stock"] y ["fibra"]) + Valor Total', async () => {
     const { wrapper, claves } = setup()
     vi.mocked(moverMaterial).mockResolvedValue({} as never)
     const { result } = renderHook(() => useMoverMaterial(), { wrapper })
     await result.current.mutateAsync({
       origen: 'GENERAL',
       destino: 'FO',
-      destino_modulo: 'PAQUETE',
-      material_id: 1,
-      cantidad: 3,
-    })
-    expect(claves()).toEqual(
-      expect.arrayContaining([['stock'], ['fibra', 'PAQUETE'], ['auditoria']]),
-    )
-    expect(claves()).not.toContainEqual(['fibra', 'EN_USO'])
-  })
-
-  it('FO Paquete → FO En Uso: ambos módulos, sin ["stock"]', async () => {
-    const { wrapper, claves } = setup()
-    vi.mocked(moverMaterial).mockResolvedValue({} as never)
-    const { result } = renderHook(() => useMoverMaterial(), { wrapper })
-    await result.current.mutateAsync({
-      origen: 'FO',
-      origen_modulo: 'PAQUETE',
-      destino: 'FO',
-      destino_modulo: 'EN_USO',
       material_id: 1,
       cantidad: 3,
     })
     expect(claves()).toEqual(
       expect.arrayContaining([
-        ['fibra', 'PAQUETE'],
-        ['fibra', 'EN_USO'],
+        ['stock'],
+        ['fibra'],
         ['auditoria'],
+        ['inventario', 'resumen-general'],
+      ]),
+    )
+    expect(claves()).not.toContainEqual(['fibra', 'PAQUETE'])
+    expect(claves()).not.toContainEqual(['fibra', 'EN_USO'])
+  })
+
+  it('FO → General: invalida ["fibra"] y ["stock"] (cada clave una sola vez)', async () => {
+    const { wrapper, claves } = setup()
+    vi.mocked(moverMaterial).mockResolvedValue({} as never)
+    const { result } = renderHook(() => useMoverMaterial(), { wrapper })
+    await result.current.mutateAsync({
+      origen: 'FO',
+      destino: 'GENERAL',
+      material_id: 1,
+      cantidad: 0.75,
+    })
+    expect(claves()).toEqual(
+      expect.arrayContaining([['fibra'], ['stock'], ['auditoria']]),
+    )
+    expect(claves().filter((k) => k?.[0] === 'fibra')).toHaveLength(1)
+    expect(claves().filter((k) => k?.[0] === 'stock')).toHaveLength(1)
+  })
+
+  it('invalidarInventariosRapidos FO + FO: una sola ["fibra"], además de auditoría y Valor Total', async () => {
+    const { queryClient, claves } = setup()
+    await invalidarInventariosRapidos(queryClient, [
+      { inventario: 'FO' },
+      { inventario: 'FO' },
+    ])
+    expect(claves().filter((k) => k?.[0] === 'fibra')).toHaveLength(1)
+    expect(claves()).toEqual(
+      expect.arrayContaining([
+        ['fibra'],
+        ['auditoria'],
+        ['inventario', 'resumen-general'],
       ]),
     )
     expect(claves()).not.toContainEqual(['stock'])
@@ -130,14 +158,17 @@ describe('useMoverMaterial', () => {
     await expect(
       result.current.mutateAsync({
         origen: 'FO',
-        origen_modulo: 'EN_USO',
         destino: 'GENERAL',
         material_id: 1,
         cantidad: 1,
       }),
     ).rejects.toThrow('409')
     expect(claves()).toEqual(
-      expect.arrayContaining([['fibra', 'EN_USO'], ['stock']]),
+      expect.arrayContaining([
+        ['fibra'],
+        ['stock'],
+        ['inventario', 'resumen-general'],
+      ]),
     )
   })
 })
@@ -163,6 +194,7 @@ describe('helpers de invalidación (queryKeys)', () => {
         ['fibra'],
         ['equipo'],
         ['auditoria'],
+        ['inventario', 'resumen-general'],
         ['reportes', 'actas', 'entrega'],
       ]),
     )

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SeccionGeneral from '../../pages/SeccionGeneral'
+import { getResumenGeneral } from '../../services/inventory'
 
 // ============================================================================
 // REQ-SIMPL-001/002/006 — Eliminación del Buscador a granel (ROJO intencional)
@@ -47,6 +48,9 @@ vi.mock('../../services/catalog', () => ({
 vi.mock('../../services/inventory', () => ({
   listSecciones: vi.fn().mockResolvedValue([]),
   stockSeccion: vi.fn().mockResolvedValue([]),
+  getResumenGeneral: vi
+    .fn()
+    .mockResolvedValue({ valor_total: 1234.5, moneda: 'MXN' }),
 }))
 
 vi.mock('../../components/CatalogManagementPanel', () => ({
@@ -84,5 +88,19 @@ describe('SeccionGeneral — simplificación del buscador (REQ-SIMPL-001/002/006
     // Con los mocks vacíos la tabla queda sin filas y la vista informa
     // «Mostrando 0 de 0 registros».
     expect(await screen.findByText(/Mostrando 0 de 0 registros/)).toBeTruthy()
+  })
+
+  it('RF-4/RF-5: muestra «Valor Total» como segunda tarjeta, con el valor de GET /inventario/resumen-general', async () => {
+    renderConQueryClient()
+
+    expect(await screen.findByTestId('valor-total')).toHaveTextContent('1,234.5')
+    expect(getResumenGeneral).toHaveBeenCalled()
+    const etiquetas = ['Total Materiales', 'Valor Total', 'Stock Total', 'Alertas Stock', 'Transferencias Hoy']
+    const posiciones = etiquetas.map((e) => {
+      const nodo = screen.getByText(e)
+      return nodo.closest('div.flex.items-center') as HTMLElement
+    })
+    const grid = posiciones[0].parentElement as HTMLElement
+    expect(Array.from(grid.children)).toEqual(posiciones)
   })
 })

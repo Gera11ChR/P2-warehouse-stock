@@ -24,8 +24,7 @@ const material: MaterialOperacionContexto = {
 
 const destinos: DestinoMover[] = [
   { value: '1', label: 'Inventario General', tipo: 'GENERAL' },
-  { value: '2', label: 'Fibra Óptica - Paquete', tipo: 'FO_PAQUETE' },
-  { value: '3', label: 'Fibra Óptica - En Uso', tipo: 'FO_EN_USO' },
+  { value: '2', label: 'Inventario FO', tipo: 'FO' },
 ]
 
 /** Host con un botón disparador para verificar el retorno de foco. */
@@ -120,7 +119,7 @@ describe('SumarCantidadDialog (REQ-P2-INV-001)', () => {
     expect(input).not.toHaveFocus()
   })
 
-  it('valida entero > 0, proyecta el stock como «Proyección visual» y nombra la acción', async () => {
+  it('valida decimal > 0, proyecta el stock como «Proyección visual» y nombra la acción', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<SumarHost onSubmit={onSubmit} />)
@@ -202,11 +201,7 @@ describe('MoverMaterialDialog (REQ-P2-INV-003/004/005)', () => {
     const opciones = within(select)
       .getAllByRole('option')
       .map((o) => o.textContent)
-    expect(opciones).toEqual([
-      '— Selecciona destino —',
-      'Fibra Óptica - Paquete',
-      'Fibra Óptica - En Uso',
-    ])
+    expect(opciones).toEqual(['— Selecciona destino —', 'Inventario FO'])
     expect(screen.getByLabelText('Cantidad a mover')).toHaveValue('12')
     expect(
       screen.getByRole('button', { name: 'Mover material' }),
@@ -225,17 +220,17 @@ describe('MoverMaterialDialog (REQ-P2-INV-003/004/005)', () => {
     await user.type(cantidad, '4')
 
     const resumen = within(screen.getByLabelText('Resumen de la operación'))
-    expect(resumen.getByText('Fibra Óptica - Paquete')).toBeInTheDocument()
+    expect(resumen.getByText('Inventario FO')).toBeInTheDocument()
     expect(resumen.getByText('4 PZ')).toBeInTheDocument()
     expect(screen.getByText('Proyección visual')).toBeInTheDocument()
     expect(screen.getByText('8')).toBeInTheDocument()
 
     await user.click(
-      screen.getByRole('button', { name: 'Mover 4 PZ a Fibra Óptica - Paquete' }),
+      screen.getByRole('button', { name: 'Mover 4 PZ a Inventario FO' }),
     )
     expect(onSubmit).toHaveBeenCalledWith({
       destino: '2',
-      destinoTipo: 'FO_PAQUETE',
+      destinoTipo: 'FO',
       cantidad: 4,
     })
   })
@@ -246,7 +241,7 @@ describe('MoverMaterialDialog (REQ-P2-INV-003/004/005)', () => {
     render(<MoverHost onSubmit={onSubmit} />)
     await user.click(screen.getByRole('button', { name: 'abrir' }))
 
-    await user.selectOptions(screen.getByLabelText('Inventario destino'), '3')
+    await user.selectOptions(screen.getByLabelText('Inventario destino'), '2')
     const cantidad = screen.getByLabelText('Cantidad a mover')
     await user.clear(cantidad)
     await user.type(cantidad, '13')
@@ -283,27 +278,31 @@ async function abrirSumar(onSubmit: ((c: number) => void) | undefined = vi.fn())
 }
 
 describe('+Cantidad — validación estricta del campo (REQ-P2-INV-001)', () => {
-  it('es un campo de texto numérico (inputMode=numeric) con ayuda asociada', async () => {
+  it('es un campo de texto decimal (inputMode=decimal) con ayuda asociada', async () => {
     const { input } = await abrirSumar()
-    expect(input).toHaveAttribute('inputmode', 'numeric')
+    expect(input).toHaveAttribute('inputmode', 'decimal')
     expect(input).toHaveAttribute('type', 'text')
     expect(input).toHaveAttribute('aria-invalid', 'false')
     const ayuda = document.getElementById(
       input.getAttribute('aria-describedby') ?? '',
     )
-    expect(ayuda).toHaveTextContent('Número entero mayor que 0')
+    expect(ayuda).toHaveTextContent('Número mayor que 0, hasta 3 decimales')
   })
 
   it.each([
     ['0', 'La cantidad debe ser mayor que 0.'],
     ['-5', 'La cantidad no puede ser negativa.'],
-    ['1.5', 'Ingresa un número entero, sin decimales.'],
-    ['1,5', 'Ingresa un número entero, sin decimales.'],
+    ['1,5', 'Usa punto como separador decimal (por ejemplo 2.5).'],
+    ['1.0005', 'Máximo 3 decimales; no se redondea automáticamente.'],
     ['1e3', 'No uses notación científica; escribe el número completo.'],
-    ['abc', 'Ingresa solo dígitos (0-9).'],
+    ['1e-4', 'No uses notación científica; escribe el número completo.'],
+    [
+      'abc',
+      'Ingresa solo dígitos y, si aplica, un punto decimal (por ejemplo 0.5).',
+    ],
     ['5 ', 'La cantidad no debe contener espacios.'],
     ['  ', 'La cantidad no debe contener espacios.'],
-    ['2147483648', 'La cantidad máxima permitida es 2,147,483,647.'],
+    ['1000000000', 'La cantidad máxima permitida es 999,999,999.999.'],
   ])('rechaza «%s» con mensaje en línea, aria-invalid y botón deshabilitado con motivo', async (texto, mensaje) => {
     const { user, input } = await abrirSumar()
     await user.type(input, texto)
@@ -328,7 +327,30 @@ describe('+Cantidad — validación estricta del campo (REQ-P2-INV-001)', () => 
     expect(input).toHaveAttribute('aria-invalid', 'true')
   })
 
-  it('acepta el máximo INT4 cuando el stock resultante no lo desborda', async () => {
+  it.each([
+    ['2.5', 2.5],
+    ['1.5', 1.5],
+    ['0.001', 0.001],
+    ['1.250', 1.25],
+  ])('acepta la cantidad decimal «%s» y envía %d', async (texto, esperado) => {
+    const { user, input, onSubmit } = await abrirSumar()
+    await user.type(input, `${texto}{Enter}`)
+    expect(input).toHaveAttribute('aria-invalid', 'false')
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledWith(esperado)
+  })
+
+  it('con decimales proyecta el stock formateado (12 + 2.5 = 14.5) y nombra la acción', async () => {
+    const { user, input } = await abrirSumar()
+    await user.type(input, '2.5')
+    expect(screen.getByText('Proyección visual')).toBeInTheDocument()
+    expect(screen.getByText('14.5')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Sumar 2.5 PZ a CON-ACO-001' }),
+    ).toBeEnabled()
+  })
+
+  it('acepta el máximo decimal cuando el stock resultante no lo desborda', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(
@@ -339,13 +361,16 @@ describe('+Cantidad — validación estricta del campo (REQ-P2-INV-001)', () => 
         onSubmit={onSubmit}
       />,
     )
-    await user.type(screen.getByLabelText('Cantidad a sumar'), '2147483647{Enter}')
-    expect(onSubmit).toHaveBeenCalledWith(2_147_483_647)
+    await user.type(
+      screen.getByLabelText('Cantidad a sumar'),
+      '999999999.999{Enter}',
+    )
+    expect(onSubmit).toHaveBeenCalledWith(999_999_999.999)
   })
 
-  it('bloquea si el stock resultante superaría INT4 (preliminar)', async () => {
+  it('bloquea si el stock resultante superaría el máximo decimal (preliminar)', async () => {
     const { user, input } = await abrirSumar()
-    await user.type(input, '2147483647')
+    await user.type(input, '999999999.999')
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(
       screen.getAllByText(/stock resultante superaría el máximo permitido/).length,
@@ -449,7 +474,7 @@ describe('Mover — destino y cantidad (REQ-P2-INV-003/004/005)', () => {
     expect(select).toHaveAttribute('aria-required', 'true')
   })
 
-  it('excluye el origen por tipo: desde GENERAL solo ofrece Fibra Óptica (aunque otra sección sea GENERAL)', async () => {
+  it('excluye el origen por tipo: desde GENERAL solo ofrece Inventario FO (aunque otra sección sea GENERAL)', async () => {
     const { select } = await abrirMover({
       onSubmit: vi.fn(),
       origenValue: '1',
@@ -462,35 +487,48 @@ describe('Mover — destino y cantidad (REQ-P2-INV-003/004/005)', () => {
     const opciones = within(select)
       .getAllByRole('option')
       .map((o) => o.textContent)
-    expect(opciones).toEqual([
-      '— Selecciona destino —',
-      'Fibra Óptica - Paquete',
-      'Fibra Óptica - En Uso',
-    ])
+    expect(opciones).toEqual(['— Selecciona destino —', 'Inventario FO'])
   })
 
-  it('desde FO Paquete ofrece Inventario General y FO En Uso, nunca el propio origen', async () => {
+  it('desde Inventario FO solo ofrece Inventario General: FO → FO no se ofrece (DESTINO_IGUAL_ORIGEN)', async () => {
     const { select } = await abrirMover({
       onSubmit: vi.fn(),
       origenValue: '2',
-      origenTipo: 'FO_PAQUETE',
+      origenTipo: 'FO',
+      destinos: [
+        ...destinos,
+        // Otro destino FO (p. ej. histórico/duplicado) tampoco puede ofrecerse.
+        { value: '8', label: 'Inventario FO (otro)', tipo: 'FO' },
+      ],
     })
     const opciones = within(select)
       .getAllByRole('option')
       .map((o) => o.textContent)
-    expect(opciones).toEqual([
-      '— Selecciona destino —',
-      'Inventario General',
-      'Fibra Óptica - En Uso',
-    ])
+    expect(opciones).toEqual(['— Selecciona destino —', 'Inventario General'])
   })
 
   it('deduce el tipo del origen a partir de origenValue cuando no se informa origenTipo', async () => {
-    const { select } = await abrirMover({ onSubmit: vi.fn(), origenValue: '3' })
+    const { select } = await abrirMover({ onSubmit: vi.fn(), origenValue: '2' })
     const opciones = within(select)
       .getAllByRole('option')
       .map((o) => o.textContent)
-    expect(opciones).not.toContain('Fibra Óptica - En Uso')
+    expect(opciones).toEqual(['— Selecciona destino —', 'Inventario General'])
+    expect(opciones).not.toContain('Inventario FO')
+  })
+
+  it('no ofrece como destino un tipo FO histórico (FO_PAQUETE / FO_EN_USO) ni uno desconocido', async () => {
+    const { select } = await abrirMover({
+      onSubmit: vi.fn(),
+      destinos: [
+        ...destinos,
+        // Forzado: el tipo ya no forma parte de TipoInventario.
+        { value: '5', label: 'FO histórico', tipo: 'FO_PAQUETE' as never },
+      ],
+    })
+    const opciones = within(select)
+      .getAllByRole('option')
+      .map((o) => o.textContent)
+    expect(opciones).toEqual(['— Selecciona destino —', 'Inventario FO'])
   })
 
   it('el destino es obligatorio: sin elegirlo no se puede confirmar y el motivo lo dice', async () => {
@@ -506,13 +544,13 @@ describe('Mover — destino y cantidad (REQ-P2-INV-003/004/005)', () => {
     const onSubmit = vi.fn()
     const { user, cantidad } = await abrirMover({ onSubmit })
     expect(cantidad).toHaveValue('12')
-    await user.selectOptions(screen.getByLabelText('Inventario destino'), '3')
+    await user.selectOptions(screen.getByLabelText('Inventario destino'), '2')
     await user.click(
-      screen.getByRole('button', { name: 'Mover 12 PZ a Fibra Óptica - En Uso' }),
+      screen.getByRole('button', { name: 'Mover 12 PZ a Inventario FO' }),
     )
     expect(onSubmit).toHaveBeenCalledWith({
-      destino: '3',
-      destinoTipo: 'FO_EN_USO',
+      destino: '2',
+      destinoTipo: 'FO',
       cantidad: 12,
     })
     expect(screen.getByText(/El origen quedaría en 0/)).toBeInTheDocument()
@@ -521,9 +559,13 @@ describe('Mover — destino y cantidad (REQ-P2-INV-003/004/005)', () => {
   it.each([
     ['0', 'La cantidad debe ser mayor que 0.'],
     ['-1', 'La cantidad no puede ser negativa.'],
-    ['2.5', 'Ingresa un número entero, sin decimales.'],
+    ['2,5', 'Usa punto como separador decimal (por ejemplo 2.5).'],
+    ['1.0005', 'Máximo 3 decimales; no se redondea automáticamente.'],
     ['1e1', 'No uses notación científica; escribe el número completo.'],
-    ['doce', 'Ingresa solo dígitos (0-9).'],
+    [
+      'doce',
+      'Ingresa solo dígitos y, si aplica, un punto decimal (por ejemplo 0.5).',
+    ],
     ['1 2', 'La cantidad no debe contener espacios.'],
     ['13', 'No puedes mover más del stock disponible (12).'],
   ])('cantidad «%s» inválida: error en línea y sin habilitar el envío', async (texto, mensaje) => {
@@ -548,9 +590,55 @@ describe('Mover — destino y cantidad (REQ-P2-INV-003/004/005)', () => {
     await user.type(cantidad, '1{Enter}')
     expect(onSubmit).toHaveBeenLastCalledWith({
       destino: '2',
-      destinoTipo: 'FO_PAQUETE',
+      destinoTipo: 'FO',
       cantidad: 1,
     })
+  })
+
+  it('acepta cantidades decimales parciales (2.5) y las envía como número', async () => {
+    const onSubmit = vi.fn()
+    const { user, cantidad } = await abrirMover({ onSubmit })
+    await user.selectOptions(screen.getByLabelText('Inventario destino'), '2')
+    await user.clear(cantidad)
+    await user.type(cantidad, '2.5')
+    expect(cantidad).toHaveAttribute('aria-invalid', 'false')
+    await user.click(
+      screen.getByRole('button', { name: 'Mover 2.5 PZ a Inventario FO' }),
+    )
+    expect(onSubmit).toHaveBeenCalledWith({
+      destino: '2',
+      destinoTipo: 'FO',
+      cantidad: 2.5,
+    })
+    // Proyección con decimales: 12 − 2.5 = 9.5
+    expect(screen.getByText('9.5')).toBeInTheDocument()
+  })
+
+  it('el stock decimal del origen se muestra y se propone completo (12.75)', async () => {
+    render(
+      <MoverMaterialDialog
+        open
+        material={{ ...material, stockActual: 12.75 }}
+        destinos={destinos}
+        origenValue="1"
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+    expect(screen.getByLabelText('Cantidad a mover')).toHaveValue('12.75')
+    const resumen = within(screen.getByLabelText('Resumen de la operación'))
+    expect(resumen.getByText('12.75 PZ')).toBeInTheDocument()
+  })
+
+  it('el tope por stock compara decimales sin error de coma flotante (12.001 > 12.000)', async () => {
+    const { user, cantidad } = await abrirMover()
+    await user.selectOptions(screen.getByLabelText('Inventario destino'), '2')
+    await user.clear(cantidad)
+    await user.type(cantidad, '12.001')
+    expect(cantidad).toHaveAttribute('aria-invalid', 'true')
+    expect(
+      screen.getByText('No puedes mover más del stock disponible (12).'),
+    ).toBeInTheDocument()
   })
 
   it('Enter con el destino sin elegir mueve el foco al select (primer campo inválido) y no envía', async () => {
@@ -580,7 +668,7 @@ describe('Mover — destino y cantidad (REQ-P2-INV-003/004/005)', () => {
   it('Enter con todo válido envía una sola vez', async () => {
     const onSubmit = vi.fn()
     const { user, cantidad } = await abrirMover({ onSubmit })
-    await user.selectOptions(screen.getByLabelText('Inventario destino'), '3')
+    await user.selectOptions(screen.getByLabelText('Inventario destino'), '2')
     await user.click(cantidad)
     await user.keyboard('{Enter}')
     expect(onSubmit).toHaveBeenCalledTimes(1)
@@ -628,41 +716,78 @@ describe('Mover — destino y cantidad (REQ-P2-INV-003/004/005)', () => {
     expect(onEditar).toHaveBeenCalled()
   })
 
-  it.each([
-    ['2', 'GENERAL', 'FO', 'PAQUETE'],
-    ['3', 'GENERAL', 'FO', 'EN_USO'],
-  ] as const)(
-    'integración con el builder GENERAL -> destino %s',
-    async (valor, origen, destinoContrato, modulo) => {
-      const onSubmit = vi.fn()
-      const { user, cantidad } = await abrirMover({
-        onSubmit,
-        origenValue: '1',
-        origenTipo: origen,
-      })
-      await user.selectOptions(screen.getByLabelText('Inventario destino'), valor)
-      await user.clear(cantidad)
-      await user.type(cantidad, '4{Enter}')
-      const [datos] = onSubmit.mock.calls[0] as [
-        { destinoTipo: 'FO_PAQUETE' | 'FO_EN_USO'; cantidad: number },
-      ]
+  it('integración con el builder GENERAL -> Inventario FO (sin módulo)', async () => {
+    const onSubmit = vi.fn()
+    const { user, cantidad } = await abrirMover({
+      onSubmit,
+      origenValue: '1',
+      origenTipo: 'GENERAL',
+    })
+    await user.selectOptions(screen.getByLabelText('Inventario destino'), '2')
+    await user.clear(cantidad)
+    await user.type(cantidad, '4{Enter}')
+    const [datos] = onSubmit.mock.calls[0] as [
+      { destinoTipo: 'GENERAL' | 'FO'; cantidad: number },
+    ]
+    expect(
+      construirPayloadMover({
+        origen: 'GENERAL',
+        destino: datos.destinoTipo,
+        materialId: 5,
+        cantidad: datos.cantidad,
+      }),
+    ).toEqual({
+      ok: true,
+      payload: {
+        origen: 'GENERAL',
+        destino: 'FO',
+        material_id: 5,
+        cantidad: 4,
+      },
+    })
+  })
+
+  it('el payload no contiene campos de módulo y FO → FO / GENERAL → GENERAL son DESTINO_IGUAL_ORIGEN', () => {
+    const r = construirPayloadMover({
+      origen: 'GENERAL',
+      destino: 'FO',
+      materialId: 5,
+      cantidad: 1.5,
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(Object.keys(r.payload).sort()).toEqual([
+        'cantidad',
+        'destino',
+        'material_id',
+        'origen',
+      ])
+    }
+    for (const t of ['FO', 'GENERAL'] as const) {
       expect(
         construirPayloadMover({
-          origen,
-          destino: datos.destinoTipo,
+          origen: t,
+          destino: t,
           materialId: 5,
-          cantidad: datos.cantidad,
+          cantidad: 1,
         }),
-      ).toEqual({
-        ok: true,
-        payload: {
-          origen: 'GENERAL',
-          destino: destinoContrato,
-          destino_modulo: modulo,
-          material_id: 5,
-          cantidad: 4,
-        },
-      })
-    },
-  )
+      ).toMatchObject({ ok: false, codigo: 'DESTINO_IGUAL_ORIGEN' })
+    }
+  })
+
+  it('el builder de +Cantidad acepta decimales (2.5) y rechaza más de 3 decimales', () => {
+    expect(
+      construirPayloadSumar({ inventario: 'FO', materialId: 3, cantidad: 2.5 }),
+    ).toEqual({
+      ok: true,
+      payload: { destino: 'FO', material_id: 3, cantidad: 2.5 },
+    })
+    expect(
+      construirPayloadSumar({
+        inventario: 'GENERAL',
+        materialId: 3,
+        cantidad: 1.0005,
+      }),
+    ).toMatchObject({ ok: false, codigo: 'CANTIDAD_INVALIDA' })
+  })
 })

@@ -14,7 +14,6 @@ describe('services/inventory — operadores rápidos', () => {
   it('sumarCantidad: POST /inventario/sumar-cantidad con el payload y devuelve el DTO', async () => {
     const out = {
       destino: 'FO',
-      modulo: 'PAQUETE',
       material_id: 7,
       stock_nuevo: 15,
       reenvio_idempotente: false,
@@ -22,7 +21,6 @@ describe('services/inventory — operadores rápidos', () => {
     post.mockResolvedValue({ data: out })
     const payload = {
       destino: 'FO' as const,
-      modulo: 'PAQUETE' as const,
       material_id: 7,
       cantidad: 5,
       clave_idempotencia: 'sumar-k1',
@@ -35,9 +33,7 @@ describe('services/inventory — operadores rápidos', () => {
     const out = {
       material_id: 7,
       origen: 'GENERAL',
-      origen_modulo: null,
       destino: 'FO',
-      destino_modulo: 'EN_USO',
       stock_origen: 3,
       stock_destino: 9,
       reenvio_idempotente: true,
@@ -46,7 +42,6 @@ describe('services/inventory — operadores rápidos', () => {
     const payload = {
       origen: 'GENERAL' as const,
       destino: 'FO' as const,
-      destino_modulo: 'EN_USO' as const,
       material_id: 7,
       cantidad: 4,
       clave_idempotencia: 'mover-k1',
@@ -67,7 +62,6 @@ describe('services/inventory — operadores rápidos', () => {
         moverMaterial({
           origen: 'GENERAL',
           destino: 'FO',
-          destino_modulo: 'PAQUETE',
           material_id: 1,
           cantidad: 1,
         }),

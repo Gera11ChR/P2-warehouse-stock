@@ -14,6 +14,7 @@ function fila(overrides: Partial<InventarioEquipoRow>): InventarioEquipoRow {
     u_m: 'METRO (M)',
     stock_minimo: 5,
     stock_actual: 5,
+    valor_unitario: 1,
     alerta_stock: false,
     ultimo_movimiento_id: null,
     stock_minimo_local: null,
@@ -107,6 +108,69 @@ describe('SeguimientoNuevaListaForm validación', () => {
     expect(onSubmit).not.toHaveBeenCalled()
     expect(screen.getByText(/excede el stock disponible/i)).toBeInTheDocument()
   })
+})
+
+describe('SeguimientoNuevaListaForm cantidades decimales (RF-6)', () => {
+  async function conLinea(onSubmit = vi.fn()) {
+    const user = userEvent.setup()
+    renderForm(onSubmit)
+    await user.click(screen.getByRole('button', { name: 'Agregar línea' }))
+    await user.selectOptions(screen.getByRole('combobox'), '10') // stock 5
+    return user
+  }
+
+  it('el campo Cantidad acepta hasta 3 decimales (min 0.001, step 0.001, decimal)', async () => {
+    await conLinea()
+    const cantidad = screen.getByLabelText('Cantidad')
+    expect(cantidad).toHaveAttribute('min', '0.001')
+    expect(cantidad).toHaveAttribute('step', '0.001')
+    expect(cantidad).toHaveAttribute('inputmode', 'decimal')
+  })
+
+  it('una cantidad decimal (2.5) se envía como número', async () => {
+    const onSubmit = vi.fn()
+    const user = await conLinea(onSubmit)
+
+    await user.clear(screen.getByLabelText('Cantidad'))
+    await user.type(screen.getByLabelText('Cantidad'), '2.5')
+    await user.click(screen.getByRole('button', { name: 'Crear Seguimiento' }))
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      items: [{ material_id: 10, cantidad_tomada: 2.5 }],
+    })
+  })
+
+  it('con 3 decimales (0.001) es válida', async () => {
+    const onSubmit = vi.fn()
+    const user = await conLinea(onSubmit)
+
+    await user.clear(screen.getByLabelText('Cantidad'))
+    await user.type(screen.getByLabelText('Cantidad'), '0.001')
+    await user.click(screen.getByRole('button', { name: 'Crear Seguimiento' }))
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      items: [{ material_id: 10, cantidad_tomada: 0.001 }],
+    })
+  })
+
+  it.each(['1.2345', '0', '-1'])(
+    'la cantidad %s bloquea el envío con el mensaje de máximo 3 decimales',
+    async (invalida) => {
+      const onSubmit = vi.fn()
+      const user = await conLinea(onSubmit)
+
+      await user.clear(screen.getByLabelText('Cantidad'))
+      await user.type(screen.getByLabelText('Cantidad'), invalida)
+      await user.click(
+        screen.getByRole('button', { name: 'Crear Seguimiento' }),
+      )
+
+      expect(onSubmit).not.toHaveBeenCalled()
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'La cantidad debe ser un número mayor que 0, con máximo 3 decimales, en cada línea.',
+      )
+    },
+  )
 })
 
 describe('SeguimientoNuevaListaForm duplicados', () => {

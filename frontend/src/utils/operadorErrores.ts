@@ -1,4 +1,8 @@
-import { CANTIDAD_MAX_INT4 } from './cantidad'
+import {
+  CANTIDAD_MAX_DECIMAL,
+  CANTIDAD_MAX_DECIMALES,
+  formatearCantidad,
+} from './cantidad'
 
 // ============================================================================
 // TRADUCTOR PURO DE ERRORES HTTP -> MENSAJES DE FORMULARIO
@@ -13,12 +17,14 @@ import { CANTIDAD_MAX_INT4 } from './cantidad'
 // REQ-P2-INV-004), salvo cuando el resultado es desconocido (red/5xx).
 //
 // Códigos del contrato (openspec.yaml):
-//   400 cantidad <= 0 o stock insuficiente en el origen
+//   400 cantidad <= 0, stock insuficiente en el origen o desbordamiento
+//       numérico (SQLSTATE 22003: «excede el rango soportado»)
 //   403 sin alcance sobre las secciones GENERAL implicadas
 //   404 material/registro de inventario inexistente
 //   409 más de una/ninguna sección GENERAL activa, o clave de idempotencia
 //       en uso por otro actor
-//   422 destino = origen, módulo FO ausente/no aplicable, cantidad fuera INT4
+//   422 destino = origen, cantidad con más de 3 decimales, negativa o fuera
+//       de rango (escala/dígitos de NUMERIC(12,3)); campos no declarados
 //
 // Mensajes pensados para el slot `error` de OperadorRapidoDialog.
 // ============================================================================
@@ -107,8 +113,11 @@ const SUFIJO_NADA_CAMBIO = ' No se modificó ningún inventario.'
 function cantidadConUm(contexto: ContextoErrorOperador): string | null {
   if (contexto.stockActual === undefined) return null
   const um = contexto.um ? ` ${contexto.um}` : ''
-  return `${contexto.stockActual.toLocaleString('es-MX')}${um}`
+  return `${formatearCantidad(contexto.stockActual)}${um}`
 }
+
+const MENSAJE_CANTIDAD_MAXIMA = `La cantidad (o el stock resultante) excede el máximo permitido de ${formatearCantidad(CANTIDAD_MAX_DECIMAL)}. No se modificó ningún inventario.`
+const MENSAJE_CANTIDAD_ESCALA = `La cantidad admite máximo ${CANTIDAD_MAX_DECIMALES} decimales; el sistema no redondea automáticamente. Corrige el valor e intenta de nuevo.`
 
 function traducir400(
   cuerpo: CuerpoNormalizado,
@@ -127,11 +136,11 @@ function traducir400(
         `Actualiza el inventario y ajusta la cantidad.${SUFIJO_NADA_CAMBIO}`,
     })
   }
-  if (/fuera de rango|out of range/.test(msg)) {
+  if (/fuera de rango|out of range|excede el rango/.test(msg)) {
     return resultado({
       campo: 'cantidad',
       codigoServidor,
-      mensaje: `La cantidad máxima permitida es ${CANTIDAD_MAX_INT4.toLocaleString('es-MX')}.`,
+      mensaje: MENSAJE_CANTIDAD_MAXIMA,
     })
   }
   // «debe ser mayor que cero» / negativa / cualquier otro 400 de este
@@ -139,7 +148,7 @@ function traducir400(
   return resultado({
     campo: 'cantidad',
     codigoServidor,
-    mensaje: `La cantidad debe ser un número entero mayor que 0.${SUFIJO_NADA_CAMBIO}`,
+    mensaje: `La cantidad debe ser un número mayor que 0.${SUFIJO_NADA_CAMBIO}`,
   })
 }
 
@@ -207,32 +216,41 @@ function traducir422(
 
   // Validación de esquema (FastAPI/Pydantic): cuerpo `{detail:[...]}`.
   if (detalleApunta(cuerpo.detalle, 'cantidad')) {
-    const sobreCota = cuerpo.detalle.some(
-      (item) =>
-        esObjeto(item) &&
-        Array.isArray(item.loc) &&
-        item.loc.includes('cantidad') &&
-        item.type === 'less_than_equal',
-    )
+    const tipos = cuerpo.detalle
+      .filter(
+        (item) =>
+          esObjeto(item) &&
+          Array.isArray(item.loc) &&
+          item.loc.includes('cantidad'),
+      )
+      .map((item) => (esObjeto(item) ? String(item.type) : ''))
+    const campo = 'cantidad' as const
+    if (tipos.includes('decimal_max_places')) {
+      return resultado({ campo, codigoServidor, mensaje: MENSAJE_CANTIDAD_ESCALA })
+    }
+    if (tipos.includes('decimal_max_digits')) {
+      return resultado({ campo, codigoServidor, mensaje: MENSAJE_CANTIDAD_MAXIMA })
+    }
+    if (tipos.some((t) => t === 'greater_than' || t === 'greater_than_equal')) {
+      return resultado({
+        campo,
+        codigoServidor,
+        mensaje: 'La cantidad debe ser mayor que 0.',
+      })
+    }
+    return resultado({
+      campo,
+      codigoServidor,
+      mensaje:
+        'La cantidad debe ser un número válido, mayor que 0 y con máximo 3 decimales.',
+    })
+  }
+  // Defensa en profundidad de PostgreSQL (P0001 → 422 canónico).
+  if (/m[aá]ximo 3 decimales|3 decimales/.test(msg)) {
     return resultado({
       campo: 'cantidad',
       codigoServidor,
-      mensaje: sobreCota
-        ? `La cantidad máxima permitida es ${CANTIDAD_MAX_INT4.toLocaleString('es-MX')}.`
-        : 'La cantidad debe ser un número entero válido.',
-    })
-  }
-  if (
-    detalleApunta(cuerpo.detalle, 'modulo') ||
-    detalleApunta(cuerpo.detalle, 'origen_modulo') ||
-    detalleApunta(cuerpo.detalle, 'destino_modulo') ||
-    /módulo|modulo/.test(msg)
-  ) {
-    return resultado({
-      campo: 'destino',
-      codigoServidor,
-      mensaje:
-        'El inventario seleccionado no es válido para esta operación (módulo de Fibra Óptica). Elige otro inventario e intenta de nuevo.',
+      mensaje: MENSAJE_CANTIDAD_ESCALA,
     })
   }
   if (
@@ -249,11 +267,11 @@ function traducir422(
           : 'La operación no es válida para este inventario.',
     })
   }
-  if (/fuera de rango|out of range|int4|rango/.test(msg)) {
+  if (/fuera de rango|out of range|rango/.test(msg)) {
     return resultado({
       campo: 'cantidad',
       codigoServidor,
-      mensaje: `La cantidad máxima permitida es ${CANTIDAD_MAX_INT4.toLocaleString('es-MX')}.`,
+      mensaje: MENSAJE_CANTIDAD_MAXIMA,
     })
   }
   return resultado({

@@ -4,36 +4,32 @@ import type {
   FibraCargaInicialPayload,
   FibraMaterialOut,
   FibraMaterialUpdatePayload,
-  FibraModulo,
   FibraOperacionOut,
   FibraStockRow,
 } from '../types'
 
 // ============================================================================
-// FIBRA ÓPTICA — inventarios independientes PAQUETE / EN_USO
-// (contrato real /api/v1/fibra; REQ-DOMAIN-003/004/005)
+// INVENTARIO FO — inventario único por material
+// (contrato real /api/v1/fibra; RF-1, RF-3, RF-6)
 //
-// Las raíces FO dejaron de ser secciones del Inventario General. Toda
-// mutación de stock se delega en el backend a las stored functions
-// fn_cargar_stock_inicial_fibra / fn_ajustar_stock_fibra (PostgreSQL):
-// el frontend NUNCA calcula ni escribe stock.
+// Sin módulos ni subapartados: una sola fila por material. Toda mutación de
+// stock se delega en el backend a las stored functions
+// fn_cargar_stock_inicial_fibra / fn_ajustar_stock_fibra (PostgreSQL): el
+// frontend NUNCA calcula ni escribe stock. Enviar `modulo` es 422 (RF-1).
 //
 // FAIL-CLOSED: un error de API (404/422/500) se muestra como error —
 // NUNCA se reinterpreta como stock = 0 ni como inventario vacío.
 // ============================================================================
 
-/** GET /fibra/{modulo} — stock del inventario FO con esquema estándar.
- *  Solo filas físicas de `inventario_fibra` (cero fantasmas); la métrica
- *  la gobierna `u_m`. */
-export async function listFibraStock(
-  modulo: FibraModulo,
-): Promise<FibraStockRow[]> {
-  const { data } = await api.get<FibraStockRow[]>(`/fibra/${modulo}`)
+/** GET /fibra — Inventario FO con esquema estándar y `valor_unitario`.
+ *  Solo filas físicas (cero fantasmas); la métrica la gobierna `u_m`. */
+export async function listFibraStock(): Promise<FibraStockRow[]> {
+  const { data } = await api.get<FibraStockRow[]>('/fibra')
   return data
 }
 
 /** POST /fibra/carga-inicial — alta única e idempotente (rechaza si la fila
- *  (modulo, material_id) ya existe). Audita 'STOCK_INICIAL_FO' en PostgreSQL. */
+ *  del material ya existe). Audita 'STOCK_INICIAL_FO' en PostgreSQL. */
 export async function cargarStockInicialFibra(
   payload: FibraCargaInicialPayload,
 ): Promise<FibraOperacionOut> {
@@ -55,37 +51,33 @@ export async function ajustarStockFibra(
   return data
 }
 
-/** PATCH /fibra/{modulo}/materiales/{id} — edición de material desde una
- *  sección FO (REQ-CATFO-001). Si `stock_actual` viene en el payload, el
- *  backend enruta el ajuste a `fn_ajustar_stock_fibra` dentro del MISMO
- *  session.begin() con auditoría 'AJUSTE_INVENTARIO_FO' (REQ-STOCK-002/003).
- *  Ergonomía `justificacion_opcional` (REQ-ERG-004): `motivo` es OPCIONAL —
- *  vacío se envía como `null`. El frontend envía SOLO stock_actual +
- *  motivo, NUNCA el diferencial. */
+/** PATCH /fibra/materiales/{id} — edición de material del Inventario FO.
+ *  Si `stock_actual` viene en el payload, el backend enruta el ajuste a
+ *  `fn_ajustar_stock_fibra` dentro de la MISMA transacción con auditoría
+ *  'AJUSTE_INVENTARIO_FO'. `valor_unitario` solo lo puede enviar un
+ *  administrador (403 por presencia del campo; RF-8). `motivo` es OPCIONAL —
+ *  vacío se envía como `null`. El frontend NUNCA envía el diferencial. */
 export async function updateFibraMaterial(
-  modulo: FibraModulo,
   id: number,
   payload: FibraMaterialUpdatePayload,
 ): Promise<FibraMaterialOut> {
   const { data } = await api.patch<FibraMaterialOut>(
-    `/fibra/${modulo}/materiales/${id}`,
+    `/fibra/materiales/${id}`,
     payload,
   )
   return data
 }
 
-/** DELETE /fibra/{modulo}/materiales/{id} — eliminación FÍSICA de la fila
- *  (modulo, material_id) de `inventario_fibra` (REQ-DEL-001/002/003).
- *  `motivo` viaja como query param SOLO si viene (204 sin body); es
- *  OBLIGATORIO si la fila tiene stock_actual > 0 — la validación
- *  autoritativa vive en PostgreSQL (RAISE → 422, REQ-DEL-004). Audita
- *  'ELIMINACION_FO' con snapshot jsonb completo en la stored function. */
+/** DELETE /fibra/materiales/{id} — eliminación FÍSICA de la fila del
+ *  Inventario FO (REQ-DEL-001/002/003; E12). `motivo` viaja como query param
+ *  SOLO si viene (204 sin body); es OBLIGATORIO si la fila tiene
+ *  stock_actual > 0 — la validación autoritativa vive en PostgreSQL
+ *  (RAISE → 422). Audita 'ELIMINACION_FO' con snapshot jsonb. */
 export async function eliminarFibraMaterial(
-  modulo: FibraModulo,
   id: number,
   motivo?: string,
 ): Promise<void> {
-  await api.delete(`/fibra/${modulo}/materiales/${id}`, {
+  await api.delete(`/fibra/materiales/${id}`, {
     params: motivo ? { motivo } : undefined,
   })
 }

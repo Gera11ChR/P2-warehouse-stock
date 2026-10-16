@@ -46,6 +46,12 @@ export interface MaterialUpdatePayload {
    * OPCIONAL — vacío se envía como `null`.
    */
   stock_actual?: number
+  /**
+   * RF-3/RF-8: Valor Unitario en MXN (decimal ≥ 0, hasta 3 decimales). Su
+   * sola PRESENCIA exige rol administrador (403 si no); un `null` explícito
+   * es no-op. Solo se envía cuando el administrador lo cambió.
+   */
+  valor_unitario?: number
   motivo?: string | null
 }
 

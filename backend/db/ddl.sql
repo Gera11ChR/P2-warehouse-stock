@@ -1,5 +1,15 @@
 -- Software Design Document (SDD) - DMS - TELECOM
 -- Contrato de Base de Datos (PostgreSQL DDL 10/10)
+--
+-- >>> REFERENCIA HISTÓRICA (decisión T2/T7, cambio
+-- >>> 2026-10-fo-unificado-valor-unitario). Este archivo NO refleja el
+-- >>> esquema vigente: no incluye la unificación del Inventario FO
+-- >>> (inventario_fibra con PK material_id, sin `modulo`), catalogo_materiales
+-- >>> .valor_unitario, las columnas NUMERIC(12,3), fn_valor_total_inventario()
+-- >>> ni las firmas de las stored functions posteriores a la migración 0010.
+-- >>> FUENTE DE VERDAD DEL ESQUEMA: las migraciones Alembic
+-- >>> (`backend/alembic/versions/`, cabeza 0027). No ejecutar este archivo
+-- >>> sobre una base real.
 
 BEGIN;
 

@@ -1,28 +1,39 @@
 // ============================================================================
-// VALIDACIÓN DE CANTIDADES ENTERAS (+Cantidad / Mover) — REQ-P2-INV-001/003/004
+// VALIDACIÓN DE CANTIDADES DECIMALES (+Cantidad / Mover / ajustes / Valor
+// Unitario) — RF-2, RF-6
 //
 // Guardia de PRESENTACIÓN (validación preliminar de UX). La autoridad es el
-// backend: 400 si cantidad <= 0 o stock insuficiente; 422 si excede INT4.
-// Nada de este módulo calcula ni persiste stock.
+// backend: 400/422 por escala > 3 decimales, negativos, cantidad <= 0 o
+// desbordamiento (más de 12 dígitos: 9 enteros + 3 decimales). Nada de este
+// módulo calcula ni persiste stock.
+//
+// Formato aceptado (texto crudo): `^\d{1,9}(\.\d{1,3})?$` — punto decimal
+// (locale es-MX), sin separadores de miles, sin signo, sin notación
+// científica. Nunca se redondea en silencio: una cantidad con más de 3
+// decimales se rechaza (el valor `1e-4`, p. ej., es sobre-precisión).
 //
 // Vocabulario oficial: `cantidad_inicial`, `cantidad_transferir`,
 // `cantidad_devolver`, `cantidad_integrantes`, `cantidad_diferencial`. Los
-// operadores rápidos usan el campo `cantidad` del contrato
-// (openspec.yaml: /inventario/sumar-cantidad y /inventario/mover).
+// operadores rápidos usan el campo `cantidad` del contrato.
 // ============================================================================
 
-/** Cota superior INT4 de PostgreSQL (el backend responde 422 por encima). */
-export const CANTIDAD_MAX_INT4 = 2_147_483_647
+/** Dígitos enteros máximos de una cantidad decimal (NUMERIC(12,3)). */
+export const CANTIDAD_MAX_ENTEROS = 9
+/** Decimales máximos de una cantidad decimal. */
+export const CANTIDAD_MAX_DECIMALES = 3
+/** Máximo valor representable: 999 999 999.999 (12 dígitos en total). */
+export const CANTIDAD_MAX_DECIMAL = 999_999_999.999
 
 export type MotivoCantidadInvalida =
   | 'vacio'
   | 'espacios'
   | 'negativo'
-  | 'decimal'
+  | 'coma'
   | 'cientifica'
   | 'texto'
   | 'cero'
-  | 'excede_int4'
+  | 'exceso_decimales'
+  | 'excede_maximo'
   | 'excede_stock'
 
 export type ResultadoCantidad =
@@ -32,18 +43,28 @@ export type ResultadoCantidad =
 export interface OpcionesCantidad {
   /** Si se indica, la cantidad no puede exceder este stock (Mover). */
   maxStock?: number
+  /** Permite `0` (ajustes de stock, Valor Unitario). Por omisión la
+   *  cantidad de un movimiento debe ser mayor que 0. */
+  permitirCero?: boolean
 }
 
-const ENTERO = /^\d+$/
+const DECIMAL_VALIDO = /^(\d+)(?:\.(\d+))?$/
 const NEGATIVO = /^-\d+([.,]\d+)?$/
-const DECIMAL = /^\d*[.,]\d+$/
 const CIENTIFICA = /^\d+([.,]\d+)?[eE][+-]?\d+$/
+const COMA_DECIMAL = /^\d+,\d+$/
+
+/** Escala una cantidad numérica a milésimas enteras (BigInt) para
+ *  COMPARAR sin error de coma flotante (solo guardias de presentación). */
+function aMilesimas(valor: number): bigint {
+  return BigInt(valor.toFixed(CANTIDAD_MAX_DECIMALES).replace('.', ''))
+}
 
 /**
- * Valida el TEXTO crudo de un campo de cantidad. Estricto: solo dígitos
- * ASCII 0-9. Rechaza vacío, espacios (incluso alrededor), signos, decimales,
- * notación científica y texto. Comparación con BigInt para no perder
- * precisión por encima de 2^53.
+ * Valida el TEXTO crudo de un campo de cantidad decimal. Estricto: solo
+ * dígitos ASCII y un punto decimal. Rechaza vacío, espacios (incluso
+ * alrededor), signos, coma decimal, notación científica, texto, exceso de
+ * decimales (>3) y desbordamiento (>9 enteros). La comparación usa BigInt
+ * sobre milésimas, sin aritmética de coma flotante.
  */
 export function validarCantidad(
   valor: string,
@@ -51,22 +72,46 @@ export function validarCantidad(
 ): ResultadoCantidad {
   if (valor === '') return { ok: false, motivo: 'vacio' }
   if (/\s/.test(valor)) return { ok: false, motivo: 'espacios' }
-  if (!ENTERO.test(valor)) {
+
+  const coincidencia = DECIMAL_VALIDO.exec(valor)
+  if (coincidencia === null) {
     if (NEGATIVO.test(valor)) return { ok: false, motivo: 'negativo' }
     if (CIENTIFICA.test(valor)) return { ok: false, motivo: 'cientifica' }
-    if (DECIMAL.test(valor)) return { ok: false, motivo: 'decimal' }
+    if (COMA_DECIMAL.test(valor)) return { ok: false, motivo: 'coma' }
     return { ok: false, motivo: 'texto' }
   }
 
-  const n = BigInt(valor)
-  if (n <= 0n) return { ok: false, motivo: 'cero' }
-  if (opciones.maxStock !== undefined && n > BigInt(opciones.maxStock)) {
+  const [, enteros, decimales = ''] = coincidencia
+  if (decimales.length > CANTIDAD_MAX_DECIMALES) {
+    return { ok: false, motivo: 'exceso_decimales' }
+  }
+  const enterosSinCeros = enteros.replace(/^0+(?=\d)/, '')
+  if (enterosSinCeros.length > CANTIDAD_MAX_ENTEROS) {
+    return { ok: false, motivo: 'excede_maximo' }
+  }
+
+  const milesimas = BigInt(
+    `${enterosSinCeros}${decimales.padEnd(CANTIDAD_MAX_DECIMALES, '0')}`,
+  )
+  if (milesimas <= 0n && opciones.permitirCero !== true) {
+    return { ok: false, motivo: 'cero' }
+  }
+  if (
+    opciones.maxStock !== undefined &&
+    milesimas > aMilesimas(opciones.maxStock)
+  ) {
     return { ok: false, motivo: 'excede_stock' }
   }
-  if (n > BigInt(CANTIDAD_MAX_INT4)) {
-    return { ok: false, motivo: 'excede_int4' }
-  }
-  return { ok: true, cantidad: Number(n) }
+  // Para ≤ 12 dígitos significativos Number() es exacto (≤ 15 garantizados).
+  return { ok: true, cantidad: Number(valor) }
+}
+
+/** Formatea para mensajes: es-MX, hasta 3 decimales, sin ceros de relleno. */
+export function formatearCantidad(valor: number): string {
+  return valor.toLocaleString('es-MX', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: CANTIDAD_MAX_DECIMALES,
+  })
 }
 
 /** Mensaje en español (en línea, junto al campo) para cada motivo. */
@@ -81,26 +126,41 @@ export function mensajeCantidadInvalida(
       return 'La cantidad no debe contener espacios.'
     case 'negativo':
       return 'La cantidad no puede ser negativa.'
-    case 'decimal':
-      return 'Ingresa un número entero, sin decimales.'
+    case 'coma':
+      return 'Usa punto como separador decimal (por ejemplo 2.5).'
     case 'cientifica':
       return 'No uses notación científica; escribe el número completo.'
     case 'texto':
-      return 'Ingresa solo dígitos (0-9).'
+      return 'Ingresa solo dígitos y, si aplica, un punto decimal (por ejemplo 0.5).'
     case 'cero':
       return 'La cantidad debe ser mayor que 0.'
-    case 'excede_int4':
-      return `La cantidad máxima permitida es ${CANTIDAD_MAX_INT4.toLocaleString('es-MX')}.`
+    case 'exceso_decimales':
+      return `Máximo ${CANTIDAD_MAX_DECIMALES} decimales; no se redondea automáticamente.`
+    case 'excede_maximo':
+      return `La cantidad máxima permitida es ${formatearCantidad(CANTIDAD_MAX_DECIMAL)}.`
     case 'excede_stock':
-      return `No puedes mover más del stock disponible (${(opciones.maxStock ?? 0).toLocaleString('es-MX')}).`
+      return `No puedes mover más del stock disponible (${formatearCantidad(opciones.maxStock ?? 0)}).`
   }
 }
 
-/** Entero positivo válido o null. Atajo sobre `validarCantidad`. */
-export function parseCantidadEntera(
+/** Cantidad decimal válida (>0 salvo `permitirCero`) o null. Atajo sobre
+ *  `validarCantidad`. */
+export function parseCantidadDecimal(
   valor: string,
   opciones: OpcionesCantidad = {},
 ): number | null {
   const r = validarCantidad(valor, opciones)
   return r.ok ? r.cantidad : null
+}
+
+/** ¿El número cumple la escala/rango de cantidad (≤3 decimales, ≤12
+ *  dígitos, finito)? Guardia de payload; no redondea. */
+export function esCantidadDecimalValida(
+  valor: number,
+  { permitirCero = false }: { permitirCero?: boolean } = {},
+): boolean {
+  if (!Number.isFinite(valor)) return false
+  if (valor < 0 || (valor === 0 && !permitirCero)) return false
+  if (valor > CANTIDAD_MAX_DECIMAL) return false
+  return Number(valor.toFixed(CANTIDAD_MAX_DECIMALES)) === valor
 }

@@ -9,6 +9,7 @@ import { listFibraStock } from '../../services/fibra'
 import {
   listSecciones,
   listSeccionesTransferibles,
+  getResumenGeneral,
   moverMaterial,
   stockSeccion,
   sumarCantidad,
@@ -37,6 +38,7 @@ vi.mock('../../services/inventory', () => ({
   listSeccionesTransferibles: vi.fn(),
   sumarCantidad: vi.fn(),
   moverMaterial: vi.fn(),
+  getResumenGeneral: vi.fn(),
 }))
 
 const fn = <T extends (...a: never[]) => unknown>(f: T) =>
@@ -44,18 +46,17 @@ const fn = <T extends (...a: never[]) => unknown>(f: T) =>
 
 const SECCIONES_TRANSFERIBLES = [
   { almacen_id: 1, nombre: 'Inventario General', tipo: 'GENERAL', transferible: true },
-  { almacen_id: 2, nombre: 'Fibra Optica - Paquete', tipo: 'FO_PAQUETE', transferible: true },
-  { almacen_id: 3, nombre: 'Fibra Optica - En Uso', tipo: 'FO_EN_USO', transferible: true },
+  { almacen_id: 2, nombre: 'Inventario FO', tipo: 'FO', transferible: true },
 ]
 
 const filaFo = (stock: number) => ({
-  modulo: 'PAQUETE',
   material_id: 1,
   codigo: 'FO-1',
   descripcion: 'Cable FO',
   u_m: 'PZ',
   stock_minimo: null,
   stock_actual: stock,
+  valor_unitario: 0,
   alerta_stock: false,
 })
 
@@ -66,6 +67,7 @@ const filaGeneral = (stock: number) => ({
   u_m: 'PZ',
   stock_minimo: null,
   stock_actual: stock,
+  valor_unitario: 0,
   alerta_stock: false,
 })
 
@@ -97,6 +99,7 @@ beforeEach(() => {
   fn(listCatalog).mockResolvedValue({ start_index: 1, materiales: [] })
   fn(listCategorias).mockResolvedValue([])
   fn(listUms).mockResolvedValue([{ id: 1, nombre: 'PZ', is_active: true }])
+  fn(getResumenGeneral).mockResolvedValue({ valor_total: 0, moneda: 'MXN' })
   fn(listSeccionesTransferibles).mockResolvedValue(SECCIONES_TRANSFERIBLES)
   fn(listSecciones).mockResolvedValue([
     { almacen_id: 1, nombre: 'Inventario General', tipo: 'GENERAL', is_active: true },
@@ -104,10 +107,10 @@ beforeEach(() => {
 })
 
 // ----------------------------------------------------------------------------
-// FIBRA ÓPTICA — PAQUETE
+// INVENTARIO FO (único, sin módulos)
 // ----------------------------------------------------------------------------
 
-describe('Flujo +Cantidad en Fibra Óptica (Paquete)', () => {
+describe('Flujo +Cantidad en Inventario FO', () => {
   async function abrirSumar(user: ReturnType<typeof userEvent.setup>) {
     await user.click(await screen.findByText('Cable FO'))
     await user.click(screen.getByRole('button', { name: '+ Cantidad' }))
@@ -122,12 +125,11 @@ describe('Flujo +Cantidad en Fibra Óptica (Paquete)', () => {
     // El servidor responde 17 (≠ 10 + 5): la UI debe mostrar lo que dice el servidor.
     fn(sumarCantidad).mockResolvedValue({
       destino: 'FO',
-      modulo: 'PAQUETE',
       material_id: 1,
       stock_nuevo: 17,
       reenvio_idempotente: false,
     })
-    const { claves } = renderConProviders(<FibraOptica sub="paquete" />)
+    const { claves } = renderConProviders(<FibraOptica />)
 
     const dialogo = await abrirSumar(user)
     await user.type(within(dialogo).getByLabelText('Cantidad a sumar'), '5')
@@ -137,7 +139,6 @@ describe('Flujo +Cantidad en Fibra Óptica (Paquete)', () => {
     const payload = fn(sumarCantidad).mock.calls[0][0]
     expect(payload).toEqual({
       destino: 'FO',
-      modulo: 'PAQUETE',
       material_id: 1,
       cantidad: 5,
       clave_idempotencia: expect.stringMatching(/^sumar-.{8,}/),
@@ -147,10 +148,10 @@ describe('Flujo +Cantidad en Fibra Óptica (Paquete)', () => {
       expect(screen.queryByRole('dialog', { name: '+ Cantidad' })).not.toBeInTheDocument(),
     )
     // Toast con el stock devuelto por el servidor.
-    expect(await screen.findByText(/Stock en Fibra Óptica - Paquete: 17 PZ/)).toBeInTheDocument()
+    expect(await screen.findByText(/Stock en Inventario FO: 17 PZ/)).toBeInTheDocument()
     // Recarga automática de stock (y auditoría) tras la operación.
     expect(claves()).toEqual(
-      expect.arrayContaining([['fibra', 'PAQUETE'], ['auditoria']]),
+      expect.arrayContaining([['fibra'], ['auditoria'], ['inventario', 'resumen-general']]),
     )
     await waitFor(() => expect(listFibraStock).toHaveBeenCalledTimes(2))
     // El panel de detalle refleja el stock PERSISTIDO recargado.
@@ -168,7 +169,7 @@ describe('Flujo +Cantidad en Fibra Óptica (Paquete)', () => {
         resolver = r
       }),
     )
-    renderConProviders(<FibraOptica sub="paquete" />)
+    renderConProviders(<FibraOptica />)
 
     const dialogo = await abrirSumar(user)
     await user.type(within(dialogo).getByLabelText('Cantidad a sumar'), '2')
@@ -179,7 +180,7 @@ describe('Flujo +Cantidad en Fibra Óptica (Paquete)', () => {
     expect(screen.getByRole('dialog', { name: '+ Cantidad' })).toBeInTheDocument()
     expect(sumarCantidad).toHaveBeenCalledTimes(1)
 
-    resolver({ destino: 'FO', modulo: 'PAQUETE', material_id: 1, stock_nuevo: 12, reenvio_idempotente: false })
+    resolver({ destino: 'FO', material_id: 1, stock_nuevo: 12, reenvio_idempotente: false })
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: '+ Cantidad' })).not.toBeInTheDocument(),
     )
@@ -189,14 +190,14 @@ describe('Flujo +Cantidad en Fibra Óptica (Paquete)', () => {
     const user = userEvent.setup()
     fn(listFibraStock).mockResolvedValue([filaFo(10)])
     fn(sumarCantidad).mockRejectedValue(httpError(400, 'cantidad debe ser mayor que cero'))
-    renderConProviders(<FibraOptica sub="paquete" />)
+    renderConProviders(<FibraOptica />)
 
     const dialogo = await abrirSumar(user)
     await user.type(within(dialogo).getByLabelText('Cantidad a sumar'), '3')
     await user.click(within(dialogo).getByRole('button', { name: /Sumar 3 PZ/ }))
 
     const alerta = await within(dialogo).findByRole('alert')
-    expect(alerta).toHaveTextContent(/La cantidad debe ser un número entero mayor que 0/)
+    expect(alerta).toHaveTextContent(/La cantidad debe ser un número mayor que 0/)
     // El mensaje crudo del servidor nunca se muestra.
     expect(alerta).not.toHaveTextContent('cantidad debe ser mayor que cero')
     expect(screen.getByRole('dialog', { name: '+ Cantidad' })).toBeInTheDocument()
@@ -216,7 +217,7 @@ describe('Flujo +Cantidad en Fibra Óptica (Paquete)', () => {
     const user = userEvent.setup()
     fn(listFibraStock).mockResolvedValue([filaFo(10)])
     fn(sumarCantidad).mockRejectedValue(httpError(status, 'detalle interno'))
-    renderConProviders(<FibraOptica sub="paquete" />)
+    renderConProviders(<FibraOptica />)
 
     const dialogo = await abrirSumar(user)
     await user.type(within(dialogo).getByLabelText('Cantidad a sumar'), '1')
@@ -233,19 +234,17 @@ describe('Flujo +Cantidad en Fibra Óptica (Paquete)', () => {
       .mockRejectedValueOnce(redError())
       .mockResolvedValueOnce({
         destino: 'FO',
-        modulo: 'PAQUETE',
-        material_id: 1,
+          material_id: 1,
         stock_nuevo: 15,
         reenvio_idempotente: true,
       })
       .mockResolvedValue({
         destino: 'FO',
-        modulo: 'PAQUETE',
-        material_id: 1,
+          material_id: 1,
         stock_nuevo: 20,
         reenvio_idempotente: false,
       })
-    renderConProviders(<FibraOptica sub="paquete" />)
+    renderConProviders(<FibraOptica />)
 
     const dialogo = await abrirSumar(user)
     await user.type(within(dialogo).getByLabelText('Cantidad a sumar'), '5')
@@ -280,7 +279,7 @@ describe('Flujo +Cantidad en Fibra Óptica (Paquete)', () => {
     const user = userEvent.setup()
     fn(listFibraStock).mockResolvedValue([filaFo(10)])
     fn(sumarCantidad).mockRejectedValue(httpError(400, 'x'))
-    renderConProviders(<FibraOptica sub="paquete" />)
+    renderConProviders(<FibraOptica />)
 
     const dialogo = await abrirSumar(user)
     await user.type(within(dialogo).getByLabelText('Cantidad a sumar'), '3')
@@ -291,14 +290,14 @@ describe('Flujo +Cantidad en Fibra Óptica (Paquete)', () => {
   })
 })
 
-describe('Flujo Mover en Fibra Óptica (Paquete → General)', () => {
+describe('Flujo Mover en Inventario FO (FO → General)', () => {
   async function abrirMover(user: ReturnType<typeof userEvent.setup>) {
     await user.click(await screen.findByText('Cable FO'))
     await user.click(screen.getByRole('button', { name: /Mover/ }))
     return screen.findByRole('dialog', { name: 'Mover' })
   }
 
-  it('éxito: payload origen FO/PAQUETE → GENERAL, toast con stock_origen y stock_destino del servidor, recarga de ambos extremos', async () => {
+  it('éxito: payload origen FO → GENERAL, toast con stock_origen y stock_destino del servidor, recarga de ambos extremos', async () => {
     const user = userEvent.setup()
     fn(listFibraStock)
       .mockResolvedValueOnce([filaFo(10)])
@@ -306,14 +305,12 @@ describe('Flujo Mover en Fibra Óptica (Paquete → General)', () => {
     fn(moverMaterial).mockResolvedValue({
       material_id: 1,
       origen: 'FO',
-      origen_modulo: 'PAQUETE',
       destino: 'GENERAL',
-      destino_modulo: null,
       stock_origen: 6,
       stock_destino: 31,
       reenvio_idempotente: false,
     })
-    const { claves } = renderConProviders(<FibraOptica sub="paquete" />)
+    const { claves } = renderConProviders(<FibraOptica />)
 
     const dialogo = await abrirMover(user)
     await user.selectOptions(within(dialogo).getByLabelText('Inventario destino'), '1')
@@ -327,7 +324,6 @@ describe('Flujo Mover en Fibra Óptica (Paquete → General)', () => {
     await waitFor(() => expect(moverMaterial).toHaveBeenCalledTimes(1))
     expect(fn(moverMaterial).mock.calls[0][0]).toEqual({
       origen: 'FO',
-      origen_modulo: 'PAQUETE',
       destino: 'GENERAL',
       material_id: 1,
       cantidad: 4,
@@ -338,49 +334,69 @@ describe('Flujo Mover en Fibra Óptica (Paquete → General)', () => {
     )
     expect(
       await screen.findByText(
-        /Stock en Fibra Óptica - Paquete: 6 PZ; en Inventario General: 31 PZ/,
+        /Stock en Inventario FO: 6 PZ; en Inventario General: 31 PZ/,
       ),
     ).toBeInTheDocument()
-    // Origen (FO Paquete) y destino (General) se recargan + auditoría.
+    // Origen (Inventario FO) y destino (General) se recargan + auditoría + Valor Total.
     expect(claves()).toEqual(
-      expect.arrayContaining([['fibra', 'PAQUETE'], ['stock'], ['auditoria']]),
+      expect.arrayContaining([
+        ['fibra'],
+        ['stock'],
+        ['auditoria'],
+        ['inventario', 'resumen-general'],
+      ]),
     )
+    expect(claves()).not.toContainEqual(['fibra', 'PAQUETE'])
     await waitFor(() => expect(listFibraStock).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(within(drawer()).getByText('6')).toBeInTheDocument())
   })
 
-  it('Mover FO Paquete → FO En Uso envía destino_modulo EN_USO', async () => {
+  it('FO → FO no se ofrece: desde Inventario FO solo se puede elegir Inventario General', async () => {
     const user = userEvent.setup()
     fn(listFibraStock).mockResolvedValue([filaFo(10)])
+    renderConProviders(<FibraOptica />)
+
+    const dialogo = await abrirMover(user)
+    const opciones = within(within(dialogo).getByLabelText('Inventario destino'))
+      .getAllByRole('option')
+      .map((o) => o.textContent)
+    expect(opciones).toEqual(['— Selecciona destino —', 'Inventario General'])
+    expect(within(dialogo).getByText(/Origen: Inventario FO/)).toBeInTheDocument()
+    expect(moverMaterial).not.toHaveBeenCalled()
+  })
+
+  it('Mover con cantidad decimal parcial (2.5) envía cantidad 2.5 y muestra el stock decimal del servidor', async () => {
+    const user = userEvent.setup()
+    fn(listFibraStock).mockResolvedValue([filaFo(10.5)])
     fn(moverMaterial).mockResolvedValue({
       material_id: 1,
       origen: 'FO',
-      origen_modulo: 'PAQUETE',
-      destino: 'FO',
-      destino_modulo: 'EN_USO',
-      stock_origen: 0,
-      stock_destino: 10,
+      destino: 'GENERAL',
+      stock_origen: 8,
+      stock_destino: 2.5,
       reenvio_idempotente: false,
     })
-    const { claves } = renderConProviders(<FibraOptica sub="paquete" />)
+    renderConProviders(<FibraOptica />)
 
     const dialogo = await abrirMover(user)
-    await user.selectOptions(within(dialogo).getByLabelText('Inventario destino'), '3')
-    await user.click(within(dialogo).getByRole('button', { name: /Mover 10 PZ a Fibra Óptica - En Uso/ }))
+    await user.selectOptions(within(dialogo).getByLabelText('Inventario destino'), '1')
+    const cantidad = within(dialogo).getByLabelText('Cantidad a mover')
+    expect(cantidad).toHaveValue('10.5')
+    await user.clear(cantidad)
+    await user.type(cantidad, '2.5')
+    await user.click(
+      within(dialogo).getByRole('button', { name: /Mover 2.5 PZ a Inventario General/ }),
+    )
 
     await waitFor(() => expect(moverMaterial).toHaveBeenCalledTimes(1))
     expect(fn(moverMaterial).mock.calls[0][0]).toMatchObject({
       origen: 'FO',
-      origen_modulo: 'PAQUETE',
-      destino: 'FO',
-      destino_modulo: 'EN_USO',
-      cantidad: 10,
+      destino: 'GENERAL',
+      cantidad: 2.5,
     })
-    await waitFor(() =>
-      expect(claves()).toEqual(
-        expect.arrayContaining([['fibra', 'PAQUETE'], ['fibra', 'EN_USO']]),
-      ),
-    )
+    expect(
+      await screen.findByText(/Stock en Inventario FO: 8 PZ; en Inventario General: 2.5 PZ/),
+    ).toBeInTheDocument()
   })
 
   it.each([
@@ -393,7 +409,7 @@ describe('Flujo Mover en Fibra Óptica (Paquete → General)', () => {
     fn(moverMaterial).mockRejectedValue(
       httpError(status, status === 400 ? 'stock insuficiente en origen' : 'detalle'),
     )
-    renderConProviders(<FibraOptica sub="paquete" />)
+    renderConProviders(<FibraOptica />)
 
     const dialogo = await abrirMover(user)
     await user.selectOptions(within(dialogo).getByLabelText('Inventario destino'), '1')
@@ -403,7 +419,7 @@ describe('Flujo Mover en Fibra Óptica (Paquete → General)', () => {
     expect(screen.getByRole('dialog', { name: 'Mover' })).toBeInTheDocument()
 
     // Cambiar el destino (onEditar) limpia el error obsoleto.
-    await user.selectOptions(within(dialogo).getByLabelText('Inventario destino'), '3')
+    await user.selectOptions(within(dialogo).getByLabelText('Inventario destino'), '')
     await waitFor(() =>
       expect(within(dialogo).queryByRole('alert')).not.toBeInTheDocument(),
     )
@@ -417,14 +433,12 @@ describe('Flujo Mover en Fibra Óptica (Paquete → General)', () => {
       .mockResolvedValue({
         material_id: 1,
         origen: 'FO',
-        origen_modulo: 'PAQUETE',
-        destino: 'GENERAL',
-        destino_modulo: null,
+          destino: 'GENERAL',
         stock_origen: 0,
         stock_destino: 10,
         reenvio_idempotente: true,
       })
-    renderConProviders(<FibraOptica sub="paquete" />)
+    renderConProviders(<FibraOptica />)
 
     const dialogo = await abrirMover(user)
     await user.selectOptions(within(dialogo).getByLabelText('Inventario destino'), '1')
@@ -453,7 +467,6 @@ describe('Flujo +Cantidad / Mover en Inventario General', () => {
       .mockResolvedValue([filaGeneral(25)])
     fn(sumarCantidad).mockResolvedValue({
       destino: 'GENERAL',
-      modulo: null,
       material_id: 4,
       stock_nuevo: 25,
       reenvio_idempotente: false,
@@ -475,6 +488,7 @@ describe('Flujo +Cantidad / Mover en Inventario General', () => {
       clave_idempotencia: expect.stringMatching(/^sumar-/),
     })
     expect(payload).not.toHaveProperty('modulo')
+    expect(payload).not.toHaveProperty('destino_modulo')
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: '+ Cantidad' })).not.toBeInTheDocument(),
     )
@@ -484,7 +498,7 @@ describe('Flujo +Cantidad / Mover en Inventario General', () => {
     await waitFor(() => expect(within(drawer()).getByText('25')).toBeInTheDocument())
   })
 
-  it('Mover General → FO Paquete: recarga ["stock"] y ["fibra","PAQUETE"]; 409 mantiene el diálogo', async () => {
+  it('Mover General → Inventario FO: recarga ["stock"] y ["fibra"]; 409 mantiene el diálogo', async () => {
     const user = userEvent.setup()
     fn(stockSeccion).mockResolvedValue([filaGeneral(12)])
     fn(moverMaterial)
@@ -492,9 +506,7 @@ describe('Flujo +Cantidad / Mover en Inventario General', () => {
       .mockResolvedValue({
         material_id: 4,
         origen: 'GENERAL',
-        origen_modulo: null,
         destino: 'FO',
-        destino_modulo: 'PAQUETE',
         stock_origen: 2,
         stock_destino: 10,
         reenvio_idempotente: false,
@@ -519,7 +531,6 @@ describe('Flujo +Cantidad / Mover en Inventario General', () => {
     expect(fn(moverMaterial).mock.calls[1][0]).toEqual({
       origen: 'GENERAL',
       destino: 'FO',
-      destino_modulo: 'PAQUETE',
       material_id: 4,
       cantidad: 10,
       clave_idempotencia: fn(moverMaterial).mock.calls[0][0].clave_idempotencia,
@@ -528,10 +539,59 @@ describe('Flujo +Cantidad / Mover en Inventario General', () => {
       expect(screen.queryByRole('dialog', { name: 'Mover' })).not.toBeInTheDocument(),
     )
     expect(
-      await screen.findByText(/en Inventario General: 2 PZ; en Fibra Óptica - Paquete: 10 PZ/),
+      await screen.findByText(/en Inventario General: 2 PZ; en Inventario FO: 10 PZ/),
     ).toBeInTheDocument()
     expect(claves()).toEqual(
-      expect.arrayContaining([['stock'], ['fibra', 'PAQUETE']]),
+      expect.arrayContaining([
+        ['stock'],
+        ['fibra'],
+        ['inventario', 'resumen-general'],
+      ]),
     )
+    expect(claves()).not.toContainEqual(['fibra', 'PAQUETE'])
+  })
+
+  it('+Cantidad decimal (2.5): envía cantidad 2.5 y el toast usa el stock decimal del servidor', async () => {
+    const user = userEvent.setup()
+    fn(stockSeccion).mockResolvedValue([filaGeneral(12)])
+    fn(sumarCantidad).mockResolvedValue({
+      destino: 'GENERAL',
+      material_id: 4,
+      stock_nuevo: 14.5,
+      reenvio_idempotente: false,
+    })
+    renderConProviders(<SeccionGeneral globalSearch="" />)
+
+    await user.click(await screen.findByText('ACOPLADORES'))
+    await user.click(screen.getByRole('button', { name: '+ Cantidad' }))
+    const dialogo = await screen.findByRole('dialog', { name: '+ Cantidad' })
+    await user.type(within(dialogo).getByLabelText('Cantidad a sumar'), '2.5')
+    await user.click(within(dialogo).getByRole('button', { name: /Sumar 2.5 PZ a CON-1/ }))
+
+    await waitFor(() => expect(sumarCantidad).toHaveBeenCalledTimes(1))
+    expect(fn(sumarCantidad).mock.calls[0][0]).toMatchObject({
+      destino: 'GENERAL',
+      material_id: 4,
+      cantidad: 2.5,
+    })
+    expect(await screen.findByText(/Stock en Inventario General: 14.5 PZ/)).toBeInTheDocument()
+  })
+
+  it('+Cantidad con 1.0005 muestra el error de exceso de decimales y no llama al servicio', async () => {
+    const user = userEvent.setup()
+    fn(stockSeccion).mockResolvedValue([filaGeneral(12)])
+    renderConProviders(<SeccionGeneral globalSearch="" />)
+
+    await user.click(await screen.findByText('ACOPLADORES'))
+    await user.click(screen.getByRole('button', { name: '+ Cantidad' }))
+    const dialogo = await screen.findByRole('dialog', { name: '+ Cantidad' })
+    const input = within(dialogo).getByLabelText('Cantidad a sumar')
+    await user.type(input, '1.0005{Enter}')
+
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(
+      within(dialogo).getAllByText(/Máximo 3 decimales; no se redondea/).length,
+    ).toBeGreaterThan(0)
+    expect(sumarCantidad).not.toHaveBeenCalled()
   })
 })

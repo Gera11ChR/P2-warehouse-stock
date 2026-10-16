@@ -1,4 +1,8 @@
 import { z } from 'zod'
+import {
+  cantidadMovimientoSchema,
+  cantidadNoNegativaSchema,
+} from './cantidadDecimal'
 
 // ============================================================================
 // VALIDACIÓN DE FORMULARIOS — SEGUIMIENTOS DE EQUIPO (CONSUMO)
@@ -12,7 +16,8 @@ import { z } from 'zod'
 /** Línea del payload de apertura (POST seguimientos). */
 const seguimientoItemSchema = z.object({
   material_id: z.number().int().positive(),
-  cantidad_tomada: z.number().int().positive(),
+  // Decimal > 0, hasta 3 decimales (RF-6).
+  cantidad_tomada: cantidadMovimientoSchema,
 })
 
 /**
@@ -41,10 +46,10 @@ export const seguimientoCreateSchema = z
 /** Payload validado de apertura (tipo inferido del schema). */
 export type SeguimientoCreateInput = z.infer<typeof seguimientoCreateSchema>
 
-/** Línea de consumo del payload de cierre (cantidad_consumida >= 0). */
+/** Línea de consumo del payload de cierre (cantidad_consumida >= 0, decimal). */
 const consumoItemSchema = z.object({
   material_id: z.number().int().positive(),
-  cantidad_consumida: z.number().int().min(0),
+  cantidad_consumida: cantidadNoNegativaSchema,
 })
 
 /**

@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
 import { Check, Plus, Search, Trash2, Undo2, X } from 'lucide-react'
 import Modal from '../components/Modal'
 import ActaGeneradaAviso from '../components/ActaGeneradaAviso'
@@ -18,21 +17,15 @@ import {
 } from '../services/movimientos'
 import type { MovimientoBorradorCreatePayload } from '../services/movimientos'
 import { useToast } from '../hooks/useToasts'
-import { invalidarTrasConfirmarMovimiento } from '../hooks/queryKeys'
+import { mensajeErrorApi as errorMessage } from '../utils/errorMensaje'
+import {
+  invalidarResumenGeneral,
+  invalidarTrasConfirmarMovimiento,
+} from '../hooks/queryKeys'
+import { etiquetaSeccion, etiquetaSeccionPorId } from '../utils/seccionLabel'
+import { esCantidadDecimalValida, formatearCantidad } from '../utils/cantidad'
 import type { CartLine, Movimiento, TipoMovimiento } from '../types'
 import { ESTADOS_MOVIMIENTO, etiquetaTipoMovimiento } from '../types'
-
-function errorMessage(error: unknown): string {
-  if (axios.isAxiosError(error)) {
-    const detail = error.response?.data as
-      | { error?: { message?: string } }
-      | undefined
-    if (detail?.error?.message) {
-      return detail.error.message
-    }
-  }
-  return 'Ocurrió un error'
-}
 
 /** Orígenes DISTINTOS de un movimiento TEAMS (cada línea o, si no trae, el de
  *  la cabecera), en orden de aparición. */
@@ -77,8 +70,12 @@ function CartRows({
     <ul className="divide-y divide-slate-100">
       {lines.map((line) => {
         const cantidad = line[field] ?? 0
-        const invalida = !Number.isFinite(cantidad) || cantidad <= 0
-        const saldoEstimado = line.stock_disponible - cantidad
+        // Cantidad decimal > 0 con hasta 3 decimales (RF-6); el backend
+        // decide (400/422). Saldo estimado: proyección VISUAL redondeada a
+        // milésimas solo para evitar artefactos de coma flotante.
+        const invalida = !esCantidadDecimalValida(cantidad)
+        const saldoEstimado =
+          Math.round((line.stock_disponible - cantidad) * 1000) / 1000
         return (
           <li key={line.material_id} className="p-3">
             <div className="flex items-start justify-between gap-3">
@@ -88,7 +85,7 @@ function CartRows({
                 </p>
                 <p className="text-xs text-slate-500">
                   {line.codigo ?? '—'} · {line.u_m ?? '—'} · Disponible:{' '}
-                  {line.stock_disponible.toLocaleString('es-MX')}
+                  {formatearCantidad(line.stock_disponible)}
                 </p>
                 {origenLabel && line.origen_almacen_id != null && (
                   <p className="text-xs text-slate-500">
@@ -105,8 +102,10 @@ function CartRows({
               <div className="flex items-center gap-2">
                 <input
                   type="number"
-                  min={1}
-                  step={1}
+                  inputMode="decimal"
+                  min={0.001}
+                  step={0.001}
+                  aria-label={`Cantidad de ${line.descripcion}`}
                   value={line[field] ?? ''}
                   onChange={(event) =>
                     onChange(line.material_id, Number(event.target.value))
@@ -134,7 +133,7 @@ function CartRows({
                 Proyección visual
               </span>
               Saldo estimado después de la operación:{' '}
-              {saldoEstimado.toLocaleString('es-MX')}
+              {formatearCantidad(saldoEstimado)}
               {saldoEstimado < 0 && ' — supera el stock disponible (visual)'}
             </p>
           </li>
@@ -183,8 +182,9 @@ export default function Transferencias() {
   // ============================================================================
 
   // Secciones candidatas a ser extremo de una transferencia (FASE 7):
-  // incluye FO_PAQUETE / FO_EN_USO con etiqueta propia; las no transferibles
-  // se excluyen como extremo en la UI (la validación final es del backend).
+  // GENERAL activas + «Inventario FO» (los orígenes FO históricos no se
+  // emiten, RF-9); las no transferibles se excluyen como extremo en la UI
+  // (la validación final es del backend).
   const { data: secciones = [], isError: seccionesError } =
     useSeccionesTransferibles()
 
@@ -193,34 +193,23 @@ export default function Transferencias() {
     queryFn: listEquipos,
   })
 
-  // REQ-TRF-001: módulo FO de una sección transferible (raíz FO) o null si
-  // la sección no es una raíz FO. El stock de las raíces FO vive en
-  // inventario_fibra (módulo PAQUETE/EN_USO), nunca en inventario_almacen.
-  const moduloDeSeccion = (id: number | null): 'PAQUETE' | 'EN_USO' | null => {
-    const tipo = secciones.find((s) => s.almacen_id === id)?.tipo
-    if (tipo === 'FO_PAQUETE') return 'PAQUETE'
-    if (tipo === 'FO_EN_USO') return 'EN_USO'
-    return null
-  }
+  // REQ-TRF-001: ¿la sección es el Inventario FO? Su stock vive en
+  // inventario_fibra (único, RF-1), nunca en inventario_almacen.
+  const esSeccionFo = (id: number | null): boolean =>
+    secciones.find((s) => s.almacen_id === id)?.tipo === 'FO'
 
-  const origenModulo = moduloDeSeccion(seccionOrigen)
+  const origenEsFo = esSeccionFo(seccionOrigen)
 
-  // REQ-TRF-001: si el origen TEAMS es una raíz FO, la consulta de origen se
-  // direcciona a /fibra/{modulo} (inventario_fibra); en caso contrario se
+  // REQ-TRF-001: si el origen TEAMS es el Inventario FO, la consulta de
+  // origen se direcciona a /fibra (inventario_fibra); en caso contrario se
   // conserva la consulta por sección (inventario_almacen). Ambas filas
   // comparten el mismo esquema de presentación (material_id/codigo/
   // descripcion/u_m/stock_actual), por lo que `filasDisponibles` no cambia.
   const stockOrigenQuery = useQuery({
-    queryKey:
-      origenModulo !== null
-        ? ['fibra', origenModulo]
-        : ['stock', seccionOrigen],
+    queryKey: origenEsFo ? ['fibra'] : ['stock', seccionOrigen],
     queryFn: () =>
-      origenModulo !== null
-        ? listFibraStock(origenModulo)
-        : stockSeccion(seccionOrigen!),
-    enabled:
-      tab === 'TEAMS' && (origenModulo !== null || seccionOrigen !== null),
+      origenEsFo ? listFibraStock() : stockSeccion(seccionOrigen!),
+    enabled: tab === 'TEAMS' && seccionOrigen !== null,
   })
 
   const inventarioEquipoQuery = useQuery({
@@ -317,7 +306,7 @@ export default function Transferencias() {
     carrito.length === 0 ||
     carrito.some((l) => {
       const c = l[field] ?? 0
-      return !Number.isFinite(c) || c <= 0
+      return !esCantidadDecimalValida(c)
     })
 
   // Ergonomía `justificacion_opcional` (REQ-ERG-006/008): el motivo es
@@ -330,7 +319,7 @@ export default function Transferencias() {
   // confirmado. El saldo definitivo lo calcula el servidor en el commit.
   const totalCantidades = carrito.reduce((suma, l) => {
     const c = l[field] ?? 0
-    return Number.isFinite(c) && c > 0 ? suma + c : suma
+    return esCantidadDecimalValida(c) ? suma + c : suma
   }, 0)
 
   // Líneas cuya proyección visual deja saldo negativo: bloquean Confirmar
@@ -338,7 +327,10 @@ export default function Transferencias() {
   // autoridad final del stock).
   const lineasSaldoNegativo = carrito.filter((l) => {
     const c = l[field] ?? 0
-    return Number.isFinite(c) && c > 0 && l.stock_disponible - c < 0
+    return (
+      esCantidadDecimalValida(c) &&
+      Math.round((l.stock_disponible - c) * 1000) < 0
+    )
   })
   const bloqueoPorStock = lineasSaldoNegativo.length > 0
 
@@ -365,7 +357,7 @@ export default function Transferencias() {
             destino_equipo_id: equipoDestino,
             observaciones: observaciones.trim() || null,
             // Origen POR LÍNEA: el backend valida y descuenta cada línea
-            // contra su inventario real (General / FO Paquete / FO En Uso).
+            // contra su inventario real (General / Inventario FO).
             detalle: carrito.map((l) => ({
               material_id: l.material_id,
               cantidad: l[field] ?? 0,
@@ -452,33 +444,24 @@ export default function Transferencias() {
       queryClient.invalidateQueries({ queryKey: ['movimientos'] })
       queryClient.invalidateQueries({ queryKey: ['auditoria'] })
       queryClient.invalidateQueries({ queryKey: ['secciones'] })
+      // RF-4/RF-5: la cancelación restituye existencias → Valor Total.
+      void invalidarResumenGeneral(queryClient)
       const m = movimientos.find((mov) => mov.id === variables.id)
       if (m) {
-        // REQ-TRF-002: cuando un extremo de sección es una raíz FO, el stock
-        // restaurado vive en inventario_fibra — invalidar ['fibra', modulo]
-        // además de la invalidación por sección existente.
-        // Multi-origen: se invalidan TODOS los orígenes del movimiento
-        // (cabecera + cada línea), no solo el de la cabecera.
+        // REQ-TRF-002 / RF-9: el stock restaurado puede vivir en el
+        // Inventario FO único (también para movimientos con origen/destino
+        // FO histórico): se invalida ['fibra'] además de la invalidación por
+        // sección. Multi-origen: se invalidan TODOS los orígenes del
+        // movimiento (cabecera + cada línea), no solo el de la cabecera.
         for (const origenId of origenesDeMovimiento(m)) {
           queryClient.invalidateQueries({ queryKey: ['stock', origenId] })
-          const origenModuloMov = moduloDeSeccion(origenId)
-          if (origenModuloMov !== null) {
-            queryClient.invalidateQueries({
-              queryKey: ['fibra', origenModuloMov],
-            })
-          }
         }
         if (m.destino_almacen_id != null) {
           queryClient.invalidateQueries({
             queryKey: ['stock', m.destino_almacen_id],
           })
-          const destinoModuloMov = moduloDeSeccion(m.destino_almacen_id)
-          if (destinoModuloMov !== null) {
-            queryClient.invalidateQueries({
-              queryKey: ['fibra', destinoModuloMov],
-            })
-          }
         }
+        queryClient.invalidateQueries({ queryKey: ['fibra'] })
         if (m.origen_equipo_id != null) {
           queryClient.invalidateQueries({
             queryKey: ['equipo', m.origen_equipo_id],
@@ -523,18 +506,11 @@ export default function Transferencias() {
 
   const movimientos: Movimiento[] = movimientosQuery.data ?? []
 
-  /** Etiqueta de sección transferible (FASE 7): FO con nombre propio,
-   *  GENERAL con el nombre del almacén. */
-  const labelSeccion = (s: { tipo: string; nombre: string }): string => {
-    if (s.tipo === 'FO_PAQUETE') return 'Fibra Óptica - Paquete'
-    if (s.tipo === 'FO_EN_USO') return 'Fibra Óptica - En Uso'
-    return s.nombre
-  }
-
-  const nombreSeccion = (id: number | null): string => {
-    const seccion = secciones.find((s) => s.almacen_id === id)
-    return seccion ? labelSeccion(seccion) : `Sección ${id}`
-  }
+  /** Etiqueta de sección para el historial (RF-9/RF-10): GENERAL con el
+   *  nombre del almacén; el Inventario FO y los orígenes FO históricos como
+   *  «Inventario FO». */
+  const nombreSeccion = (id: number | null): string =>
+    etiquetaSeccionPorId(id, secciones)
   const nombreEquipo = (id: number | null): string =>
     equipos.find((e) => e.equipo_id === id)?.nombre ?? `Unidad ${id}`
 
@@ -629,7 +605,7 @@ export default function Transferencias() {
                   .filter((s) => s.transferible)
                   .map((s) => (
                     <option key={s.almacen_id} value={s.almacen_id}>
-                      {labelSeccion(s)}
+                      {etiquetaSeccion(s)}
                     </option>
                   ))}
               </select>
@@ -701,7 +677,7 @@ export default function Transferencias() {
                   .filter((s) => s.transferible)
                   .map((s) => (
                     <option key={s.almacen_id} value={s.almacen_id}>
-                      {labelSeccion(s)}
+                      {etiquetaSeccion(s)}
                     </option>
                   ))}
               </select>

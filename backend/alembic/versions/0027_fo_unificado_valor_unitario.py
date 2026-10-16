@@ -31,6 +31,13 @@ Fase 5/7 (Backend-First) — implementa RF-1..RF-10 del plan §1:
    idempotente por `nombre` único) y CHECK `ck_secciones_tipo` ampliado
    con 'FO'. `FO_PAQUETE`/`FO_EN_USO` se conservan (referenciadas por
    movimientos históricos; jamás se borran).
+4b. Continuidad de permisos (decisión D-2, T7; visto bueno @sec-ops y
+   @arq-reviewer): cada actor con scope sobre `FO_PAQUETE` o `FO_EN_USO`
+   recibe scope sobre la sección `FO` (`INSERT ... ON CONFLICT DO NOTHING`,
+   idempotente). Es una EXPANSIÓN DE PRIVILEGIO intencional e inevitable al
+   unificar el inventario: quien solo operaba «En Uso» pasa a operar todo el
+   Inventario FO. Los scopes legacy se conservan (RF-9: movimientos
+   históricos). Nunca se otorga scope a actores sin scope legacy.
 5. Stored functions re-publicadas (plan §1.4): variables y parámetros
    decimales, sin `p_modulo`/`p_origen_modulo`/`p_destino_modulo`, ramas
    FO por `material_id`, aceptación de secciones legacy 'FO_PAQUETE'/
@@ -47,9 +54,15 @@ downgrade() — reverso 0027 -> 0026 (secuencia L5 del plan §1.7):
 * ABORTA si existe cualquier valor fraccionario (`<> TRUNC(x)`) en
   `stock_actual`/`cantidad`/`cantidad_tomada`/`cantidad_consumida`/
   `auditoria_eventos.cantidad` (E14: cero pérdida silenciosa).
-* ABORTA si `movimientos_cabecera`/`movimientos_detalle`/
-  `inventario_almacen`/`actor_almacen_scopes` referencian la sección
-  `Inventario FO`.
+* Retira PRIMERO los scopes sobre la sección `FO` que el upgrade copió (D-2:
+  actores que además tienen scope sobre `FO_PAQUETE`/`FO_EN_USO`); luego
+  ABORTA si `movimientos_cabecera`/`movimientos_detalle`/
+  `inventario_almacen`/`actor_almacen_scopes` aún referencian la sección
+  `Inventario FO` (p. ej. un scope concedido directamente a FO por un actor
+  SIN scope legacy). Caso límite documentado: un actor con scope legacy Y un
+  scope FO concedido directamente pierde este último en el downgrade (no se
+  distingue de uno derivado; la sección FO deja de existir en 0026 y su
+  permiso efectivo previo —los scopes legacy— se conserva).
 * Restaura `modulo` en `inventario_fibra` con PK `(modulo, material_id)`,
   CHECK `ck_inventario_fibra_modulo` e índice `ix_inventario_fibra_material`;
   la existencia total se coloca en `modulo='PAQUETE'`. La partición
@@ -118,7 +131,10 @@ BEGIN
         INSERT INTO auditoria_eventos (
             usuario, tipo_accion, material_id, resultado, detalles
         ) VALUES (
-            CURRENT_USER, 'MATERIAL_MODIFICADO', NEW.id_lista, 'EXITO',
+            -- RF-7 (Drift T7 H-1): el evento atribuye al ACTOR de la API
+            -- (`app.actor`, fijado por el servicio), con fallback al rol de BD.
+            COALESCE(NULLIF(current_setting('app.actor', true), ''), CURRENT_USER),
+            'MATERIAL_MODIFICADO', NEW.id_lista, 'EXITO',
             jsonb_build_object(
                 'modulo', 'CATALOGO', 'accion', 'MODIFICAR',
                 'valores_anteriores', jsonb_build_object(
@@ -3392,6 +3408,21 @@ END $$;
         )
     )
 
+    # Paso 4b — continuidad de permisos (D-2): copia los scopes legacy a la
+    # sección FO. Idempotente (PK actor_id+almacen_id, ON CONFLICT DO NOTHING).
+    op.execute(
+        sa.text(
+            "INSERT INTO actor_almacen_scopes (actor_id, almacen_id) "
+            "SELECT DISTINCT sc.actor_id, fo.almacen_id "
+            "FROM actor_almacen_scopes sc "
+            "JOIN secciones legacy ON legacy.almacen_id = sc.almacen_id "
+            "     AND legacy.tipo IN ('FO_PAQUETE','FO_EN_USO') "
+            "CROSS JOIN secciones fo "
+            "WHERE fo.tipo = 'FO' AND fo.nombre = 'Inventario FO' "
+            "ON CONFLICT DO NOTHING"
+        )
+    )
+
     # ----------------------------------------------------------------
     # Paso 5 — stored functions re-publicadas (§1.4) + DROP de firmas
     # anteriores (evita sobrecargas ambiguas).
@@ -3472,6 +3503,19 @@ def downgrade() -> None:
         sa.text("SELECT almacen_id FROM secciones WHERE nombre = 'Inventario FO' AND tipo = 'FO'")
     ).scalar_one_or_none()
     if fo_id is not None:
+        # D-2: retira los scopes FO copiados por el upgrade (actores con scope
+        # legacy). Un scope concedido directamente a FO sigue bloqueando abajo.
+        bind.execute(
+            sa.text(
+                "DELETE FROM actor_almacen_scopes fo_sc "
+                "WHERE fo_sc.almacen_id = :id AND EXISTS ("
+                " SELECT 1 FROM actor_almacen_scopes l "
+                " JOIN secciones ls ON ls.almacen_id = l.almacen_id "
+                "  AND ls.tipo IN ('FO_PAQUETE','FO_EN_USO') "
+                " WHERE l.actor_id = fo_sc.actor_id)"
+            ),
+            {"id": fo_id},
+        )
         refs = bind.execute(
             sa.text(
                 "SELECT "

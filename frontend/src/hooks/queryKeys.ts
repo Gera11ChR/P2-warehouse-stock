@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
-import type { FibraModulo, ReporteParams, TipoMovimiento } from '../types'
+import type { ReporteParams, TipoMovimiento } from '../types'
 import type { ReporteTipo } from '../utils/reporteExport'
 import type {
   MoverMaterialPayload,
@@ -16,11 +16,18 @@ import type {
 //   → React renderiza lo que devuelve el servidor.
 //
 // NUNCA se parchea el cache con stock calculado en el cliente. Las claves
-// preexistentes (['stock', id], ['fibra', modulo], ['equipo', id],
-// ['movimientos'], ['secciones'], ['auditoria']) se conservan.
+// preexistentes (['stock', id], ['fibra'], ['equipo', id], ['movimientos'],
+// ['secciones'], ['auditoria']) se conservan. `['fibra']` es el Inventario FO
+// único (RF-1): ya no existe la clave por módulo.
+//
+// Valor Total (RF-4/RF-5): TODA mutación que cambie existencias o Valor
+// Unitario invalida además ['inventario', 'resumen-general'] mediante
+// `invalidarResumenGeneral`. React nunca calcula el total.
 // ============================================================================
 
 export const queryKeys = {
+  /** Valor Total del inventario (GET /inventario/resumen-general). */
+  resumenGeneral: () => ['inventario', 'resumen-general'] as const,
   /** Lista de seguimientos de un equipo (+ detalle anidado bajo el prefijo). */
   seguimientos: (equipoId: number | null) =>
     ['seguimientos', equipoId] as const,
@@ -37,7 +44,17 @@ export const queryKeys = {
       : (['reportes', 'actas', tipo, params] as const),
 }
 
-/** Seguimientos del equipo (lista y detalles) + su inventario. */
+/** Valor Total (RF-4/RF-5): recarga el estado persistido tras una mutación
+ *  que cambió existencias o Valor Unitario. */
+export function invalidarResumenGeneral(
+  queryClient: QueryClient,
+): Promise<void> {
+  return queryClient.invalidateQueries({ queryKey: queryKeys.resumenGeneral() })
+}
+
+/** Seguimientos del equipo (lista y detalles) + su inventario. Por regla de
+ *  plan §4.1 toda mutación de seguimientos refresca además el Valor Total
+ *  (el backend es quien decide si cambió). */
 export function invalidarSeguimientoEquipo(
   queryClient: QueryClient,
   equipoId: number,
@@ -45,6 +62,7 @@ export function invalidarSeguimientoEquipo(
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.seguimientos(equipoId) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.equipo(equipoId) }),
+    invalidarResumenGeneral(queryClient),
   ]).then(() => undefined)
 }
 
@@ -63,30 +81,25 @@ export function invalidarAuditoria(queryClient: QueryClient): Promise<void> {
 }
 
 /** Inventarios afectados por una operación rápida (+Cantidad / Mover):
- *  GENERAL → ['stock'] (cualquier sección GENERAL); FO → ['fibra', módulo].
- *  Se deduplican; origen Y destino se recargan. */
+ *  GENERAL → ['stock'] (cualquier sección GENERAL); FO → ['fibra'] (único).
+ *  Se deduplican; origen Y destino se recargan, además de auditoría y Valor
+ *  Total. */
 export function invalidarInventariosRapidos(
   queryClient: QueryClient,
-  extremos: {
-    inventario: SumarCantidadPayload['destino']
-    modulo?: FibraModulo
-  }[],
+  extremos: { inventario: SumarCantidadPayload['destino'] }[],
 ): Promise<void> {
   const claves = new Map<string, readonly unknown[]>()
-  for (const { inventario, modulo } of extremos) {
-    if (inventario === 'GENERAL') {
-      claves.set('stock', ['stock'])
-    } else if (modulo !== undefined) {
-      claves.set(`fibra:${modulo}`, ['fibra', modulo])
-    } else {
-      claves.set('fibra', ['fibra'])
-    }
+  for (const { inventario } of extremos) {
+    claves.set(inventario === 'GENERAL' ? 'stock' : 'fibra', [
+      inventario === 'GENERAL' ? 'stock' : 'fibra',
+    ])
   }
   return Promise.all([
     ...[...claves.values()].map((queryKey) =>
       queryClient.invalidateQueries({ queryKey }),
     ),
     invalidarAuditoria(queryClient),
+    invalidarResumenGeneral(queryClient),
   ]).then(() => undefined)
 }
 
@@ -95,7 +108,7 @@ export function invalidarTrasSumar(
   payload: SumarCantidadPayload,
 ): Promise<void> {
   return invalidarInventariosRapidos(queryClient, [
-    { inventario: payload.destino, modulo: payload.modulo },
+    { inventario: payload.destino },
   ])
 }
 
@@ -104,14 +117,14 @@ export function invalidarTrasMover(
   payload: MoverMaterialPayload,
 ): Promise<void> {
   return invalidarInventariosRapidos(queryClient, [
-    { inventario: payload.origen, modulo: payload.origen_modulo },
-    { inventario: payload.destino, modulo: payload.destino_modulo },
+    { inventario: payload.origen },
+    { inventario: payload.destino },
   ])
 }
 
 /** Tras una confirmación (procesar) de un movimiento: movimientos, secciones,
- *  stocks (General y FO), inventario de equipos y auditoría; si es TEAMS, las
- *  actas de Entrega (el trigger de PostgreSQL ya la registró en la misma
+ *  stocks (General y FO), inventario de equipos, auditoría y Valor Total; si
+ *  es TEAMS, las actas de Entrega (el trigger de PostgreSQL ya la registró en la misma
  *  transacción: aquí solo se recarga lo persistido). */
 export function invalidarTrasConfirmarMovimiento(
   queryClient: QueryClient,
@@ -124,6 +137,7 @@ export function invalidarTrasConfirmarMovimiento(
     queryClient.invalidateQueries({ queryKey: ['fibra'] }),
     queryClient.invalidateQueries({ queryKey: ['equipo'] }),
     invalidarAuditoria(queryClient),
+    invalidarResumenGeneral(queryClient),
   ]
   // Sin tipo conocido (p. ej. borrador procesado desde el historial antes de
   // cargar la lista) se recarga por precaución: invalidar es barato y un acta

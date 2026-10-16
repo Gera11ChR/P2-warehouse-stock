@@ -1,11 +1,14 @@
 import type { ReactNode } from 'react'
 import { ArrowRightLeft, Pencil, Trash2, X } from 'lucide-react'
+import MonedaMxn from './MonedaMxn'
 
 interface MaterialDetailDrawerProps {
   open: boolean
   onClose: () => void
   descripcion: string | null
   stockActual: number
+  /** Valor Unitario en MXN (RF-3, solo lectura). Si se omite no se muestra. */
+  valorUnitario?: number
   stockMinimo: number | null
   alertaStock: boolean
   um: string | null
@@ -40,6 +43,7 @@ export default function MaterialDetailDrawer({
   onClose,
   descripcion,
   stockActual,
+  valorUnitario,
   stockMinimo,
   alertaStock,
   um,
@@ -74,6 +78,11 @@ export default function MaterialDetailDrawer({
           {descripcion ?? <span className="text-slate-400">—</span>}
         </Field>
         <Field label="Stock Actual">{stockActual.toLocaleString('es-MX')}</Field>
+        {valorUnitario !== undefined && (
+          <Field label="Valor Unitario">
+            <MonedaMxn valor={valorUnitario} />
+          </Field>
+        )}
         <Field label="Stock Mínimo">
           {stockMinimo != null ? stockMinimo : <span className="text-slate-400">—</span>}
         </Field>

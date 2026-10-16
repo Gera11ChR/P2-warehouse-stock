@@ -23,6 +23,8 @@ export interface Material {
   categoria: string | null
   u_m: string | null
   stock_minimo: number | null
+  /** Valor Unitario en MXN (decimal, hasta 3 decimales; RF-2/RF-3). */
+  valor_unitario: number
   is_active: boolean
 }
 
@@ -43,7 +45,9 @@ export interface MaterialList {
 export interface Seccion {
   almacen_id: number
   nombre: string
-  tipo: string
+  /** 'FO_PAQUETE' | 'FO_EN_USO' son valores HISTÓRICOS (solo datos
+   *  heredados del ledger; nunca se ofrecen como opción, RF-9). */
+  tipo: 'GENERAL' | 'FO' | 'FO_PAQUETE' | 'FO_EN_USO'
   is_active: boolean
 }
 
@@ -56,7 +60,9 @@ export interface Seccion {
 export interface SeccionTransferible {
   almacen_id: number
   nombre: string
-  tipo: 'GENERAL' | 'FO_PAQUETE' | 'FO_EN_USO'
+  /** El backend solo emite 'GENERAL' y 'FO' (RF-9): los orígenes FO
+   *  históricos no se ofrecen como opciones seleccionables. */
+  tipo: 'GENERAL' | 'FO'
   transferible: boolean
 }
 
@@ -66,7 +72,10 @@ export interface SeccionStockRow {
   descripcion: string
   u_m: string | null
   stock_minimo: number | null
+  /** Decimal (hasta 3 decimales; RF-6). */
   stock_actual: number
+  /** Valor Unitario en MXN del material (RF-3). */
+  valor_unitario: number
   alerta_stock: boolean
 }
 
@@ -111,6 +120,8 @@ export interface InventarioEquipoRow {
   u_m: string | null
   stock_minimo: number | null
   stock_actual: number
+  /** Valor Unitario en MXN del catálogo; solo lectura en Unidades (RF-3). */
+  valor_unitario: number
   alerta_stock: boolean
   ultimo_movimiento_id: number | null
   stock_minimo_local: number | null
@@ -221,12 +232,10 @@ export interface AgregarTodoResultadoOut {
 // ============================================================================
 
 export type InventarioContratoOut = 'GENERAL' | 'FO'
-export type ModuloFoOut = 'PAQUETE' | 'EN_USO'
 
 /** Respuesta de POST /inventario/sumar-cantidad (SumarCantidadOut). */
 export interface SumarCantidadOut {
   destino: InventarioContratoOut
-  modulo: ModuloFoOut | null
   material_id: number
   stock_nuevo: number
   reenvio_idempotente: boolean
@@ -236,9 +245,7 @@ export interface SumarCantidadOut {
 export interface MoverMaterialOut {
   material_id: number
   origen: InventarioContratoOut
-  origen_modulo: ModuloFoOut | null
   destino: InventarioContratoOut
-  destino_modulo: ModuloFoOut | null
   stock_origen: number
   stock_destino: number
   reenvio_idempotente: boolean
@@ -298,39 +305,37 @@ export interface ReporteParams {
 export type FormatoXlsx = 'normal' | 'extenso'
 
 // ============================================================================
-// FIBRA ÓPTICA — inventarios independientes PAQUETE / EN_USO
-// (contrato real /api/v1/fibra; REQ-DOMAIN-003/004/005)
+// INVENTARIO FO — inventario único por material (contrato real /api/v1/fibra;
+// RF-1, RF-3, RF-6). Sin módulos ni subapartados.
 // ============================================================================
 
-export type FibraModulo = 'PAQUETE' | 'EN_USO'
-
-/** Fila de stock FO con esquema estándar (CÓDIGO, DESCRIPCIÓN, U.M.,
- *  STOCK ACTUAL, STOCK MÍNIMO, ALERTA STOCK). La métrica la gobierna `u_m`
- *  (el legado carretes/metros de fiber_variants está deprecado). */
+/** Fila del Inventario FO con esquema estándar (CÓDIGO, DESCRIPCIÓN, U.M.,
+ *  STOCK ACTUAL, VALOR UNITARIO, STOCK MÍNIMO, ALERTA STOCK). Espejo de
+ *  `FibraStockOut`. */
 export interface FibraStockRow {
-  modulo: FibraModulo
   material_id: number
   codigo: string | null
   descripcion: string
   u_m: string | null
   stock_minimo: number | null
+  /** Decimal (hasta 3 decimales). */
   stock_actual: number
+  valor_unitario: number
   alerta_stock: boolean
 }
 
 /** POST /api/v1/fibra/carga-inicial — alta única e idempotente.
- *  `cantidad` >= 0; `motivo` opcional. */
+ *  `cantidad` >= 0 (hasta 3 decimales); `motivo` opcional. Sin `modulo`
+ *  (enviarlo es 422). */
 export interface FibraCargaInicialPayload {
-  modulo: FibraModulo
   material_id: number
   cantidad: number
   motivo?: string
 }
 
 /** POST /api/v1/fibra/ajuste — ajuste administrativo.
- *  `nuevo_stock` >= 0; `motivo` OPCIONAL (ergonomía `justificacion_opcional`). */
+ *  `nuevo_stock` >= 0 (hasta 3 decimales); `motivo` OPCIONAL. */
 export interface FibraAjustePayload {
-  modulo: FibraModulo
   material_id: number
   nuevo_stock: number
   motivo?: string | null
@@ -338,18 +343,17 @@ export interface FibraAjustePayload {
 
 /** Eco mínimo de una operación FO (FibraOperacionOut). */
 export interface FibraOperacionOut {
-  modulo: FibraModulo
   material_id: number
 }
 
 /**
- * PATCH /api/v1/fibra/{modulo}/materiales/{material_id} — edición FO
- * (REQ-CATFO-001/002, REQ-STOCK-001/002/003). Espejo de
- * `FibraMaterialUpdateRequest` del backend: `stock_actual` SOLO si el
- * operador cambió el valor registrado. Ergonomía `justificacion_opcional`
- * (REQ-ERG-004): `motivo` es OPCIONAL — vacío se envía como `null`. El
- * frontend NUNCA envía el diferencial: el delta, el bloqueo FOR UPDATE y la
- * auditoría 'AJUSTE_INVENTARIO_FO' los calcula PostgreSQL.
+ * PATCH /api/v1/fibra/materiales/{material_id} — edición FO. Espejo de
+ * `FibraMaterialUpdateRequest`: `stock_actual` SOLO si el operador cambió el
+ * valor registrado; `valor_unitario` SOLO si lo cambió un administrador
+ * (RF-8: su presencia exige rol admin, 403 en caso contrario). `null`
+ * explícito en `valor_unitario` es no-op. El frontend NUNCA envía el
+ * diferencial: el delta, el bloqueo FOR UPDATE y la auditoría los calcula
+ * PostgreSQL.
  */
 export interface FibraMaterialUpdatePayload {
   descripcion?: string | null
@@ -359,22 +363,22 @@ export interface FibraMaterialUpdatePayload {
   u_m?: string | null
   stock_minimo?: number | null
   stock_actual?: number
+  valor_unitario?: number
   motivo?: string | null
 }
 
 /**
  * Respuesta del PATCH FO (FibraMaterialOut): material materializado tras
- * la edición — join catálogo maestro + `inventario_fibra` con esquema
- * estándar + categoría resuelta.
+ * la edición — catálogo maestro + inventario FO + categoría resuelta.
  */
 export interface FibraMaterialOut {
-  modulo: FibraModulo
   material_id: number
   codigo: string | null
   descripcion: string
   u_m: string | null
   stock_minimo: number | null
   stock_actual: number
+  valor_unitario: number
   alerta_stock: boolean
   categoria: string | null
   categoria_id: number | null
@@ -391,6 +395,7 @@ export interface FibraMaterialRowEditable {
   descripcion: string
   u_m: string | null
   stock_minimo: number | null
+  valor_unitario: number
   categoria_id: number | null
   categoria: string | null
 }
@@ -404,6 +409,16 @@ export interface Kpis {
   stock_total: number
   alertas_stock: number
   transferencias_hoy: number
+}
+
+/**
+ * Respuesta de GET /api/v1/inventario/resumen-general (ResumenGeneralOut;
+ * RF-4/RF-8). `valor_total` lo calcula PostgreSQL (`fn_valor_total_inventario`,
+ * General + Inventario FO): React nunca lo recalcula. Moneda fija `MXN`.
+ */
+export interface ResumenGeneral {
+  valor_total: number
+  moneda: 'MXN'
 }
 
 // ============================================================================
@@ -501,6 +516,8 @@ export const TIPOS_ACCION_AUDITORIA: Record<string, string> = {
   STOCK_INICIAL_FO: 'Carga inicial FO',
   AJUSTE_INVENTARIO_FO: 'Ajuste de inventario FO',
   MIGRACION_FO: 'Migración FO',
+  // RF-1/RF-7: fusión de Paquete + En Uso en el Inventario FO único.
+  FO_UNIFICADO: 'Inventario FO unificado',
   ELIMINACION_FO: 'Eliminación de inventario FO',
   // Cambio 2026-10-01-reportes-consumo-management (REQ-P2-INV-006 / CON-001).
   SUMA_CANTIDAD: '+Cantidad — suma directa',

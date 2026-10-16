@@ -26,6 +26,7 @@ vi.mock('../../services/catalog', () => ({
         categoria: 'Fibra',
         u_m: 'PZ',
         stock_minimo: null,
+        valor_unitario: 1,
         is_active: true,
       },
     ],
@@ -40,8 +41,7 @@ vi.mock('../../hooks/useSeccionesTransferibles', () => ({
   useSeccionesTransferibles: () => ({
     data: [
       { almacen_id: 1, nombre: 'Inventario General', tipo: 'GENERAL', transferible: true },
-      { almacen_id: 2, nombre: 'Fibra Optica - Paquete', tipo: 'FO_PAQUETE', transferible: true },
-      { almacen_id: 3, nombre: 'Fibra Optica - En Uso', tipo: 'FO_EN_USO', transferible: true },
+      { almacen_id: 2, nombre: 'Inventario FO', tipo: 'FO', transferible: true },
     ],
   }),
 }))
@@ -52,25 +52,25 @@ vi.mock('../../services/fibra', () => ({
   eliminarFibraMaterial: vi.fn(),
 }))
 
-const FILA_PAQUETE = {
-  modulo: 'PAQUETE',
+const FILA_FO = {
   material_id: 1,
   codigo: 'FO-1',
   descripcion: 'Cable FO',
   u_m: 'PZ',
   stock_minimo: null,
   stock_actual: 10,
+  valor_unitario: 1,
   alerta_stock: false,
 }
 
 const MATERIAL_EDITADO = {
-  modulo: 'PAQUETE',
   material_id: 1,
   codigo: 'FO-1',
   descripcion: 'Cable FO',
   u_m: 'PZ',
   stock_minimo: null,
   stock_actual: 10,
+  valor_unitario: 1,
   alerta_stock: false,
   categoria: 'Fibra',
   categoria_id: 1,
@@ -82,7 +82,7 @@ function renderConQueryClient() {
   })
   render(
     <QueryClientProvider client={queryClient}>
-      <FibraOptica sub="paquete" />
+      <FibraOptica />
     </QueryClientProvider>,
   )
   return queryClient
@@ -92,7 +92,7 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     ;(listFibraStock as ReturnType<typeof vi.fn>).mockResolvedValue([
-      FILA_PAQUETE,
+      FILA_FO,
     ])
     ;(updateFibraMaterial as ReturnType<typeof vi.fn>).mockResolvedValue(
       MATERIAL_EDITADO,
@@ -111,6 +111,7 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
           categoria: 'Fibra',
           u_m: 'PZ',
           stock_minimo: null,
+          valor_unitario: 1,
           is_active: true,
         },
       ],
@@ -149,7 +150,7 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
     expect(screen.getAllByText('FO-1').length).toBeGreaterThan(0)
   })
 
-  it('REQ-CATFO-001/REQ-TRF-INV-002: Modificar guarda vía updateFibraMaterial e invalida ["fibra", modulo]', async () => {
+  it('REQ-CATFO-001/REQ-TRF-INV-002: Modificar guarda vía updateFibraMaterial e invalida ["fibra"]', async () => {
     const user = userEvent.setup()
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -157,7 +158,7 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
     render(
       <QueryClientProvider client={queryClient}>
-        <FibraOptica sub="paquete" />
+        <FibraOptica />
       </QueryClientProvider>,
     )
 
@@ -173,16 +174,15 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
 
     await waitFor(() => {
       expect(updateFibraMaterial).toHaveBeenCalledWith(
-        'PAQUETE',
         1,
         expect.objectContaining({ descripcion: 'Cable FO' }),
       )
     })
-    // REQ-TRF-INV-002: la mutación invalida la clave del módulo FO y el
+    // REQ-TRF-INV-002: la mutación invalida la clave única del Inventario FO y el
     // join de presentación (catálogo + categorías).
     await waitFor(() => {
       expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: ['fibra', 'PAQUETE'],
+        queryKey: ['fibra'],
       })
     })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['catalogo'] })
@@ -197,7 +197,8 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
     await user.click(screen.getAllByRole('button', { name: 'Modificar' })[0])
 
     // Stock Actual precargado con el valor registrado (10).
-    const stockInput = await screen.findByDisplayValue('10')
+    const stockInput = await screen.findByLabelText('Stock Actual')
+    expect(stockInput).toHaveValue('10')
     await user.clear(stockInput)
     await user.type(stockInput, '25')
 
@@ -210,7 +211,6 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
 
     await waitFor(() => {
       expect(updateFibraMaterial).toHaveBeenCalledWith(
-        'PAQUETE',
         1,
         expect.objectContaining({ stock_actual: 25, motivo: null }),
       )
@@ -250,16 +250,15 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
 
     await waitFor(() => {
       expect(eliminarFibraMaterial).toHaveBeenCalledWith(
-        'PAQUETE',
         1,
         'Baja administrativa',
       )
     })
-    // REQ-TRF-INV-002 + traza forense: invalida el stock del módulo y la
+    // REQ-TRF-INV-002 + traza forense: invalida el Inventario FO y la
     // vista de auditoría (evento ELIMINACION_FO).
     await waitFor(() => {
       expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: ['fibra', 'PAQUETE'],
+        queryKey: ['fibra'],
       })
     })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['auditoria'] })
@@ -285,7 +284,7 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
     await user.click(boton)
 
     const dialogo = screen.getByRole('dialog', { name: '+ Cantidad' })
-    expect(dialogo).toHaveTextContent('Fibra Óptica - Paquete')
+    expect(dialogo).toHaveTextContent('Inventario FO')
     expect(dialogo).toHaveTextContent('FO-1')
 
     await user.keyboard('{Escape}')
@@ -293,7 +292,7 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
     expect(boton).toHaveFocus()
   })
 
-  it('Mover ofrece como destino los demás inventarios (sin el origen FO Paquete)', async () => {
+  it('Mover ofrece como destino los demás inventarios (sin el origen Inventario FO)', async () => {
     const user = userEvent.setup()
     renderConQueryClient()
 
@@ -307,7 +306,131 @@ describe('FibraOptica — CRUD FO (REQ-CRUD-001/002, REQ-TRF-INV-002)', () => {
     expect(opciones).toEqual([
       '— Selecciona destino —',
       'Inventario General',
-      'Fibra Óptica - En Uso',
     ])
+  })
+
+  it('RF-3: la tabla única muestra el título Inventario FO y la columna Valor Unitario con cifra y MXN', async () => {
+    ;(listFibraStock as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...FILA_FO, valor_unitario: 12.345 },
+    ])
+    renderConQueryClient()
+
+    expect(
+      await screen.findByRole('heading', { name: 'Inventario FO' }),
+    ).toBeInTheDocument()
+    const fila = (await screen.findByText('Cable FO')).closest('tr')!
+    expect(
+      screen.getByRole('columnheader', { name: 'Valor Unitario' }),
+    ).toBeInTheDocument()
+    expect(fila).toHaveTextContent('12.345')
+    expect(fila).toHaveTextContent('MXN')
+    expect(listFibraStock).toHaveBeenCalled()
+  })
+
+  it('RF-3: un valor entero se presenta con dos decimales (1 → 1.00 MXN)', async () => {
+    renderConQueryClient()
+
+    const fila = (await screen.findByText('Cable FO')).closest('tr')!
+    expect(fila).toHaveTextContent(/1\.00\s*MXN/)
+  })
+
+  it('estado vacío: «Sin materiales en el Inventario FO.»', async () => {
+    ;(listFibraStock as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    renderConQueryClient()
+
+    expect(
+      await screen.findByText('Sin materiales en el Inventario FO.'),
+    ).toBeInTheDocument()
+  })
+
+  it('error de carga: «No se pudo obtener el Inventario FO…»', async () => {
+    ;(listFibraStock as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('boom'),
+    )
+    renderConQueryClient()
+
+    expect(
+      await screen.findByText(/No se pudo obtener el Inventario FO/),
+    ).toBeInTheDocument()
+  })
+
+  describe('Valor Unitario y Stock decimal en Modificar (RF-3/RF-6/RF-8)', () => {
+    async function abrirModificar() {
+      const user = userEvent.setup()
+      renderConQueryClient()
+      await user.click(await screen.findByText('Cable FO'))
+      await user.click(screen.getAllByRole('button', { name: 'Modificar' })[0])
+      await screen.findByRole('heading', { name: 'Modificar Material' })
+      return user
+    }
+
+    it('precarga el Valor Unitario con el valor persistido', async () => {
+      await abrirModificar()
+      expect(screen.getByLabelText('Valor Unitario (MXN)')).toHaveValue('1')
+    })
+
+    it('editar el Valor Unitario a 2.5 envía valor_unitario: 2.5 y NO stock_actual', async () => {
+      const user = await abrirModificar()
+
+      const valor = screen.getByLabelText('Valor Unitario (MXN)')
+      await user.clear(valor)
+      await user.type(valor, '2.5')
+      await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+      await waitFor(() => {
+        expect(updateFibraMaterial).toHaveBeenCalledTimes(1)
+      })
+      const [id, payload] = (updateFibraMaterial as ReturnType<typeof vi.fn>)
+        .mock.calls[0]
+      expect(id).toBe(1)
+      expect(payload.valor_unitario).toBe(2.5)
+      expect(payload).not.toHaveProperty('stock_actual')
+    })
+
+    it('no tocar el Valor Unitario NO lo incluye en el payload', async () => {
+      const user = await abrirModificar()
+
+      await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+      await waitFor(() => {
+        expect(updateFibraMaterial).toHaveBeenCalledTimes(1)
+      })
+      const [, payload] = (updateFibraMaterial as ReturnType<typeof vi.fn>).mock
+        .calls[0]
+      expect(payload).not.toHaveProperty('valor_unitario')
+      expect(payload).not.toHaveProperty('stock_actual')
+    })
+
+    it('un Valor Unitario con 4 decimales (1.2345) bloquea el envío con mensaje', async () => {
+      const user = await abrirModificar()
+
+      const valor = screen.getByLabelText('Valor Unitario (MXN)')
+      await user.clear(valor)
+      await user.type(valor, '1.2345')
+      await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+      expect(updateFibraMaterial).not.toHaveBeenCalled()
+      expect(valor).toHaveAttribute('aria-invalid', 'true')
+      expect(
+        document.getElementById('fibra-valor-unitario-ayuda'),
+      ).toHaveTextContent(/3 decimales/)
+    })
+
+    it('editar el stock a 7.25 envía stock_actual: 7.25', async () => {
+      const user = await abrirModificar()
+
+      const stock = screen.getByLabelText('Stock Actual')
+      await user.clear(stock)
+      await user.type(stock, '7.25')
+      await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+      await waitFor(() => {
+        expect(updateFibraMaterial).toHaveBeenCalledTimes(1)
+      })
+      const [, payload] = (updateFibraMaterial as ReturnType<typeof vi.fn>).mock
+        .calls[0]
+      expect(payload.stock_actual).toBe(7.25)
+      expect(payload).not.toHaveProperty('valor_unitario')
+    })
   })
 })

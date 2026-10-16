@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { configLocalSchema } from '../schemas/configLocal'
+import MonedaMxn from './MonedaMxn'
 import type {
   Categoria,
   EquipoConfigLocalPayload,
@@ -117,6 +118,15 @@ export default function ConfigLocalForm({
           <p className="text-xs text-slate-500">Stock Actual</p>
           <p className="text-sm font-medium text-slate-700">
             {material.stock_actual.toLocaleString('es-MX')} {material.u_m ?? ''}
+          </p>
+        </div>
+        {/* RF-3 (Option-driven): en el Inventario por Unidad el Valor Unitario
+            es SOLO LECTURA — pertenece al catálogo (se edita desde Inventario
+            General / Inventario FO, C-2). */}
+        <div>
+          <p className="text-xs text-slate-500">Valor Unitario</p>
+          <p className="text-sm font-medium text-slate-700">
+            <MonedaMxn valor={material.valor_unitario} />
           </p>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import axios from 'axios'
+import { mensajeErrorApi as errorMessage } from '../utils/errorMensaje'
 import { useSeguimientos } from '../hooks/useSeguimientos'
 import { useEquipoInventario } from '../hooks/useEquipoInventario'
 import { useCrearSeguimiento } from '../hooks/useCrearSeguimiento'
@@ -26,18 +26,6 @@ import type { CerrarSeguimientoPayload } from '../types'
 // registró el acta en la misma transacción). Ofrece ir a Reportes > Consumo
 // pre-filtrado por esta unidad (si hay navegación disponible).
 // ============================================================================
-
-function errorMessage(error: unknown): string {
-  if (axios.isAxiosError(error)) {
-    const detail = error.response?.data as
-      | { error?: { message?: string } }
-      | undefined
-    if (detail?.error?.message) {
-      return detail.error.message
-    }
-  }
-  return 'Ocurrió un error'
-}
 
 export default function SeguimientoPanel({
   equipoId,

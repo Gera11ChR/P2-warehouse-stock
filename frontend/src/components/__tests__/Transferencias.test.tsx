@@ -33,14 +33,8 @@ vi.mock('../../hooks/useSeccionesTransferibles', () => ({
       },
       {
         almacen_id: 2,
-        nombre: 'Fibra Optica - Paquete',
-        tipo: 'FO_PAQUETE',
-        transferible: true,
-      },
-      {
-        almacen_id: 3,
-        nombre: 'Fibra Optica - En Uso',
-        tipo: 'FO_EN_USO',
+        nombre: 'Inventario FO',
+        tipo: 'FO',
         transferible: true,
       },
     ],
@@ -62,18 +56,21 @@ vi.mock('../../services/equipos', () => ({
 
 vi.mock('../../services/inventory', () => ({
   stockSeccion: vi.fn().mockResolvedValue([]),
+  getResumenGeneral: vi
+    .fn()
+    .mockResolvedValue({ valor_total: 0, moneda: 'MXN' }),
 }))
 
 vi.mock('../../services/fibra', () => ({
   listFibraStock: vi.fn().mockResolvedValue([
     {
-      modulo: 'PAQUETE',
       material_id: 1,
       codigo: 'FO-1',
       descripcion: 'Cable FO',
       u_m: 'PZ',
       stock_minimo: null,
       stock_actual: 10,
+      valor_unitario: 12.5,
       alerta_stock: false,
     },
   ]),
@@ -99,18 +96,18 @@ function renderConQueryClient() {
   return queryClient
 }
 
-describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
+describe('Transferencias — Inventario FO único (REQ-TRF-001/002)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     ;(listFibraStock as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
-        modulo: 'PAQUETE',
-        material_id: 1,
+          material_id: 1,
         codigo: 'FO-1',
         descripcion: 'Cable FO',
         u_m: 'PZ',
         stock_minimo: null,
         stock_actual: 10,
+        valor_unitario: 12.5,
         alerta_stock: false,
       },
     ])
@@ -132,28 +129,30 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
     )
   })
 
-  it('direcciona la consulta de inventario de origen a /fibra/{modulo} al elegir una raíz FO', async () => {
+  it('direcciona la consulta de inventario de origen a /fibra (sin módulo) al elegir el Inventario FO', async () => {
     const user = userEvent.setup()
     renderConQueryClient()
 
     const combos = await screen.findAllByRole('combobox')
-    await user.selectOptions(combos[0], '2') // Sección Origen → FO_PAQUETE
+    await user.selectOptions(combos[0], '2') // Sección Origen → Inventario FO
 
     await waitFor(() => {
-      expect(listFibraStock).toHaveBeenCalledWith('PAQUETE')
+      expect(listFibraStock).toHaveBeenCalledTimes(1)
     })
+    expect(listFibraStock).toHaveBeenCalledWith()
     expect(stockSeccion).not.toHaveBeenCalled()
 
     // La fila FO llega al listado de materiales disponibles
     expect(await screen.findByText('Cable FO')).toBeInTheDocument()
   })
 
-  it('invalida la vista FO tras procesar un TEAMS desde FO', async () => {
+  it("Inventario FO invalida ['fibra'] tras procesar un TEAMS desde el Inventario FO", async () => {
     const user = userEvent.setup()
-    renderConQueryClient()
+    const queryClient = renderConQueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
     const combos = await screen.findAllByRole('combobox')
-    await user.selectOptions(combos[0], '2') // Origen FO_PAQUETE
+    await user.selectOptions(combos[0], '2') // Origen Inventario FO
     await user.selectOptions(combos[1], '5') // Equipo destino
 
     const agregar = await screen.findByRole('button', { name: /Agregar/ })
@@ -165,15 +164,19 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Confirmar Transferencia' }))
 
-    // procesar → invalidarInventarios → refetch de ['fibra', 'PAQUETE']
+    // procesar → invalidarTrasConfirmarMovimiento → refetch de ['fibra']
     await waitFor(() => {
       expect(listFibraStock).toHaveBeenCalledTimes(2)
     })
+    expect(invalidateSpy.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual([
+      'fibra',
+    ])
+    expect(listFibraStock).toHaveBeenLastCalledWith()
   })
 
   async function confirmarTeams(user: ReturnType<typeof userEvent.setup>) {
     const combos = await screen.findAllByRole('combobox')
-    await user.selectOptions(combos[0], '2') // Origen FO_PAQUETE
+    await user.selectOptions(combos[0], '2') // Origen Inventario FO
     await user.selectOptions(combos[1], '5') // Equipo destino
     await user.click(await screen.findByRole('button', { name: /Agregar/ }))
     await user.type(
@@ -274,6 +277,8 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
         ['stock'],
         ['fibra'],
         ['equipo'],
+        ['auditoria'],
+        ['inventario', 'resumen-general'],
         ['reportes', 'actas', 'entrega'],
       ]),
     )
@@ -357,7 +362,7 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
     renderConQueryClient()
 
     const combos = await screen.findAllByRole('combobox')
-    await user.selectOptions(combos[0], '2') // Origen FO_PAQUETE
+    await user.selectOptions(combos[0], '2') // Origen Inventario FO
     await user.selectOptions(combos[1], '5') // Equipo destino
     await user.click(await screen.findByRole('button', { name: /Agregar/ }))
 
@@ -381,6 +386,7 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
         u_m: 'PZ',
         stock_minimo: null,
         stock_actual: 3,
+        valor_unitario: 12.5,
         alerta_stock: false,
         ultimo_movimiento_id: null,
       },
@@ -436,5 +442,151 @@ describe('Transferencias — origen FO (REQ-TRF-001/002)', () => {
     await waitFor(() =>
       expect(cancelarMovimiento).toHaveBeenCalledWith(9, null),
     )
+  })
+
+  it('RF-9: un movimiento histórico con origen_almacen_id fuera de las secciones transferibles se rotula «Inventario FO»', async () => {
+    ;(listMovimientos as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 31,
+        tipo_movimiento: 'TEAMS',
+        estado: 'CONFIRMADO',
+        usuario: 'demo-operador',
+        origen_almacen_id: 99, // FO_PAQUETE histórico: no figura en transferibles
+        destino_almacen_id: null,
+        origen_equipo_id: null,
+        destino_equipo_id: 5,
+        observaciones: null,
+        detalle: [{ material_id: 1, cantidad: 1 }],
+      },
+    ])
+    renderConQueryClient()
+
+    const fila = (await screen.findByText('31')).closest('tr') as HTMLElement
+    expect(fila).toHaveTextContent('Inventario FO → Equipo QA')
+    expect(fila).not.toHaveTextContent('Sección 99')
+  })
+
+  it('RF-9/RF-10: el selector de Sección Origen ofrece solo «Inventario General» e «Inventario FO» (sin «Paquete»/«En Uso»)', async () => {
+    renderConQueryClient()
+
+    const combos = await screen.findAllByRole('combobox')
+    const opciones = Array.from(combos[0].querySelectorAll('option')).map(
+      (o) => o.textContent?.trim(),
+    )
+    expect(opciones.filter((t) => t === 'Inventario FO')).toHaveLength(1)
+    expect(opciones).toContain('Inventario General')
+    for (const texto of opciones) {
+      expect(texto).not.toMatch(/paquete|en uso/i)
+    }
+    // Ningún selector de la pantalla de TRANSF/Devolución los ofrece.
+    for (const combo of combos) {
+      for (const o of Array.from(combo.querySelectorAll('option'))) {
+        expect(o.textContent).not.toMatch(/paquete|en uso/i)
+      }
+    }
+  })
+
+  it('RF-4/RF-5: tras confirmar una TRANSF se invalida el Valor Total [\'inventario\', \'resumen-general\']', async () => {
+    const user = userEvent.setup()
+    ;(crearBorrador as ReturnType<typeof vi.fn>).mockResolvedValue(borradorTeams)
+    const queryClient = renderConQueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    await confirmarTeams(user)
+
+    await waitFor(() =>
+      expect(invalidateSpy.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual([
+        'inventario',
+        'resumen-general',
+      ]),
+    )
+  })
+
+  it('RF-4/RF-5: cancelar un movimiento invalida el Valor Total y ["fibra"]', async () => {
+    const user = userEvent.setup()
+    ;(listMovimientos as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 9,
+        tipo_movimiento: 'TEAMS',
+        estado: 'CONFIRMADO',
+        usuario: 'demo-operador',
+        origen_almacen_id: 2,
+        destino_almacen_id: null,
+        origen_equipo_id: null,
+        destino_equipo_id: 5,
+        observaciones: null,
+        detalle: [{ material_id: 1, cantidad: 1 }],
+      },
+    ])
+    ;(cancelarMovimiento as ReturnType<typeof vi.fn>).mockResolvedValue({
+      movimiento_id: 9,
+      estado: 'CANCELADO',
+    })
+    const queryClient = renderConQueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    await user.click(await screen.findByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Confirmar Cancelación' }))
+
+    await waitFor(() => expect(cancelarMovimiento).toHaveBeenCalled())
+    await waitFor(() => {
+      const claves = invalidateSpy.mock.calls.map((c) => c[0]?.queryKey)
+      expect(claves).toEqual(
+        expect.arrayContaining([
+          ['movimientos'],
+          ['auditoria'],
+          ['secciones'],
+          ['inventario', 'resumen-general'],
+          ['stock', 2],
+          ['fibra'],
+          ['equipo', 5],
+        ]),
+      )
+    })
+  })
+
+  it('RF-6: el carrito acepta una cantidad decimal (2.5) y la envía como cantidad: 2.5 en el borrador', async () => {
+    const user = userEvent.setup()
+    renderConQueryClient()
+
+    const combos = await screen.findAllByRole('combobox')
+    await user.selectOptions(combos[0], '2') // Origen Inventario FO
+    await user.selectOptions(combos[1], '5') // Equipo destino
+    await user.click(await screen.findByRole('button', { name: /Agregar/ }))
+
+    const input = screen.getByLabelText('Cantidad de Cable FO')
+    expect(input).toHaveAttribute('type', 'number')
+    expect(input).toHaveAttribute('step', '0.001')
+    expect(input).toHaveAttribute('min', '0.001')
+    await user.clear(input)
+    await user.type(input, '2.5')
+    expect(input).toHaveValue(2.5)
+
+    const confirmar = screen.getByRole('button', { name: 'Confirmar Transferencia' })
+    expect(confirmar).toBeEnabled()
+    await user.click(confirmar)
+
+    await waitFor(() => expect(crearBorrador).toHaveBeenCalledTimes(1))
+    const payload = (crearBorrador as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(payload.detalle).toEqual([
+      { material_id: 1, cantidad: 2.5, origen_almacen_id: 2 },
+    ])
+  })
+
+  it('RF-6: una cantidad con más de 3 decimales deshabilita Confirmar', async () => {
+    const user = userEvent.setup()
+    renderConQueryClient()
+
+    const combos = await screen.findAllByRole('combobox')
+    await user.selectOptions(combos[0], '2')
+    await user.selectOptions(combos[1], '5')
+    await user.click(await screen.findByRole('button', { name: /Agregar/ }))
+
+    const input = screen.getByLabelText('Cantidad de Cable FO')
+    await user.clear(input)
+    await user.type(input, '1.2345')
+    expect(
+      screen.getByRole('button', { name: 'Confirmar Transferencia' }),
+    ).toBeDisabled()
   })
 })

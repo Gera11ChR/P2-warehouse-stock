@@ -1,6 +1,7 @@
 export const MATERIAL_FIELD_ORDER = [
   'descripcion',
   'stock_actual',
+  'valor_unitario',
   'stock_minimo',
   'alerta_stock',
   'u_m',
@@ -12,6 +13,7 @@ export type MaterialFieldKey = (typeof MATERIAL_FIELD_ORDER)[number]
 export const MATERIAL_FIELD_LABELS: Record<MaterialFieldKey, string> = {
   descripcion: 'Descripción',
   stock_actual: 'Stock Actual',
+  valor_unitario: 'Valor Unitario',
   stock_minimo: 'Stock Mínimo',
   alerta_stock: 'Alerta Stock',
   u_m: 'U.M.',

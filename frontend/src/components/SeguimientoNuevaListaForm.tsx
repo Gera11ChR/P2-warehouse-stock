@@ -165,7 +165,9 @@ export default function SeguimientoNuevaListaForm({
         } else if (issue.path[2] === 'material_id') {
           mensajes.push('Seleccione un material válido para cada línea.')
         } else if (issue.path[2] === 'cantidad_tomada') {
-          mensajes.push('La cantidad debe ser un entero positivo en cada línea.')
+          mensajes.push(
+            'La cantidad debe ser un número mayor que 0, con máximo 3 decimales, en cada línea.',
+          )
         } else {
           mensajes.push(issue.message)
         }
@@ -318,9 +320,10 @@ export default function SeguimientoNuevaListaForm({
                   <input
                     id={`seguimiento-cantidad-${index}`}
                     type="number"
-                    min={1}
+                    min={0.001}
                     max={stockDe(linea.materialId)}
-                    step={1}
+                    step={0.001}
+                    inputMode="decimal"
                     value={linea.cantidad}
                     onChange={(event) =>
                       handleCambiarLinea(index, { cantidad: event.target.value })

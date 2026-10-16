@@ -7,6 +7,14 @@ import type {
   MaterialUpdatePayload,
 } from '../services/catalog'
 import { MATERIAL_FIELD_LABELS } from '../utils/materialFields'
+import {
+  formatearCantidad,
+  mensajeCantidadInvalida,
+  validarCantidad,
+} from '../utils/cantidad'
+import { validarValorUnitario } from '../schemas/valorUnitario'
+import { etiquetaSeccion } from '../utils/seccionLabel'
+import CampoCantidad from './CampoCantidad'
 
 interface MaterialFormProps {
   mode: 'create' | 'edit'
@@ -27,6 +35,15 @@ interface MaterialFormProps {
    * vacío se conserva el fallback `UNIDADES` (constante del dominio).
    */
   ums?: Ums[]
+  /**
+   * RBAC VISUAL (RF-8; no es seguridad): `false` deshabilita el campo
+   * Valor Unitario y jamás lo envía. La autoridad es el backend: la sola
+   * presencia de `valor_unitario` en el PATCH exige rol administrador (403).
+   * Por omisión el campo es editable y solo se envía si el usuario lo
+   * cambió, de modo que un actor sin privilegios que edita otros campos no
+   * dispara el 403.
+   */
+  esAdmin?: boolean
   onSubmit: (
     payload: MaterialCreatePayload | MaterialUpdatePayload,
   ) => void | Promise<void>
@@ -41,6 +58,7 @@ export default function MaterialForm({
   categorias,
   seccionesDestino = [],
   ums = [],
+  esAdmin = true,
   onSubmit,
   onCancel,
 }: MaterialFormProps) {
@@ -72,19 +90,56 @@ export default function MaterialForm({
     String(stockActual),
   )
   const [motivo, setMotivo] = useState('')
-  const [stockError, setStockError] = useState<string | null>(null)
+  // Valor Unitario (RF-3, solo edición; el alta nace en 1.000 — C-3). Se
+  // envía SOLO si el administrador lo cambió (presencia = 403 para no admin).
+  const [valorUnitario, setValorUnitario] = useState(
+    initial?.valor_unitario != null ? String(initial.valor_unitario) : '',
+  )
+  const [intentado, setIntentado] = useState(false)
+
+  // Validación PRELIMINAR (el backend decide). Decimales hasta 3 (RF-6).
+  const stockValidacion = validarCantidad(stockActualEditado, {
+    permitirCero: true,
+  })
+  const stockError: string | null =
+    mode === 'edit' && stockActualEditado !== '' && !stockValidacion.ok
+      ? mensajeCantidadInvalida(stockValidacion.motivo)
+      : null
 
   // Proyección UX (simulación visual previa al commit). El diferencial NO se
   // envía: el backend recalcula el delta y audita vía fn_ajustar_stock_general.
-  const stockEditadoNum =
-    stockActualEditado === '' ? null : Number(stockActualEditado)
+  const stockEditadoNum = stockValidacion.ok ? stockValidacion.cantidad : null
   const stockModificado =
+    mode === 'edit' && stockEditadoNum !== null && stockEditadoNum !== stockActual
+  const diferencial =
+    stockModificado && stockEditadoNum !== null
+      ? stockEditadoNum - stockActual
+      : null
+
+  const valorValidacion = validarValorUnitario(valorUnitario)
+  const valorModificado =
     mode === 'edit' &&
-    stockEditadoNum !== null &&
-    Number.isFinite(stockEditadoNum) &&
-    stockEditadoNum >= 0 &&
-    stockEditadoNum !== stockActual
-  const diferencial = stockModificado ? stockEditadoNum - stockActual : null
+    esAdmin &&
+    valorValidacion.ok &&
+    initial?.valor_unitario != null &&
+    valorValidacion.valor !== initial.valor_unitario
+  const valorError: string | null =
+    mode === 'edit' && esAdmin && !valorValidacion.ok
+      ? valorUnitario === ''
+        ? intentado
+          ? 'Ingresa el Valor Unitario (0 o mayor).'
+          : null
+        : valorValidacion.mensaje
+      : null
+
+  // Stock Inicial (alta): decimal ≥ 0; vacío = sin carga inicial.
+  const stockInicialValidacion = validarCantidad(stockInicial, {
+    permitirCero: true,
+  })
+  const stockInicialError: string | null =
+    mode === 'create' && stockInicial !== '' && !stockInicialValidacion.ok
+      ? mensajeCantidadInvalida(stockInicialValidacion.motivo)
+      : null
 
   // U.M.: catálogo activo ordenado por nombre; fallback a la constante del
   // dominio si la página no provee el catálogo de unidades (ums = []).
@@ -96,19 +151,12 @@ export default function MaterialForm({
     return activas.length > 0 ? activas : [...UNIDADES]
   })()
 
-  // Etiqueta operativa de una sección destino de Carga Inicial
-  // (REQ-CARGA-001): las raíces FO se muestran con nombre propio;
-  // GENERAL conserva el nombre del almacén.
-  const labelSeccionDestino = (s: SeccionTransferible): string => {
-    if (s.tipo === 'FO_PAQUETE') return 'Fibra Óptica - Paquete'
-    if (s.tipo === 'FO_EN_USO') return 'Fibra Óptica - En Uso'
-    return s.nombre
-  }
-
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
+    setIntentado(true)
 
     if (mode === 'create') {
+      if (stockInicialError !== null) return
       const payload: MaterialCreatePayload = {
         descripcion: descripcion || '',
         codigo: codigo || null,
@@ -117,7 +165,9 @@ export default function MaterialForm({
         u_m: u_m || null,
         stock_minimo: stockMinimo === '' ? null : Number(stockMinimo),
         stock_inicial:
-          stockInicial === '' ? null : Number(stockInicial),
+          stockInicial === '' || !stockInicialValidacion.ok
+            ? null
+            : stockInicialValidacion.cantidad,
         seccion_id: stockInicial === '' ? null : seccionId,
       }
       onSubmit(payload)
@@ -125,6 +175,11 @@ export default function MaterialForm({
     }
 
     // ── Edición (Inventario General) ──────────────────────────────────────
+    // Un valor inválido bloquea el envío con el error en línea (el backend
+    // vuelve a validar: 422 por escala/rango; sin redondeo silencioso).
+    if (stockError !== null) return
+    if (esAdmin && !valorValidacion.ok) return
+
     const payload: MaterialUpdatePayload = {
       descripcion: descripcion || null,
       codigo: codigo || null,
@@ -134,25 +189,19 @@ export default function MaterialForm({
       stock_minimo: stockMinimo === '' ? null : Number(stockMinimo),
     }
 
-    const stockEditado =
-      stockActualEditado === '' ? null : Number(stockActualEditado)
-
     // stock_actual SOLO se incluye si el usuario modificó el valor registrado.
-    if (
-      stockEditado !== null &&
-      Number.isFinite(stockEditado) &&
-      stockEditado !== stockActual
-    ) {
-      if (stockEditado < 0) {
-        setStockError('El Stock Actual no puede ser negativo.')
-        return
-      }
+    if (stockModificado && stockEditadoNum !== null) {
       // Contrato REQ-API-002/003: el backend calcula el delta y lo enruta a
       // fn_ajustar_stock_general → fn_ajustar_stock_almacen. El frontend NO
       // envía el diferencial: solo stock_actual + motivo. Ergonomía
       // REQ-ERG-003: el motivo es OPCIONAL — vacío se envía como null.
-      payload.stock_actual = stockEditado
+      payload.stock_actual = stockEditadoNum
       payload.motivo = motivo.trim() || null
+    }
+
+    // RF-8: valor_unitario SOLO si el administrador lo cambió.
+    if (valorModificado && valorValidacion.ok) {
+      payload.valor_unitario = valorValidacion.valor
     }
 
     onSubmit(payload)
@@ -175,19 +224,13 @@ export default function MaterialForm({
 
       {mode === 'edit' ? (
         <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            {MATERIAL_FIELD_LABELS.stock_actual}
-          </label>
-          <input
-            type="number"
-            min={0}
-            step={1}
+          <CampoCantidad
+            id="material-stock-actual"
+            label={MATERIAL_FIELD_LABELS.stock_actual}
             value={stockActualEditado}
-            onChange={(event) => {
-              setStockActualEditado(event.target.value)
-              setStockError(null)
-            }}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            onChange={setStockActualEditado}
+            error={stockError}
+            ayuda="Hasta 3 decimales (por ejemplo 7.250)."
           />
           {!stockModificado && (
             <p className="mt-1 text-xs text-slate-500">
@@ -199,15 +242,12 @@ export default function MaterialForm({
           {stockModificado && diferencial !== null && (
             <p className="mt-1 text-xs text-slate-500">
               Proyección visual — Stock actual registrado:{' '}
-              {stockActual.toLocaleString('es-MX')} → Nuevo:{' '}
-              {stockEditadoNum.toLocaleString('es-MX')} (diferencial{' '}
+              {formatearCantidad(stockActual)} → Nuevo:{' '}
+              {formatearCantidad(stockEditadoNum ?? stockActual)} (diferencial{' '}
               {diferencial >= 0 ? '+' : ''}
-              {diferencial.toLocaleString('es-MX')}). El saldo confirmado lo
+              {formatearCantidad(diferencial)}). El saldo confirmado lo
               calcula y audita el backend.
             </p>
-          )}
-          {stockError && (
-            <p className="mt-1 text-xs font-medium text-red-600">{stockError}</p>
           )}
 
           {stockModificado && (
@@ -247,6 +287,24 @@ export default function MaterialForm({
             Solo lectura. El stock se define en la sección «Carga Inicial» al
             guardar.
           </p>
+        </div>
+      )}
+
+      {mode === 'edit' && (
+        <div>
+          <CampoCantidad
+            id="material-valor-unitario"
+            label={`${MATERIAL_FIELD_LABELS.valor_unitario} (MXN)`}
+            value={valorUnitario}
+            onChange={setValorUnitario}
+            error={valorError}
+            ayuda={
+              esAdmin
+                ? 'Decimal mayor o igual a 0, hasta 3 decimales. Cada cambio queda registrado en Auditoría.'
+                : 'Solo un administrador puede modificar el Valor Unitario.'
+            }
+            disabled={!esAdmin}
+          />
         </div>
       )}
 
@@ -376,19 +434,17 @@ export default function MaterialForm({
           </p>
 
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Stock Inicial
-            </label>
-            <input
-              type="number"
-              min={0}
+            <CampoCantidad
+              id="material-stock-inicial"
+              label="Stock Inicial"
               value={stockInicial}
-              onChange={(event) => setStockInicial(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              onChange={setStockInicial}
+              error={stockInicialError}
+              ayuda="Opcional. Hasta 3 decimales (por ejemplo 2.5)."
             />
           </div>
 
-          {stockInicial !== '' && Number(stockInicial) > 0 && (
+          {stockInicialValidacion.ok && stockInicialValidacion.cantidad > 0 && (
             <div>
               <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Sección destino *
@@ -408,7 +464,7 @@ export default function MaterialForm({
                 <option value="">— Seleccione sección —</option>
                 {seccionesDestino.map((s) => (
                   <option key={s.almacen_id} value={s.almacen_id}>
-                    {labelSeccionDestino(s)}
+                    {etiquetaSeccion(s)}
                   </option>
                 ))}
               </select>

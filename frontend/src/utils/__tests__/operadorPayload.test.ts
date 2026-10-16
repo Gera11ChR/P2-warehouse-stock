@@ -8,22 +8,18 @@ import {
 } from '../operadorPayload'
 
 describe('resolverInventario', () => {
-  it('mapea los tres tipos y rechaza otros', () => {
-    expect(resolverInventario('GENERAL')).toEqual({ inventario: 'GENERAL' })
-    expect(resolverInventario('FO_PAQUETE')).toEqual({
-      inventario: 'FO',
-      modulo: 'PAQUETE',
-    })
-    expect(resolverInventario('FO_EN_USO')).toEqual({
-      inventario: 'FO',
-      modulo: 'EN_USO',
-    })
+  it('mapea GENERAL y FO 1:1 y rechaza otros (incl. orígenes FO históricos)', () => {
+    expect(resolverInventario('GENERAL')).toBe('GENERAL')
+    expect(resolverInventario('FO')).toBe('FO')
+    // RF-9: FO_PAQUETE / FO_EN_USO ya no son opciones seleccionables.
+    expect(resolverInventario('FO_PAQUETE')).toBeNull()
+    expect(resolverInventario('FO_EN_USO')).toBeNull()
     expect(resolverInventario('EQUIPO')).toBeNull()
   })
 })
 
 describe('construirPayloadSumar (POST /inventario/sumar-cantidad)', () => {
-  it('GENERAL: sin `modulo`', () => {
+  it('GENERAL: sin campos de módulo (RF-1)', () => {
     const r = construirPayloadSumar({
       inventario: 'GENERAL',
       materialId: 10,
@@ -42,19 +38,17 @@ describe('construirPayloadSumar (POST /inventario/sumar-cantidad)', () => {
     if (r.ok) expect('modulo' in r.payload).toBe(false)
   })
 
-  it.each([
-    ['FO_PAQUETE', 'PAQUETE'],
-    ['FO_EN_USO', 'EN_USO'],
-  ] as const)('%s: destino FO + modulo %s', (tipo, modulo) => {
+  it('FO: destino FO sin campo `modulo` (Inventario FO único, RF-1)', () => {
     const r = construirPayloadSumar({
-      inventario: tipo,
+      inventario: 'FO',
       materialId: 3,
       cantidad: 1,
     })
     expect(r).toEqual({
       ok: true,
-      payload: { destino: 'FO', modulo, material_id: 3, cantidad: 1 },
+      payload: { destino: 'FO', material_id: 3, cantidad: 1 },
     })
+    if (r.ok) expect('modulo' in r.payload).toBe(false)
   })
 
   it('omite la clave si no se informa y la recorta si viene con espacios', () => {
@@ -73,8 +67,8 @@ describe('construirPayloadSumar (POST /inventario/sumar-cantidad)', () => {
     if (con.ok) expect(con.payload.clave_idempotencia).toBe('abc')
   })
 
-  it.each([0, -1, 1.5, 2_147_483_648, Number.NaN])(
-    'rechaza cantidad %s',
+  it.each([0, -1, 1.0005, 1e-4, 1_000_000_000, Number.NaN, Infinity])(
+    'rechaza cantidad %s (≤0, >3 decimales, >999999999.999 o no finita)',
     (cantidad) => {
       const r = construirPayloadSumar({
         inventario: 'GENERAL',
@@ -85,15 +79,14 @@ describe('construirPayloadSumar (POST /inventario/sumar-cantidad)', () => {
     },
   )
 
-  it('acepta el límite INT4', () => {
-    expect(
-      construirPayloadSumar({
-        inventario: 'GENERAL',
-        materialId: 1,
-        cantidad: 2_147_483_647,
-      }).ok,
-    ).toBe(true)
-  })
+  it.each([1.5, 0.1, 2.675, 0.001, 7.25, 999_999_999.999])(
+    'acepta la cantidad decimal %s (hasta 3 decimales; RF-6)',
+    (cantidad) => {
+      expect(
+        construirPayloadSumar({ inventario: 'GENERAL', materialId: 1, cantidad }),
+      ).toMatchObject({ ok: true, payload: { cantidad } })
+    },
+  )
 
   it.each([0, -3, 1.2])('rechaza material_id %s', (materialId) => {
     expect(
@@ -126,11 +119,11 @@ describe('construirPayloadSumar (POST /inventario/sumar-cantidad)', () => {
 })
 
 describe('construirPayloadMover (POST /inventario/mover)', () => {
-  it('GENERAL -> FO Paquete', () => {
+  it('GENERAL -> FO (sin origen_modulo/destino_modulo)', () => {
     expect(
       construirPayloadMover({
         origen: 'GENERAL',
-        destino: 'FO_PAQUETE',
+        destino: 'FO',
         materialId: 7,
         cantidad: 20,
         claveIdempotencia: 'mover-1',
@@ -140,7 +133,6 @@ describe('construirPayloadMover (POST /inventario/mover)', () => {
       payload: {
         origen: 'GENERAL',
         destino: 'FO',
-        destino_modulo: 'PAQUETE',
         material_id: 7,
         cantidad: 20,
         clave_idempotencia: 'mover-1',
@@ -148,77 +140,29 @@ describe('construirPayloadMover (POST /inventario/mover)', () => {
     })
   })
 
-  it('GENERAL -> FO En Uso', () => {
+  it('FO -> GENERAL con cantidad decimal', () => {
     const r = construirPayloadMover({
-      origen: 'GENERAL',
-      destino: 'FO_EN_USO',
-      materialId: 7,
-      cantidad: 2,
-    })
-    expect(r).toEqual({
-      ok: true,
-      payload: {
-        origen: 'GENERAL',
-        destino: 'FO',
-        destino_modulo: 'EN_USO',
-        material_id: 7,
-        cantidad: 2,
-      },
-    })
-  })
-
-  it('FO En Uso -> GENERAL (origen_modulo, sin destino_modulo)', () => {
-    const r = construirPayloadMover({
-      origen: 'FO_EN_USO',
+      origen: 'FO',
       destino: 'GENERAL',
       materialId: 7,
-      cantidad: 3,
+      cantidad: 2.5,
     })
     expect(r).toEqual({
       ok: true,
       payload: {
         origen: 'FO',
-        origen_modulo: 'EN_USO',
         destino: 'GENERAL',
         material_id: 7,
-        cantidad: 3,
+        cantidad: 2.5,
       },
     })
-    if (r.ok) expect('destino_modulo' in r.payload).toBe(false)
+    if (r.ok) {
+      expect('origen_modulo' in r.payload).toBe(false)
+      expect('destino_modulo' in r.payload).toBe(false)
+    }
   })
 
-  it('FO Paquete -> FO En Uso y viceversa (ambos módulos)', () => {
-    expect(
-      construirPayloadMover({
-        origen: 'FO_PAQUETE',
-        destino: 'FO_EN_USO',
-        materialId: 1,
-        cantidad: 4,
-      }),
-    ).toEqual({
-      ok: true,
-      payload: {
-        origen: 'FO',
-        origen_modulo: 'PAQUETE',
-        destino: 'FO',
-        destino_modulo: 'EN_USO',
-        material_id: 1,
-        cantidad: 4,
-      },
-    })
-    const inverso = construirPayloadMover({
-      origen: 'FO_EN_USO',
-      destino: 'FO_PAQUETE',
-      materialId: 1,
-      cantidad: 4,
-    })
-    expect(inverso).toMatchObject({
-      ok: true,
-      payload: { origen_modulo: 'EN_USO', destino_modulo: 'PAQUETE' },
-    })
-  })
-
-  it.each(['GENERAL', 'FO_PAQUETE', 'FO_EN_USO'] as const)(
+  it.each(['GENERAL', 'FO'] as const)(
     'rechaza destino = origen (%s) sin construir payload',
     (tipo) => {
       expect(
@@ -232,10 +176,10 @@ describe('construirPayloadMover (POST /inventario/mover)', () => {
     },
   )
 
-  it('rechaza cantidad fuera de 1..INT4, material inválido y tipos desconocidos', () => {
+  it('rechaza cantidad inválida, material inválido y tipos desconocidos (o históricos)', () => {
     const base = {
       origen: 'GENERAL',
-      destino: 'FO_PAQUETE',
+      destino: 'FO',
       materialId: 1,
       cantidad: 1,
     } as const
@@ -244,7 +188,10 @@ describe('construirPayloadMover (POST /inventario/mover)', () => {
       codigo: 'CANTIDAD_INVALIDA',
     })
     expect(
-      construirPayloadMover({ ...base, cantidad: 2_147_483_648 }),
+      construirPayloadMover({ ...base, cantidad: 1.0005 }),
+    ).toMatchObject({ ok: false, codigo: 'CANTIDAD_INVALIDA' })
+    expect(
+      construirPayloadMover({ ...base, cantidad: 1_000_000_000 }),
     ).toMatchObject({ ok: false, codigo: 'CANTIDAD_INVALIDA' })
     expect(construirPayloadMover({ ...base, materialId: 0 })).toMatchObject({
       ok: false,
@@ -253,11 +200,14 @@ describe('construirPayloadMover (POST /inventario/mover)', () => {
     expect(
       construirPayloadMover({ ...base, destino: 'X' as never }),
     ).toMatchObject({ ok: false, codigo: 'TIPO_INVENTARIO_INVALIDO' })
+    expect(
+      construirPayloadMover({ ...base, destino: 'FO_PAQUETE' as never }),
+    ).toMatchObject({ ok: false, codigo: 'TIPO_INVENTARIO_INVALIDO' })
   })
 
-  it('el payload no incluye campos fuera del contrato', () => {
+  it('el payload no incluye campos fuera del contrato (RF-1: nunca módulo)', () => {
     const r = construirPayloadMover({
-      origen: 'FO_PAQUETE',
+      origen: 'FO',
       destino: 'GENERAL',
       materialId: 1,
       cantidad: 1,
@@ -266,9 +216,7 @@ describe('construirPayloadMover (POST /inventario/mover)', () => {
     if (!r.ok) throw new Error('debía ser válido')
     const permitidos = [
       'origen',
-      'origen_modulo',
       'destino',
-      'destino_modulo',
       'material_id',
       'cantidad',
       'clave_idempotencia',

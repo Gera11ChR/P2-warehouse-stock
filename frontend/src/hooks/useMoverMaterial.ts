@@ -9,7 +9,7 @@ import { invalidarTrasMover } from './queryKeys'
  * Los stocks resultantes son `stock_origen` / `stock_destino` de la RESPUESTA
  * (fuente de verdad). Tras CADA intento (éxito o rechazo: el stock pudo cambiar o la pantalla
  * estar desactualizada) se invalidan los stocks de AMBOS extremos
- * (General → ['stock'], FO → ['fibra', módulo]) y auditoría.
+ * (General → ['stock'], FO → ['fibra']), Valor Total (['inventario', 'resumen-general']) y auditoría.
  * Errores: error-agnostic; se traducen con `traducirErrorOperador`.
  */
 export function useMoverMaterial() {
