@@ -17,7 +17,9 @@ domain_rules:
       - "fn_procesar_movimiento"
       - "fn_cancelar_movimiento"
       - "fn_cargar_stock_inicial"
+      - "fn_cargar_stock_inicial_fibra"
       - "fn_ajustar_stock_almacen"
+      - "fn_ajustar_stock_general"
       - "fn_ajustar_stock_fibra"
       - "fn_eliminar_inventario_fibra"
       - "fn_crear_seguimiento"
@@ -25,7 +27,9 @@ domain_rules:
       - "fn_sumar_cantidad"
       - "fn_mover_material"
       - "fn_agregar_todo_seguimiento"
-    prohibition: "Cálculos matemáticos de stock prohibidos en Python/FastAPI."
+    read_only_calculation_functions:
+      - "fn_valor_total_inventario"
+    prohibition: "Cálculos matemáticos de stock Y de valor (Valor Total = Σ Stock Actual × Valor Unitario) prohibidos en Python/FastAPI y en React: el cálculo vive en PostgreSQL (fn_valor_total_inventario, solo lectura, aritmética NUMERIC exacta con redondeo a 3 decimales al final)."
   nomenclature_glossary:
     required: true
     description: "Glosario para evitar falsos positivos de drift tras el renombre DESPLIEGUE -> CONSUMO (renombre físico completo, sin alias legacy)."
@@ -33,6 +37,10 @@ domain_rules:
       CONSUMO: "Dominio funcional visible en UI y reportes (antes DESPLIEGUE)."
       seguimiento: "Entidad de API/BD (tablas seguimientos/seguimiento_items; antes despliegue). 'Crear Despliegue' pasa a 'Crear Seguimiento'."
       entrega: "Acta generada por la confirmación del flujo TEAMS (Acta de Entrega)."
+      "Inventario FO": "Locación ÚNICA de fibra óptica (antes FO Paquete / FO En Uso): inventario_fibra con una fila por material, sin módulos; sección de ruteo secciones.tipo='FO'."
+      "Valor Unitario": "Atributo de catalogo_materiales (MXN, NUMERIC(12,3), default 1.000) compartido por Inventario General, Inventario FO e Inventario por Unidad."
+      "Valor Total": "Σ Stock Actual × Valor Unitario de General activo + Inventario FO; GET /inventario/resumen-general."
+      historical_technical_values: "FO_PAQUETE, FO_EN_USO, TEAMS y DEVOL son valores técnicos HISTÓRICOS exentos en el ledger y en secciones.tipo (RF-9): jamás se muestran como nombre de inventario ni se renombran."
   audit_ledger_immutability:
     required: true
     description: "auditoria_eventos es append-only. El renombre no actualiza filas históricas: los eventos DESPLIEGUE_CREADO/DESPLIEGUE_CERRADO históricos conservan su valor legacy; los nuevos eventos usan SEGUIMIENTO_CREADO/SEGUIMIENTO_CERRADO."
@@ -44,9 +52,23 @@ domain_rules:
       - "MOVIMIENTO_INVENTARIO"
       - "ACTA_ENTREGA_GENERADA"
       - "ACTA_CONSUMO_GENERADA"
+      - "FO_UNIFICADO"
+      - "MATERIAL_MODIFICADO"
+    attribution: "Los eventos emitidos por triggers de catálogo toman el actor de `app.actor` (COALESCE(NULLIF(current_setting('app.actor', true), ''), CURRENT_USER)); el servicio DEBE fijar `app.actor` ANTES de mutar el ORM (el autoflush de session.execute emitiría el UPDATE antes del set_config). Eventos históricos con usuario = rol de BD no se reescriben (append-only)."
+    type_widening_precedent: "0027 ensancha auditoria_eventos.cantidad a NUMERIC(12,3) con USING cast sin modificar valores ni disparar triggers de fila (no es una mutación del ledger)."
+    historical_events: "FO_UNIFICADO (fusión de Paquete+En Uso, un evento por material con cantidades anterior y resultante; resultado 'OK' por mandato del plan) y MATERIAL_MODIFICADO (ahora también audita valor_unitario anterior/nuevo). Los eventos previos con `modulo` PAQUETE/EN_USO se conservan íntegros y se presentan como «Inventario FO» solo al mostrarse."
+  fo_unificado:
+    required: true
+    description: "El Inventario FO es único: inventario_fibra con PK material_id (sin `modulo`); toda operación FO (carga inicial, ajuste, PATCH/DELETE de material, +Cantidad, Mover, TRANSF) se enruta por la sección tipo 'FO'. Enviar `modulo`/`origen_modulo`/`destino_modulo` es HTTP 422 (extra=forbid). Las secciones FO_PAQUETE/FO_EN_USO se conservan como valores HISTÓRICOS (movimientos previos, RF-9): no se emiten en /secciones/transferibles ni son seleccionables; la API conserva su aceptación en borradores/movimientos históricos (E8) porque enrutan al mismo inventario_fibra. Seguimiento: cerrar con 422 la creación de borradores nuevos con origen legacy cuando no existan borradores legacy. Continuidad de permisos (0027 Paso 4b): los scopes de FO_PAQUETE/FO_EN_USO se copian a la sección FO; el downgrade retira los copiados."
+  valor_unitario:
+    required: true
+    description: "valor_unitario es un atributo AUDITADO de catalogo_materiales (MXN, NUMERIC(12,3) >= 0, default 1.000). Solo un administrador puede enviarlo (403 por PRESENCIA del campo en PATCH /catalogo/{id} y PATCH /fibra/materiales/{id}, evaluado antes del passthrough); `null` explícito es no-op sin evento ni 500; MaterialCreate no lo acepta (nace en 1.000). Cada cambio emite un evento MATERIAL_MODIFICADO inmutable con valores anterior y nuevo. Valor Total global (General activo + Inventario FO, no reacciona al filtro de sección); sin multimoneda, histórico de precios ni costeo."
+  decimal_quantities:
+    required: true
+    description: "Existencias, cantidades de movimiento, cantidades tomadas/consumidas, parámetros de operaciones transaccionales y auditoria_eventos.cantidad son NUMERIC(12,3) (hasta 3 decimales y 12 dígitos; máximo 999999999.999). Entradas con >3 decimales, NaN/Infinity o notación científica sobre-precisa son 422 sin redondeo silencioso; desbordamiento SQLSTATE 22003 es 400 canónico; nunca 500. Salidas como números JSON. Identificadores y stock_minimo permanecen enteros. Las funciones PL/pgSQL validan la escala como defensa en profundidad ('La cantidad admite máximo 3 decimales.')."
   quick_operator_semantics:
     required: true
-    description: "+Cantidad (SUMA_CANTIDAD) es una vía de mutación DISTINTA de los ajustes (AJUSTE_INVENTARIO / AJUSTE_INVENTARIO_FO, que fijan un nuevo stock con motivo obligatorio): suma una cantidad directa al stock existente. Mover (MOVIMIENTO_INVENTARIO) transfiere cantidad parcial entre Inventario General y módulos FO bajo el modelo disperso: la fila destino se crea solo con stock > 0 y la fila origen que llega a 0 se conserva."
+    description: "+Cantidad (SUMA_CANTIDAD) es una vía de mutación DISTINTA de los ajustes (AJUSTE_INVENTARIO / AJUSTE_INVENTARIO_FO, que fijan un nuevo stock con motivo obligatorio): suma una cantidad directa al stock existente. Mover (MOVIMIENTO_INVENTARIO) transfiere cantidad parcial entre Inventario General e Inventario FO (único, sin módulos) bajo el modelo disperso: la fila destino se crea solo con stock > 0 y la fila origen que llega a 0 se conserva."
   idempotency:
     required: true
     description: "fn_sumar_cantidad, fn_mover_material y fn_agregar_todo_seguimiento aceptan clave_idempotencia (tabla operaciones_idempotencia, ligada al ACTOR desde la migración 0021). Un reenvío del MISMO actor con la misma clave responde 200 con el resultado original (reenvio_idempotente=true) sin duplicar efectos sobre stock ni auditoría; la clave de OTRO actor se rechaza con 409 sin divulgar el resultado original. La clave de idempotencia nunca se persiste en auditoria_eventos."
@@ -55,7 +77,7 @@ domain_rules:
     description: "Ergonomía 2026-10-04: el campo de justificación (motivo/observaciones) es OPCIONAL en la modificación de materiales, los ajustes administrativos de stock (POST /ajustes/stock-almacen y POST /fibra/ajuste), los borradores TEAMS/DEVOL y la cancelación de movimientos. Se acepta null, cadena vacía o campo omitido; el ledger inmutable sigue auditando cada mutación con el motivo tal como llega (NULL permitido). Excepción: la eliminación FO con stock > 0 conserva motivo obligatorio (REQ-DEL-004)."
   transferencias_multi_origen:
     required: true
-    description: "2026-10-12: un borrador TEAMS (TRANSF) puede combinar líneas de Inventario General y de Fibra Óptica. Cada línea del detalle lleva su `origen_almacen_id` (opcional: si se omite hereda el de la cabecera, payload legado válido). movimientos_cabecera.origen_almacen_id es el origen común o NULL si el carrito es mixto. fn_procesar_movimiento y fn_cancelar_movimiento validan y mueven el stock POR LÍNEA contra su origen (inventario_almacen o inventario_fibra por módulo) en una sola transacción, con bloqueos FOR UPDATE en orden (origen, material). Se emite UNA sola acta de entrega (folio único) con el origen de cada línea. DEVOL no admite origen por línea. El actor no administrador requiere scope sobre TODOS los orígenes (403 si falta alguno)."
+    description: "2026-10-12: un borrador TEAMS (TRANSF) puede combinar líneas de Inventario General y de Inventario FO. Cada línea del detalle lleva su `origen_almacen_id` (opcional: si se omite hereda el de la cabecera, payload legado válido). movimientos_cabecera.origen_almacen_id es el origen común o NULL si el carrito es mixto. fn_procesar_movimiento y fn_cancelar_movimiento validan y mueven el stock POR LÍNEA contra su origen (inventario_almacen o inventario_fibra, único por material) en una sola transacción, con bloqueos FOR UPDATE en orden (origen, material). Se emite UNA sola acta de entrega (folio único) con el origen de cada línea. DEVOL no admite origen por línea. El actor no administrador requiere scope sobre TODOS los orígenes (403 si falta alguno)."
   official_reports:
     required: true
     description: "Los reportes oficiales son XLSX inyectados sobre las plantillas corporativas (nunca generados desde cero) conservando estilo, celdas combinadas y logo. El CSV legacy queda descartado. Las actas son snapshots jsonb (actas_reportes) escritos por PostgreSQL en la transacción del evento."

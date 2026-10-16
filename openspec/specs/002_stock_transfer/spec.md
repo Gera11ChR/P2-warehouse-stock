@@ -7,7 +7,7 @@ Enables authorized, auditable movement of stock between warehouses through a two
 ## Requirements
 
 ### Requirement: REQ-STOCK-006 Transfer creation validation
-WHEN a transfer creation request is received, THE SYSTEM SHALL validate distinct source/destination warehouses, SKU existence, positive integer quantities, and actor site-scope authorization on both warehouses, and SHALL reject invalid payloads with HTTP 422 identifying exact line coordinates.
+WHEN a transfer creation request is received, THE SYSTEM SHALL validate distinct source/destination warehouses, SKU existence, positive decimal quantities (up to 3 decimals), and actor site-scope authorization on both warehouses, and SHALL reject invalid payloads with HTTP 422 identifying exact line coordinates.
 
 #### Scenario: Invalid line rejected with coordinates
 - **WHEN** a multi-line transfer payload contains an unrecognized SKU on the second line

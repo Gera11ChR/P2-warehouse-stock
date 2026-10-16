@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provides the operator-facing warehouse management surface: Spanish-language navigation, KPI dashboard, filter toolbar, per-(SKU+Almacén) inventory browsing, material detail drawer, bulk search, fiber-optic spool tracking, team inventory assignment, and the material/inventory/team/fiber/KPI API contracts.
+Provides the operator-facing warehouse management surface: Spanish-language navigation, KPI dashboard, filter toolbar, per-(SKU+Almacén) inventory browsing, material detail drawer, bulk search, the unified fiber-optic inventory (Inventario FO), the Valor Unitario / Valor Total valuation, team inventory assignment, and the material/inventory/team/fiber/KPI API contracts.
 
 ## Requirements
 
@@ -21,18 +21,18 @@ The system SHALL present all user-facing labels, database entities, schemas, DTO
 - **THEN** every visible label uses Spanish terms (e.g., "Almacén", "Stock Actual", "Stock Mínimo", "Alerta Stock", "Transferencia", "Inventario por Unidad") with no English equivalents
 
 ### Requirement: REQ-DASH-003 Navigation hierarchy
-The system SHALL provide a sidebar navigation with the following structure: "Sección General", "Fibra Óptica" (with "Paquete" and "En Uso"), "Inventario por Unidad", "Transferencias", "Reportes", and "Auditoría".
+The system SHALL provide a sidebar navigation with the following structure: "Sección General", "Inventario FO" (a single entry without sub-entries), "Inventario por Unidad", "Transferencias", "Reportes", and "Auditoría".
 
 #### Scenario: All navigation entries present
 - **WHEN** the sidebar is rendered
-- **THEN** each listed entry is present in the given hierarchy and selecting one navigates to its module
+- **THEN** each listed entry is present in the given hierarchy, "Inventario FO" has no sub-entries, and selecting one navigates to its module
 
 ### Requirement: REQ-DASH-004 KPI dashboard cards
-The system SHALL render four KPI cards — "Total Materiales" (blue), "Stock Total" (green), "Alertas Stock" (amber), and "Transferencias Hoy" (purple) — positioned above all inventory tables.
+The system SHALL render five KPI cards in the order "Total Materiales" (blue), "Valor Total" (teal), "Stock Total" (green), "Alertas Stock" (amber), and "Transferencias Hoy" (purple), positioned above all inventory tables.
 
-#### Scenario: Four KPI cards render above tables
+#### Scenario: Five KPI cards render above tables
 - **WHEN** the Sección General module is displayed
-- **THEN** the four KPI cards appear above the inventory table with their respective colors and current values
+- **THEN** the five KPI cards appear above the inventory table in the stated order with their respective colors and current values
 
 ### Requirement: REQ-DASH-005 Filter toolbar and actions
 The system SHALL render a filter toolbar immediately below the KPI cards with controls "Buscar", "Categoría", "U.M.", and "Almacén", and action buttons "+ Agregar" (green), "Modificar" (yellow), "Eliminar" (red), and "Transferir Stock" (blue).
@@ -42,7 +42,7 @@ The system SHALL render a filter toolbar immediately below the KPI cards with co
 - **THEN** the filter toolbar appears below the KPI cards with the four filter controls and the four action buttons in their specified colors
 
 ### Requirement: REQ-DASH-006 Sección General inventory table
-The system SHALL render the main inventory table with columns CÓDIGO (SKU), DESCRIPCIÓN, U.M., STOCK ACTUAL, STOCK MÍNIMO, ALERTA STOCK, and ALMACÉN, and SHALL emit one row per (SKU + Almacén) combination.
+The system SHALL render the main inventory table with columns CÓDIGO (SKU), DESCRIPCIÓN, U.M., STOCK ACTUAL, VALOR UNITARIO, STOCK MÍNIMO, ALERTA STOCK, and ALMACÉN, and SHALL emit one row per (SKU + Almacén) combination.
 
 #### Scenario: One row per SKU and warehouse
 - **WHEN** a material holds stock in more than one warehouse
@@ -50,7 +50,7 @@ The system SHALL render the main inventory table with columns CÓDIGO (SKU), DES
 
 #### Scenario: Table columns present in order
 - **WHEN** the Sección General table is rendered
-- **THEN** columns appear in the order CÓDIGO, DESCRIPCIÓN, U.M., STOCK ACTUAL, STOCK MÍNIMO, ALERTA STOCK, ALMACÉN
+- **THEN** columns appear in the order CÓDIGO, DESCRIPCIÓN, U.M., STOCK ACTUAL, VALOR UNITARIO, STOCK MÍNIMO, ALERTA STOCK, ALMACÉN
 
 ### Requirement: REQ-DASH-007 Stock level color coding
 The system SHALL color stock levels such that normal stock renders green, low stock renders amber, and critical stock renders red.
@@ -60,11 +60,11 @@ The system SHALL color stock levels such that normal stock renders green, low st
 - **THEN** its stock indicator renders red; normal renders green and low renders amber
 
 ### Requirement: REQ-DASH-008 Mandatory field ordering
-The system SHALL render the Material Detail Drawer, CRUD forms, view modals, transfer dialogs, and edit screens with fields in the exact order: DESCRIPCIÓN, STOCK ACTUAL, STOCK MÍNIMO, ALERTA STOCK, U.M., CÓDIGO (SKU), overriding any default UI framework or component-library ordering.
+The system SHALL render the Material Detail Drawer, CRUD forms, view modals, transfer dialogs, and edit screens with fields in the exact order: DESCRIPCIÓN, STOCK ACTUAL, VALOR UNITARIO (where the surface shows it), STOCK MÍNIMO, ALERTA STOCK, U.M., CÓDIGO (SKU), overriding any default UI framework or component-library ordering.
 
 #### Scenario: Fields ordered correctly in every surface
 - **WHEN** any detail drawer, CRUD form, view modal, transfer dialog, or edit screen is rendered
-- **THEN** its fields appear in the order DESCRIPCIÓN, STOCK ACTUAL, STOCK MÍNIMO, ALERTA STOCK, U.M., CÓDIGO (SKU)
+- **THEN** its fields appear in the order DESCRIPCIÓN, STOCK ACTUAL, VALOR UNITARIO (where shown), STOCK MÍNIMO, ALERTA STOCK, U.M., CÓDIGO (SKU)
 
 ### Requirement: REQ-DASH-009 Material detail drawer
 The system SHALL provide a material detail drawer with a close button, fields in the mandatory order, and footer actions "Modificar", "Eliminar", and "Transferir Stock".
@@ -72,10 +72,6 @@ The system SHALL provide a material detail drawer with a close button, fields in
 #### Scenario: Drawer opens on row selection
 - **WHEN** a row in the Sección General table is selected
 - **THEN** the material detail drawer opens showing the material's fields in the mandatory order and the three footer actions
-
-#### Scenario: Fiber material shows remaining meters
-- **WHEN** the selected material is a fiber-optic material in the "En Uso" view
-- **THEN** the drawer displays "METROS RESTANTES" inside a highlighted blue information card
 
 ### Requirement: REQ-DASH-010 Bottom tabbed section
 The system SHALL render a bottom tabbed section with two tabs: "1 Buscador" providing standard inventory browsing and pagination, and "2 Buscador a granel" providing "Desde SKU" and "Hasta SKU" inputs that drive a range-search results table.
@@ -98,33 +94,41 @@ The system SHALL render a top header with breadcrumbs (e.g., "Dashboard / Secci�
 - **WHEN** the dashboard is displayed
 - **THEN** the header shows breadcrumbs and the global search input with the specified placeholder and shortcut badge
 
-### Requirement: REQ-FIBER-001 Fiber-optic variant tracking
-The system SHALL persist fiber-optic materials with a "Variante" and "Metros Restantes" attribute, distinct from general materials.
+### Requirement: REQ-FO-003 Official Inventario FO nomenclature
+The system SHALL name the single fiber-optic location "Inventario FO" in the side navigation, page title, TRANSF/Mover/+Cantidad selectors, reports, audit and messages, SHALL present a single fiber-optic navigation entry without sub-entries, and IF a visible text contains "Paquete", "En Uso", "FO Paquete" or "FO En Uso" as an inventory name THEN a sweep test SHALL fail (historical technical values and comments exempt).
 
-#### Scenario: Fiber material carries variant and remaining meters
-- **WHEN** a fiber-optic material is stored or retrieved
-- **THEN** its variant and remaining meters are persisted and returned alongside its SKU and description
+#### Scenario: Nomenclature sweep
+- **WHEN** the sweep test runs over the visible texts
+- **THEN** there are no matches outside the declared exceptions
 
-### Requirement: REQ-FIBER-002 En Uso view columns
-The system SHALL render the "En Uso" view with columns CÓDIGO, DESCRIPCIÓN, VARIANTE, METROS RESTANTES, and STOCK ACTUAL, and SHALL NOT replace "Metros Restantes" with stock counts.
+### Requirement: REQ-VALOR-002 Initial value, display and edition
+The system SHALL assign `1.000` MXN as the initial Valor Unitario to the whole existing catalog and to every new material that declares no other value; SHALL display the VALOR UNITARIO column in the tables of the Inventario General, the Inventario FO and the Inventario por Unidad with the figure on the left and the label `MXN` on its right (e.g. `1.00 MXN`; up to 3 decimals, minimum 2); WHEN an administrator opens the modify option of a material (Inventario General or Inventario FO) the system SHALL present the Valor Unitario field preloaded with the current value and allow saving it with decimals; and WHERE the modify option runs in the Inventario por Unidad the system SHALL show the Valor Unitario in read-only mode (the value belongs to the catalog).
 
-#### Scenario: En Uso view shows remaining meters
-- **WHEN** the "En Uso" view is displayed
-- **THEN** the table shows CÓDIGO, DESCRIPCIÓN, VARIANTE, METROS RESTANTES, and STOCK ACTUAL, with remaining meters present and not substituted by a stock count
+#### Scenario: Default value
+- **WHEN** the migration is applied over an existing catalog
+- **THEN** all materials have Valor Unitario `1.000`
 
-### Requirement: REQ-FIBER-003 Paquete and En Uso views
-The system SHALL provide two fiber-optic views, "Paquete" and "En Uso", selectable within the Fibra Óptica module.
+#### Scenario: Edition with decimals
+- **WHEN** the administrator saves `2.5` in Modificar Material
+- **THEN** the three tables show `2.50 MXN` for that material after refreshing
 
-#### Scenario: Two fiber views available
-- **WHEN** the Fibra Óptica module is opened
-- **THEN** both "Paquete" and "En Uso" views are available and selecting one renders its corresponding table
+### Requirement: REQ-VALOR-004 Valor Total indicator position
+The system SHALL show the Valor Total indicator immediately after Total Materiales and before Stock Total, with the figure returned by the API (never recalculated in the client) and the label `MXN` on its right; WHEN a mutation (adjustment, Valor Unitario edit, movement, etc.) completes successfully the indicator SHALL refresh with the persisted value; and WHILE the query is loading or has failed the indicator SHALL show an explicit loading or error state and never an invented value.
+
+#### Scenario: Card order
+- **WHEN** the general section is rendered
+- **THEN** the cards appear in the order Total Materiales, Valor Total, Stock Total, Alertas Stock, Transferencias Hoy and Valor Total is the second one
+
+#### Scenario: Refresh after editing the value
+- **WHEN** the administrator changes a Valor Unitario successfully
+- **THEN** the indicator shows the new Valor Total coming from the API
 
 ### Requirement: REQ-TEAM-001 Team inventory records
-The system SHALL persist team inventory records with columns Equipo, Usuario, Código SKU, Descripción, Cantidad, and Última Modificación.
+The system SHALL persist team inventory records with columns Equipo, Usuario, Código SKU, Descripción, Cantidad, Valor Unitario (read-only, belonging to the catalog), and Última Modificación.
 
 #### Scenario: Team inventory record persisted
 - **WHEN** a team inventory record is created or updated
-- **THEN** its Equipo, Usuario, Código SKU, Descripción, Cantidad, and Última Modificación are stored and returned
+- **THEN** its Equipo, Usuario, Código SKU, Descripción, Cantidad, and Última Modificación are stored and returned, together with the catalog Valor Unitario
 
 ### Requirement: REQ-TEAM-002 SKU auto-fill description
 The system SHALL automatically fill the Descripción field when a Código SKU is entered in the team inventory module.
@@ -180,7 +184,7 @@ The system SHALL support the units: PZ, LT, CARRETE (1 KM), METRO (M), CARRETE (
 The system SHALL allow an operator to edit the `STOCK ACTUAL` value directly in the "Modificar Material" modal, and SHALL persist it as `warehouse_inventory.on_hand_quantity` for the selected material's warehouse (defaulting to the `CENTRAL` warehouse when no warehouse is specified).
 
 #### Scenario: Manual stock override updates on-hand quantity
-- **WHEN** an operator opens "Modificar Material" and enters a non-negative integer in the `STOCK ACTUAL` field
+- **WHEN** an operator opens "Modificar Material" and enters a non-negative decimal (up to 3 decimals) in the `STOCK ACTUAL` field
 - **THEN** the update endpoint sets `warehouse_inventory.on_hand_quantity` for that SKU and warehouse to the entered value, and subsequent inventory queries reflect the new stock
 
 #### Scenario: Negative or missing stock rejected

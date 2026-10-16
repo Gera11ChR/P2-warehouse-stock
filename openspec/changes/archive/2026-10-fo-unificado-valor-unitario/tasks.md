@@ -146,3 +146,16 @@ Adiciones al plan de Fase 9 (@arq-reviewer): (a) regla de atribución en `audit_
 - **D-2 → Opción A aplicada:** `0027` Paso 4b copia a la sección `FO` los scopes de `FO_PAQUETE`/`FO_EN_USO` (`ON CONFLICT DO NOTHING`; solo actores con scope legacy; scopes legacy conservados) y el `downgrade()` retira primero los scopes copiados antes de abortar por referencias. Pruebas `test_RF_009_D2_*` (3). `p2` recibió el equivalente. **Visto bueno `@sec-ops`: APROBADO** (sin hallazgos ≥ MEDIUM; endurecimiento L-1 `fo.nombre='Inventario FO'` y caso límite L-2 documentado y probado). **`@arq-reviewer`: conforme a las salvedades** (downgrade retira primero los scopes copiados, aborto tolerante, idempotencia, ventana in situ abierta). Efecto lateral aceptado: los actores con scope FO ven en Auditoría los eventos de la sección FO.
 - **D-3 → Fase 9 (RFC):** rol del actor expuesto por el contrato y tipo explícito de sección en `MovimientoOut`/`AuditoriaOut`.
 - **D-4 → commit local realizado** (T6/T7 con `0027`+D-2); T7 marcada `[x]`.
+
+---
+
+## Fase 9 — Registro de ejecución (2026-10-16)
+
+- **Archivado:** paquete movido (`git mv`) a `openspec/changes/archive/2026-10-fo-unificado-valor-unitario/`; `openspec/changes/` queda solo con `archive/`.
+- **Specs maestras promovidas** (identificadores `[REQ-…]`, «deberá» → «SHALL»; sin prefijo `RF-n`):
+  - `001_core_logistics`: REQ-FO-001, REQ-FO-002 (con la fe de erratas D-1), REQ-DEC-001, REQ-VALOR-001, REQ-VALOR-003, REQ-VALOR-005, REQ-VALOR-006.
+  - `003_inventory_dashboard`: REQ-FO-003, REQ-VALOR-002, REQ-VALOR-004; reescritos REQ-DASH-003 (una sola entrada «Inventario FO»), REQ-DASH-004 (cinco tarjetas), REQ-DASH-006/008/009 (VALOR UNITARIO), REQ-TEAM-001 (Valor Unitario solo lectura) y REQ-MAT-005 (decimales); **retirados REQ-FIBER-001/002/003** (y el escenario «METROS RESTANTES» de REQ-DASH-009).
+  - `002_stock_transfer`: REQ-STOCK-006 (cantidades decimales positivas).
+- **`openspec/openspec.yaml`:** `paths` (T7) y `domain_rules` actualizados (`fn_valor_total_inventario`, `fn_cargar_stock_inicial_fibra`/`fn_ajustar_stock_general`, prohibición de aritmética de valor, reglas `fo_unificado`/`valor_unitario`/`decimal_quantities`, eventos `FO_UNIFICADO`/`MATERIAL_MODIFICADO` y regla de atribución del actor, glosario con «Inventario FO», «Valor Unitario», «Valor Total» y los valores técnicos históricos).
+- **`.agents.md`:** verificado sin referencias a este paquete ni a `docs/1 Changes.docx`.
+- **Pendiente de aprobación humana (fuera de este paquete):** (1) nota en `.agents.md` §3 (L2) sobre los valores técnicos históricos exentos — ya reflejada en `openspec.yaml › nomenclature_glossary`; (2) baja de `docs/1 Changes.docx` (insumo efímero); (3) actualización del historial/versión del `README.md`; (4) los cambios de seguimiento del plan §5 (RFC de rol del actor y tipo de sección, cierre con 422 de borradores legacy, autenticación real, etc.).
