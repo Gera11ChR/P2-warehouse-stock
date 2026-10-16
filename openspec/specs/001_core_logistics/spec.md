@@ -57,11 +57,11 @@ WHILE any balance-mutating path executes (transfers, legacy adjustments, bulk in
 - **THEN** both complete or fail cleanly without deadlock, and balances remain consistent
 
 ### Requirement: REQ-FO-001 Unified Inventario FO
-The system SHALL maintain a single fiber-optic on-hand quantity per material (one general "Inventario FO" location) with no sub-sections, modules or intermediate sections in the interface, the API and the database; when the unification migration is applied it SHALL merge into one balance the quantities of the same material previously held in the legacy Paquete and En Uso inventories, without loss or creation of quantity, and SHALL record one audit event per merged material carrying the previous quantities and the resulting one; any request that carries a module identifier (`modulo`, `origen_modulo`, `destino_modulo`) in a fiber-optic operation SHALL be rejected with HTTP 422 without side effects.
+The system SHALL maintain a single fiber-optic on-hand quantity per material (one general "Inventario FO" location) with no sub-sections, modules or intermediate sections in the interface, the API and the database; the unification migration (0027, historical) merged into one balance the quantities of the same material previously held in the legacy Paquete and En Uso inventories without loss or creation of quantity; any request that carries a module identifier (`modulo`, `origen_modulo`, `destino_modulo`) in a fiber-optic operation SHALL be rejected with HTTP 422 without side effects.
 
-#### Scenario: Single balance per material after migration
-- **WHEN** a material held 10 in Paquete and 5 in En Uso before the migration
-- **THEN** the Inventario FO shows one row for that material with 15 and an audit event exists with 10, 5 and 15
+#### Scenario: Single balance per material
+- **WHEN** the Inventario FO is queried
+- **THEN** it shows at most one row per material (primary key `material_id`), with no module column
 
 #### Scenario: No sub-sections in the interface
 - **WHEN** the operator opens the Inventario FO
@@ -71,20 +71,16 @@ The system SHALL maintain a single fiber-optic on-hand quantity per material (on
 - **WHEN** `{"modulo": "PAQUETE"}` is sent to any Inventario FO operation
 - **THEN** the response is HTTP 422 and no balance changes
 
-### Requirement: REQ-FO-002 Historical movement compatibility
-The system SHALL keep queryable, with their original data, the movements and events that reference the former FO Paquete and FO En Uso origins/destinations; WHEN a confirmed movement whose origin or destination was a former Paquete or En Uso location is cancelled, the system SHALL reverse it against the unified Inventario FO restoring the original quantities exactly; the interface and the published contract (`GET /api/v1/inventario/secciones/transferibles`, `tipo` in {`GENERAL`,`FO`}) SHALL offer and emit only the unified Inventario FO, and the former origins SHALL NOT be offered as selectable options; for compatibility with in-flight historical drafts, the API SHALL keep accepting references to the legacy sections `FO_PAQUETE`/`FO_EN_USO` when creating or processing drafts, because they route to the same unified balance and do not affect balance, atomicity or ledger; and the visible labels of historical movements with a former FO origin/destination SHALL read "Inventario FO".
-
-#### Scenario: Cancelling a legacy movement
-- **WHEN** a TRANSF confirmed before the migration whose origin was FO En Uso (quantity 3) is cancelled
-- **THEN** the Inventario FO of the material increases by exactly 3 and the movement is cancelled
+### Requirement: REQ-FO-002 No legacy FO sections
+The system SHALL expose only two section types, `GENERAL` and `FO` (`secciones.tipo`, `ck_secciones_tipo`); the former Paquete and En Uso sections (`FO_PAQUETE`/`FO_EN_USO`) SHALL NOT exist; the published contract (`GET /api/v1/inventario/secciones/transferibles`, `tipo` in {`GENERAL`,`FO`}) SHALL offer and emit only the active GENERAL sections and the unified Inventario FO; and IF a request references the `almacen_id` of a section that does not exist (including those formerly legacy) THEN the system SHALL respond HTTP 422 "Sección origen inexistente" / "Sección destino inexistente" without side effects.
 
 #### Scenario: Former origins not selectable
 - **WHEN** the operator opens the TRANSF origin/destination selector
-- **THEN** only "Inventario FO" appears and not "Paquete"/"En Uso"
+- **THEN** only the active general sections and "Inventario FO" appear, and not "Paquete"/"En Uso"
 
-#### Scenario: Legacy draft still processable
-- **WHEN** a draft created with a legacy FO origin before the migration is confirmed or cancelled
-- **THEN** it is processed against the unified Inventario FO with exact quantities
+#### Scenario: Purged section id rejected
+- **WHEN** a draft TRANSF is created with `origen_almacen_id` equal to the id of a former FO_PAQUETE section
+- **THEN** the response is HTTP 422 "Sección origen inexistente" and nothing is persisted
 
 ### Requirement: REQ-DEC-001 Decimal stock and quantities
 The system SHALL represent as decimal quantities (non-negative numbers with up to 3 decimals and up to 12 digits in total, maximum `999 999 999.999`) the on-hand quantity of the General, FO and per-Unit inventories, the quantity of every movement line, the taken and consumed quantities of follow-ups, the quantity/stock parameter of every transactional operation and the quantity recorded in the audit ledger; the system SHALL preserve the non-negative balance invariant and the movement quantity greater than zero with decimal values; WHEN a confirmed movement with decimal quantities is cancelled the system SHALL revert exactly the original quantities; IF a quantity has more than 3 decimals, is negative where not allowed or exceeds the maximum THEN the system SHALL reject it (HTTP 400/422) without silent rounding and without altering balances; identifiers and `stock_minimo` SHALL remain integers.
@@ -156,3 +152,32 @@ The system SHALL validate every API input that carries Valor Unitario, stock or 
 #### Scenario: Numeric representation
 - **WHEN** a material with value `12.345` is queried
 - **THEN** the JSON contains the number `12.345` (not the string `"12.345"`)
+
+### Requirement: REQ-PURGA-001 Legacy FO purge and cleanup
+The system SHALL contain no data that depends on the former FO Paquete/En Uso sections: the one-time migration `0028` SHALL physically delete the movements (any state, including those with only some legacy lines) and their lines, their delivery records (`actas_reportes`), the actor scopes, the idempotency keys and the audit events that depend on them (by section column, by JSON key `modulo`/`origen_modulo`/`destino_modulo` with value PAQUETE or EN_USO, by event type `FO_UNIFICADO`, and by reference to a purged `movimiento_id`/`acta_id`), SHALL null the `inventario_equipos.ultimo_movimiento_id` pointers to purged movements, SHALL redefine `ck_secciones_tipo` to {`GENERAL`,`FO`} and the FO routing functions to `tipo = 'FO'`, and SHALL NOT alter any balance or any event that does not meet the criteria (the unit of measure `PAQUETE (100 PZ)` and `modulo = 'CATALOGO'` are live domain).
+
+#### Scenario: Mixed movement purged without touching balances
+- **WHEN** a TEAMS movement has one line with a legacy origin and another with a general origin
+- **THEN** the whole movement is deleted and every balance remains identical
+
+#### Scenario: Live domain preserved
+- **WHEN** a `MATERIAL_MODIFICADO` event contains `"u_m": "PAQUETE (100 PZ)"` and `"modulo": "CATALOGO"`
+- **THEN** it remains intact after the purge
+
+### Requirement: REQ-PURGA-002 Safe, atomic and traced purge
+The system SHALL execute the purge in a single transaction with full rollback on any failure; SHALL keep both ledger-immutability triggers (`tg_ledger_auditoria_inmutable`, `tg_ledger_actas_inmutable`) enabled before and after (suspended only inside the transaction and verified re-enabled); SHALL emit exactly one immutable audit event `PURGA_LEGACY_FO` (counts per table and per event type, reference to amendment E-1 and to the backup) ; IF the database is not `p2` or `p2_test` and legacy-dependent rows exist THEN the migration SHALL abort without effects; and its `downgrade()` SHALL restore only the schema (never the data), warning that purged data is recoverable only from the prior `pg_dump`.
+
+#### Scenario: Triggers re-enabled
+- **WHEN** `0028` completes
+- **THEN** a later `DELETE`/`UPDATE` on `auditoria_eventos` or `actas_reportes` fails with the immutability exception
+
+#### Scenario: Failed verification
+- **WHEN** an internal verification detects a residue or a balance difference
+- **THEN** the migration rolls back and the database remains at `0027` with the triggers enabled
+
+### Requirement: REQ-PURGA-003 Code without legacy FO bridge
+The backend SHALL NOT contain acceptance, routing or special handling of the `FO_PAQUETE`/`FO_EN_USO` sections, and the frontend SHALL type `Seccion.tipo` as `'GENERAL' | 'FO'`, SHALL NOT contain presentation logic for historical FO modules, and SHALL label a section id that is not in the received list as "Sección #<id>" (never as "Inventario FO"); the published OpenAPI contract SHALL NOT change in paths, fields, types, enums or status codes (only `description` text).
+
+#### Scenario: No legacy references in code
+- **WHEN** the repository sweep looks for `FO_PAQUETE`/`FO_EN_USO` in `backend/app` and `frontend/src`
+- **THEN** there are no matches

@@ -182,9 +182,8 @@ export default function Transferencias() {
   // ============================================================================
 
   // Secciones candidatas a ser extremo de una transferencia (FASE 7):
-  // GENERAL activas + «Inventario FO» (los orígenes FO históricos no se
-  // emiten, RF-9); las no transferibles se excluyen como extremo en la UI
-  // (la validación final es del backend).
+  // GENERAL activas + «Inventario FO»; las no transferibles se excluyen como
+  // extremo en la UI (la validación final es del backend).
   const { data: secciones = [], isError: seccionesError } =
     useSeccionesTransferibles()
 
@@ -448,9 +447,8 @@ export default function Transferencias() {
       void invalidarResumenGeneral(queryClient)
       const m = movimientos.find((mov) => mov.id === variables.id)
       if (m) {
-        // REQ-TRF-002 / RF-9: el stock restaurado puede vivir en el
-        // Inventario FO único (también para movimientos con origen/destino
-        // FO histórico): se invalida ['fibra'] además de la invalidación por
+        // REQ-TRF-002: el stock restaurado puede vivir en el Inventario FO
+        // único: se invalida ['fibra'] además de la invalidación por
         // sección. Multi-origen: se invalidan TODOS los orígenes del
         // movimiento (cabecera + cada línea), no solo el de la cabecera.
         for (const origenId of origenesDeMovimiento(m)) {
@@ -506,9 +504,9 @@ export default function Transferencias() {
 
   const movimientos: Movimiento[] = movimientosQuery.data ?? []
 
-  /** Etiqueta de sección para el historial (RF-9/RF-10): GENERAL con el
-   *  nombre del almacén; el Inventario FO y los orígenes FO históricos como
-   *  «Inventario FO». */
+  /** Etiqueta de sección para el historial: GENERAL con el nombre del
+   *  almacén; el Inventario FO como «Inventario FO»; un id desconocido como
+   *  «Sección #id». */
   const nombreSeccion = (id: number | null): string =>
     etiquetaSeccionPorId(id, secciones)
   const nombreEquipo = (id: number | null): string =>

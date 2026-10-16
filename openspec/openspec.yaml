@@ -40,10 +40,10 @@ domain_rules:
       "Inventario FO": "Locación ÚNICA de fibra óptica (antes FO Paquete / FO En Uso): inventario_fibra con una fila por material, sin módulos; sección de ruteo secciones.tipo='FO'."
       "Valor Unitario": "Atributo de catalogo_materiales (MXN, NUMERIC(12,3), default 1.000) compartido por Inventario General, Inventario FO e Inventario por Unidad."
       "Valor Total": "Σ Stock Actual × Valor Unitario de General activo + Inventario FO; GET /inventario/resumen-general."
-      historical_technical_values: "FO_PAQUETE, FO_EN_USO, TEAMS y DEVOL son valores técnicos HISTÓRICOS exentos en el ledger y en secciones.tipo (RF-9): jamás se muestran como nombre de inventario ni se renombran."
+      historical_technical_values: "TEAMS y DEVOL son valores técnicos (tipos de movimiento) exentos: jamás se renombran. FO_PAQUETE/FO_EN_USO ya NO existen (purgados por 0028, 2026-10-purga-legacy-fo)."
   audit_ledger_immutability:
     required: true
-    description: "auditoria_eventos es append-only. El renombre no actualiza filas históricas: los eventos DESPLIEGUE_CREADO/DESPLIEGUE_CERRADO históricos conservan su valor legacy; los nuevos eventos usan SEGUIMIENTO_CREADO/SEGUIMIENTO_CERRADO."
+    description: "auditoria_eventos y actas_reportes son append-only (triggers tg_ledger_*_inmutable). ÚNICA dispensa registrada: enmienda acotada E-1 (paquete 2026-10-purga-legacy-fo), a través de una única revisión (0028) y solo sobre p2/p2_test (texto en openspec/changes/archive/2026-10-purga-legacy-fo/spec.md §3.1) (borrado físico de datos de prueba dependientes de FO_PAQUETE/FO_EN_USO; triggers reactivados y verificados; rastro en el evento PURGA_LEGACY_FO); no autoriza purgas futuras ni modifica docs/constitution.md. El renombre no actualiza filas históricas: los eventos DESPLIEGUE_CREADO/DESPLIEGUE_CERRADO históricos conservan su valor legacy; los nuevos eventos usan SEGUIMIENTO_CREADO/SEGUIMIENTO_CERRADO."
     events:
       - "SEGUIMIENTO_CREADO"
       - "SEGUIMIENTO_CERRADO"
@@ -52,14 +52,14 @@ domain_rules:
       - "MOVIMIENTO_INVENTARIO"
       - "ACTA_ENTREGA_GENERADA"
       - "ACTA_CONSUMO_GENERADA"
-      - "FO_UNIFICADO"
       - "MATERIAL_MODIFICADO"
+      - "PURGA_LEGACY_FO"
     attribution: "Los eventos emitidos por triggers de catálogo toman el actor de `app.actor` (COALESCE(NULLIF(current_setting('app.actor', true), ''), CURRENT_USER)); el servicio DEBE fijar `app.actor` ANTES de mutar el ORM (el autoflush de session.execute emitiría el UPDATE antes del set_config). Eventos históricos con usuario = rol de BD no se reescriben (append-only)."
     type_widening_precedent: "0027 ensancha auditoria_eventos.cantidad a NUMERIC(12,3) con USING cast sin modificar valores ni disparar triggers de fila (no es una mutación del ledger)."
-    historical_events: "FO_UNIFICADO (fusión de Paquete+En Uso, un evento por material con cantidades anterior y resultante; resultado 'OK' por mandato del plan) y MATERIAL_MODIFICADO (ahora también audita valor_unitario anterior/nuevo). Los eventos previos con `modulo` PAQUETE/EN_USO se conservan íntegros y se presentan como «Inventario FO» solo al mostrarse."
+    historical_events: "MATERIAL_MODIFICADO (audita también valor_unitario anterior/nuevo). Los eventos FO_UNIFICADO y los que llevaban `modulo` PAQUETE/EN_USO fueron purgados por 0028 (E-1); PURGA_LEGACY_FO es el rastro de esa purga."
   fo_unificado:
     required: true
-    description: "El Inventario FO es único: inventario_fibra con PK material_id (sin `modulo`); toda operación FO (carga inicial, ajuste, PATCH/DELETE de material, +Cantidad, Mover, TRANSF) se enruta por la sección tipo 'FO'. Enviar `modulo`/`origen_modulo`/`destino_modulo` es HTTP 422 (extra=forbid). Las secciones FO_PAQUETE/FO_EN_USO se conservan como valores HISTÓRICOS (movimientos previos, RF-9): no se emiten en /secciones/transferibles ni son seleccionables; la API conserva su aceptación en borradores/movimientos históricos (E8) porque enrutan al mismo inventario_fibra. Seguimiento: cerrar con 422 la creación de borradores nuevos con origen legacy cuando no existan borradores legacy. Continuidad de permisos (0027 Paso 4b): los scopes de FO_PAQUETE/FO_EN_USO se copian a la sección FO; el downgrade retira los copiados."
+    description: "El Inventario FO es único: inventario_fibra con PK material_id (sin `modulo`); toda operación FO (carga inicial, ajuste, PATCH/DELETE de material, +Cantidad, Mover, TRANSF) se enruta por la sección tipo 'FO'. Enviar `modulo`/`origen_modulo`/`destino_modulo` es HTTP 422 (extra=forbid). Las secciones FO_PAQUETE/FO_EN_USO no existen (purgadas por 0028): secciones.tipo ∈ {GENERAL, FO} (ck_secciones_tipo) y un almacen_id inexistente responde 422 «Sección origen/destino inexistente»."
   valor_unitario:
     required: true
     description: "valor_unitario es un atributo AUDITADO de catalogo_materiales (MXN, NUMERIC(12,3) >= 0, default 1.000). Solo un administrador puede enviarlo (403 por PRESENCIA del campo en PATCH /catalogo/{id} y PATCH /fibra/materiales/{id}, evaluado antes del passthrough); `null` explícito es no-op sin evento ni 500; MaterialCreate no lo acepta (nace en 1.000). Cada cambio emite un evento MATERIAL_MODIFICADO inmutable con valores anterior y nuevo. Valor Total global (General activo + Inventario FO, no reacciona al filtro de sección); sin multimoneda, histórico de precios ni costeo."
@@ -575,7 +575,7 @@ paths:
       operationId: "seccionesTransferibles"
       responses:
         "200":
-          description: "Lista de secciones transferibles; tipo ∈ {GENERAL, FO}. Los valores legacy FO_PAQUETE/FO_EN_USO ya no se emiten"
+          description: "Lista de secciones transferibles; tipo ∈ {GENERAL, FO}. Las secciones legacy FO_PAQUETE/FO_EN_USO no existen"
           content:
             application/json:
               schema:
@@ -859,7 +859,7 @@ paths:
             default: 100
       responses:
         "200":
-          description: "Eventos inmutables append-only (los eventos históricos, incluidos FO_PAQUETE/FO_EN_USO, se conservan tal como se registraron); `cantidad` es number decimal (hasta 3 decimales) o null"
+          description: "Eventos inmutables append-only (no se editan ni borran vía API); `cantidad` es number decimal (hasta 3 decimales) o null"
           content:
             application/json:
               schema:
@@ -1073,6 +1073,7 @@ components:
           type: [boolean, "null"]
     SeccionOut:
       type: object
+      description: "Sección del maestro (`tipo`: `GENERAL` o `FO`)."
       required: [almacen_id, nombre, tipo, is_active]
       properties:
         almacen_id:
@@ -1094,7 +1095,7 @@ components:
         tipo:
           type: string
           enum: [GENERAL, FO]
-          description: "Los valores legacy FO_PAQUETE/FO_EN_USO no se emiten"
+          description: "tipo de sección: solo GENERAL o FO"
         transferible:
           type: boolean
           default: true

@@ -57,8 +57,7 @@ export type ResultadoPayload<T> =
 /** Longitud máxima de `clave_idempotencia` en el contrato (min 1, max 100). */
 export const CLAVE_IDEMPOTENCIA_MAX = 100
 
-/** GENERAL -> 'GENERAL'; FO -> 'FO'; otro (incl. orígenes FO históricos,
- *  que ya no se ofrecen) -> null. */
+/** GENERAL -> 'GENERAL'; FO -> 'FO'; otro -> null. */
 export function resolverInventario(tipo: string): InventarioContrato | null {
   return tipo === 'GENERAL' || tipo === 'FO' ? tipo : null
 }

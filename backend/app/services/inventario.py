@@ -36,10 +36,7 @@ async def listar_secciones_transferibles(
     """Secciones válidas como origen/destino de movimientos TEAMS/DEVOL
     (RF-9, migración 0027): las secciones GENERAL activas MÁS la sección
     única de ruteo FO "Inventario FO" (transferible aunque is_active=FALSE,
-    pues su stock vive en inventario_fibra). Las secciones legacy
-    FO_PAQUETE/FO_EN_USO NO se emiten (valores históricos del ledger: se
-    leen desde la BD para movimientos previos, pero no son seleccionables).
-    Las secciones GENERAL inactivas quedan excluidas. NO altera
+    pues su stock vive en inventario_fibra). Las secciones GENERAL inactivas quedan excluidas. NO altera
     GET /inventario/secciones (contrato existente: solo GENERAL activa)."""
     stmt = (
         select(Seccion)

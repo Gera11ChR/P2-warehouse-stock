@@ -15,9 +15,7 @@ ValorTotalJson = Annotated[
 
 
 class SeccionOut(BaseModel):
-    """Sección del maestro. `tipo` es `str` (no Literal): los tipos legacy
-    `FO_PAQUETE`/`FO_EN_USO` son valores HISTÓRICOS del ledger y siguen
-    apareciendo en datos previos a la migración 0027 (RF-9)."""
+    """Sección del maestro (`tipo`: `GENERAL` o `FO`)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -30,8 +28,7 @@ class SeccionOut(BaseModel):
 class SeccionTransferibleOut(BaseModel):
     """Sección válida como origen/destino de movimientos TEAMS/DEVOL (RF-9):
     GENERAL activas + la sección única de ruteo FO (transferible aunque
-    is_active=False). Las secciones legacy FO_PAQUETE/FO_EN_USO NO se
-    emiten (no son seleccionables en el dominio vivo)."""
+    is_active=False)."""
 
     almacen_id: int
     nombre: str
@@ -89,8 +86,7 @@ class InventarioEquipoOut(BaseModel):
 
 # ── Inventario FO unificado (RF-1, migración 0027) ────────────────────────
 # Una sola locación "Inventario FO" por material (sin `modulo`). Los tipos
-# `FibraModulo`/`ModuloFo` quedaron ELIMINADOS del contrato; los valores
-# `PAQUETE`/`EN_USO` solo sobreviven como datos históricos del ledger.
+# `FibraModulo`/`ModuloFo` no existen en el contrato.
 
 
 class FibraStockOut(BaseModel):

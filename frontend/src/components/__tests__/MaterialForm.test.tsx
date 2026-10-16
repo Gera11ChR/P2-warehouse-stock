@@ -309,7 +309,7 @@ describe('MaterialForm SECCIÓN DESTINO (fix NIS, REQ-CARGA-001)', () => {
 
     expect(screen.getByText('Inventario FO')).toBeInTheDocument()
     expect(screen.getByText('Inventario General')).toBeInTheDocument()
-    // Ya no existen los módulos FO históricos como opción.
+    // No existen módulos FO como opción.
     expect(screen.queryByText(/Paquete/)).not.toBeInTheDocument()
     expect(screen.queryByText(/En Uso/)).not.toBeInTheDocument()
   })

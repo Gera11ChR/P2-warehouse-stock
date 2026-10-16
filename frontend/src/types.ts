@@ -45,9 +45,7 @@ export interface MaterialList {
 export interface Seccion {
   almacen_id: number
   nombre: string
-  /** 'FO_PAQUETE' | 'FO_EN_USO' son valores HISTÓRICOS (solo datos
-   *  heredados del ledger; nunca se ofrecen como opción, RF-9). */
-  tipo: 'GENERAL' | 'FO' | 'FO_PAQUETE' | 'FO_EN_USO'
+  tipo: 'GENERAL' | 'FO'
   is_active: boolean
 }
 
@@ -60,8 +58,7 @@ export interface Seccion {
 export interface SeccionTransferible {
   almacen_id: number
   nombre: string
-  /** El backend solo emite 'GENERAL' y 'FO' (RF-9): los orígenes FO
-   *  históricos no se ofrecen como opciones seleccionables. */
+  /** El backend solo emite 'GENERAL' y 'FO'. */
   tipo: 'GENERAL' | 'FO'
   transferible: boolean
 }
@@ -515,9 +512,8 @@ export const TIPOS_ACCION_AUDITORIA: Record<string, string> = {
   AJUSTE_INVENTARIO: 'Ajuste de inventario',
   STOCK_INICIAL_FO: 'Carga inicial FO',
   AJUSTE_INVENTARIO_FO: 'Ajuste de inventario FO',
-  MIGRACION_FO: 'Migración FO',
-  // RF-1/RF-7: fusión de Paquete + En Uso en el Inventario FO único.
-  FO_UNIFICADO: 'Inventario FO unificado',
+  // 0028 (E-1): rastro de la purga única del legado FO.
+  PURGA_LEGACY_FO: 'Purga del legado FO',
   ELIMINACION_FO: 'Eliminación de inventario FO',
   // Cambio 2026-10-01-reportes-consumo-management (REQ-P2-INV-006 / CON-001).
   SUMA_CANTIDAD: '+Cantidad — suma directa',

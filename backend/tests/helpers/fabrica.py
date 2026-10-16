@@ -16,9 +16,7 @@ from httpx import AsyncClient, Response
 Cantidad = int | float
 
 ALMACEN_GENERAL = 1
-# Los ids de las secciones FO legacy (FO_PAQUETE/FO_EN_USO) son HISTÓRICOS
-# (RF-9): solo sobreviven como origen/destino de movimientos previos a la
-# migración 0027. La sección viva de ruteo es 'FO' (ver `seccion_fo`).
+# La sección viva de ruteo FO es 'FO' (ver `seccion_fo`).
 
 
 async def crear_material(

@@ -296,8 +296,7 @@ async def test_fix_nis_carga_inicial_destino_fo(client: AsyncClient, session) ->
     Inicial admite la raíz FO unificada — el stock inicial se rutea a
     `inventario_fibra` (una fila por material, RF-1) vía
     fn_cargar_stock_inicial_fibra, con auditoría inmutable STOCK_INICIAL_FO
-    (sin `modulo`). Las secciones legacy FO_PAQUETE/FO_EN_USO ya NO son
-    destinos de carga inicial."""
+    (sin `modulo`)."""
     from tests.helpers.fabrica import inventario_fo, seccion_fo
 
     fo = await seccion_fo(client)

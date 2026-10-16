@@ -497,7 +497,7 @@ describe('Mover — destino y cantidad (REQ-P2-INV-003/004/005)', () => {
       origenTipo: 'FO',
       destinos: [
         ...destinos,
-        // Otro destino FO (p. ej. histórico/duplicado) tampoco puede ofrecerse.
+        // Otro destino FO (p. ej. duplicado) tampoco puede ofrecerse.
         { value: '8', label: 'Inventario FO (otro)', tipo: 'FO' },
       ],
     })
@@ -514,21 +514,6 @@ describe('Mover — destino y cantidad (REQ-P2-INV-003/004/005)', () => {
       .map((o) => o.textContent)
     expect(opciones).toEqual(['— Selecciona destino —', 'Inventario General'])
     expect(opciones).not.toContain('Inventario FO')
-  })
-
-  it('no ofrece como destino un tipo FO histórico (FO_PAQUETE / FO_EN_USO) ni uno desconocido', async () => {
-    const { select } = await abrirMover({
-      onSubmit: vi.fn(),
-      destinos: [
-        ...destinos,
-        // Forzado: el tipo ya no forma parte de TipoInventario.
-        { value: '5', label: 'FO histórico', tipo: 'FO_PAQUETE' as never },
-      ],
-    })
-    const opciones = within(select)
-      .getAllByRole('option')
-      .map((o) => o.textContent)
-    expect(opciones).toEqual(['— Selecciona destino —', 'Inventario FO'])
   })
 
   it('el destino es obligatorio: sin elegirlo no se puede confirmar y el motivo lo dice', async () => {

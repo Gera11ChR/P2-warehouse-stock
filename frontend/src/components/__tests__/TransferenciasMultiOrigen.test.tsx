@@ -215,7 +215,7 @@ describe('Historial e invalidaciones multi-origen', () => {
     expect(fila).toHaveTextContent('Inventario FO → Unidad QA')
   })
 
-  it('RF-9: un origen de línea fuera de las secciones transferibles (FO histórico) se rotula «Inventario FO» y no «Sección N»', async () => {
+  it('RF-5: un origen de línea fuera de las secciones transferibles se rotula «Sección #id», nunca «Inventario FO»', async () => {
     vi.mocked(listMovimientos).mockResolvedValue([
       {
         ...mixto,
@@ -228,7 +228,7 @@ describe('Historial e invalidaciones multi-origen', () => {
     ] as never)
     renderPagina()
     const fila = (await screen.findByText('6')).closest('tr') as HTMLElement
-    expect(fila).toHaveTextContent('Inventario General + Inventario FO → Unidad QA')
-    expect(fila).not.toHaveTextContent('Sección 77')
+    expect(fila).toHaveTextContent('Inventario General + Sección #77 → Unidad QA')
+    expect(fila).not.toHaveTextContent('Inventario FO')
   })
 })

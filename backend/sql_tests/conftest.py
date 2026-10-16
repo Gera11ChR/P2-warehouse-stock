@@ -41,7 +41,7 @@ ACTOR_QA = "qa"
 
 SECCIONES_SEMILLA = [
     ("Inventario General", "GENERAL", True),
-    # 0027: sección única de ruteo FO (FO_PAQUETE/FO_EN_USO son solo históricas).
+    # Sección única de ruteo FO.
     ("Inventario FO", "FO", False),
 ]
 

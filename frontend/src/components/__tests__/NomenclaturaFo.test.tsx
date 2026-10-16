@@ -2,13 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import Sidebar from '../Sidebar'
 import { etiquetaSeccion, etiquetaSeccionPorId } from '../../utils/seccionLabel'
-import { presentarDetallesAuditoria } from '../../utils/auditoriaPresentacion'
 
 // RF-10 / REQ-FO-003: la locación única de fibra óptica se llama «Inventario
 // FO» en toda superficie visible. Los nombres «Paquete», «En Uso», «FO
 // Paquete» y «FO En Uso» como nombre de inventario hacen fallar el barrido;
-// los valores técnicos históricos (FO_PAQUETE, EN_USO, PAQUETE…), los
-// comentarios y la U.M. «PAQUETE (100 PZ)» quedan exentos.
+// los comentarios y la U.M. «PAQUETE (100 PZ)» quedan exentos.
 
 const fuentes = import.meta.glob('../../**/*.{ts,tsx}', {
   query: '?raw',
@@ -77,12 +75,8 @@ describe('Nomenclatura oficial: Inventario FO (RF-10)', () => {
     ]) {
       expect(esNombreDeprecado(texto)).toBe(true)
     }
-    // Excepciones: valor técnico histórico, U.M., nombre oficial y frase común.
+    // Excepciones: U.M., nombre oficial y frase común.
     for (const texto of [
-      'FO_PAQUETE',
-      'FO_EN_USO',
-      'PAQUETE',
-      'EN_USO',
       'PAQUETE (100 PZ)',
       'Inventario FO',
       'clave de operación en uso por otro usuario',
@@ -115,43 +109,20 @@ describe('Navegación: una sola entrada «Inventario FO» sin subentradas (RF-1,
   })
 })
 
-describe('Etiquetas de secciones y movimientos históricos (RF-9, RF-10)', () => {
-  it('el Inventario FO y los orígenes FO históricos se muestran como «Inventario FO»', () => {
+describe('Etiquetas de secciones (RF-5)', () => {
+  it('la sección FO se muestra como «Inventario FO»; GENERAL con el nombre del almacén', () => {
     expect(etiquetaSeccion({ tipo: 'FO', nombre: 'Inventario FO' })).toBe('Inventario FO')
-    expect(etiquetaSeccion({ tipo: 'FO_PAQUETE', nombre: 'FO Paquete' })).toBe('Inventario FO')
-    expect(etiquetaSeccion({ tipo: 'FO_EN_USO', nombre: 'FO En Uso' })).toBe('Inventario FO')
     expect(etiquetaSeccion({ tipo: 'GENERAL', nombre: 'Almacén Central' })).toBe('Almacén Central')
   })
 
-  it('un id de sección no listado (origen FO histórico) se rotula «Inventario FO»', () => {
+  it('un id de sección desconocido se rotula «Sección #id», nunca «Inventario FO»', () => {
     const secciones = [
       { almacen_id: 1, tipo: 'GENERAL', nombre: 'Almacén Central' },
       { almacen_id: 2, tipo: 'FO', nombre: 'Inventario FO' },
     ]
     expect(etiquetaSeccionPorId(1, secciones)).toBe('Almacén Central')
     expect(etiquetaSeccionPorId(2, secciones)).toBe('Inventario FO')
-    expect(etiquetaSeccionPorId(99, secciones)).toBe('Inventario FO')
+    expect(etiquetaSeccionPorId(99, secciones)).toBe('Sección #99')
     expect(etiquetaSeccionPorId(null, secciones)).toBe('—')
-  })
-
-  it('los eventos de auditoría históricos con `modulo` se presentan como «Inventario FO» sin mutar el dato', () => {
-    const original = {
-      modulo: 'PAQUETE',
-      valores_anteriores: { modulo: 'EN_USO', stock: 5 },
-      lineas: [{ origen_modulo: 'PAQUETE' }],
-      nota: 'PAQUETE',
-    }
-    const copia = structuredClone(original)
-
-    const visto = presentarDetallesAuditoria(original)
-
-    expect(visto).toEqual({
-      modulo: 'Inventario FO',
-      valores_anteriores: { modulo: 'Inventario FO', stock: 5 },
-      lineas: [{ origen_modulo: 'Inventario FO' }],
-      nota: 'PAQUETE', // solo se rotulan las claves de módulo
-    })
-    // El ledger es inmutable: el original no cambia.
-    expect(original).toEqual(copia)
   })
 })

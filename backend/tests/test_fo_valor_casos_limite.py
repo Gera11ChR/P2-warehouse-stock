@@ -12,18 +12,13 @@ Mapa (ver `trazabilidad.md`):
 * E4  — desbordamiento: la BD también lo rechaza (RF-2, defensa en
   profundidad).
 * E5  — notación científica sobre-precisa en CANTIDADES → 422 (RF-6).
-* E8  — BORRADOR legacy (origen FO En Uso) descartable sin tocar stock
-  (la confirmación está en `test_fo_unificado.py`).
 * E10 — dos ediciones concurrentes del mismo Valor Unitario (RF-7).
 * E11 — cantidad decimal en U.M. `PZ` permitida (RF-6, C-5).
 * RF-4 — el Valor Total refleja carga, +Cantidad, Mover, TRANSF, DEVOL,
   cancelaciones y eliminación (sin caché).
 * RF-6 — identificadores y `stock_minimo` permanecen enteros; +Cantidad,
   Mover y devolución aceptan decimales.
-* RF-7 — evento de valor con actor y fecha; ledger inmutable; eventos
-  históricos con `modulo` siguen consultables vía API.
-* RF-9 — movimientos históricos legacy consultables con sus datos
-  originales.
+* RF-7 — evento de valor con actor y fecha; ledger inmutable.
 """
 
 import asyncio
@@ -56,7 +51,6 @@ RESUMEN = "/api/v1/inventario/resumen-general"
 SUMAR = "/api/v1/inventario/sumar-cantidad"
 MOVER = "/api/v1/inventario/mover"
 JSON_CT = {"content-type": "application/json"}
-ALMACEN_EN_USO = 3  # sección legacy FO_EN_USO (valor histórico, RF-9)
 
 
 async def _valor_db(session, material_id: int) -> Decimal:
@@ -530,151 +524,6 @@ async def test_RF_007_ledger_inmutable_update_y_delete_rechazados(
         )
     ).one()
     assert (fila.usuario, fila.tipo_accion) == (usuario, "MATERIAL_MODIFICADO")
-
-
-async def test_RF_007_evento_historico_con_modulo_sigue_consultable_por_api(
-    client: AsyncClient, session
-) -> None:
-    """RF-7/RF-9: un evento histórico del ledger cuyo `detalles` contiene
-    `modulo` (previo a 0027) permanece íntegro y se devuelve por la API
-    sin mutar el dato."""
-    m = await crear_material(client, descripcion="Material evento histórico")
-    await session.execute(
-        text(
-            "INSERT INTO auditoria_eventos "
-            "(usuario, tipo_accion, material_id, cantidad, resultado, detalles) "
-            "VALUES ('hist','AJUSTE_INVENTARIO_FO',:m,10,'EXITO',"
-            " CAST(:d AS json))"
-        ),
-        {"m": m["id_lista"], "d": '{"modulo":"PAQUETE","stock_nuevo":10}'},
-    )
-    await session.commit()
-
-    resp = await client.get("/api/v1/auditoria", params={"material_id": m["id_lista"]})
-    assert resp.status_code == 200, resp.text
-    historicos = [e for e in resp.json()["eventos"] if e["usuario"] == "hist"]
-    assert len(historicos) == 1
-    assert historicos[0]["detalles"] == {"modulo": "PAQUETE", "stock_nuevo": 10}
-    assert historicos[0]["cantidad"] == 10
-
-    bd = (
-        await session.execute(
-            text(
-                "SELECT detalles->>'modulo' FROM auditoria_eventos "
-                "WHERE usuario = 'hist'"
-            )
-        )
-    ).scalar_one()
-    assert bd == "PAQUETE"
-
-
-# ── RF-9: movimientos históricos consultables con sus datos originales ───
-
-
-async def test_RF_009_movimiento_historico_legacy_consultable_con_datos_originales(
-    client: AsyncClient, session
-) -> None:
-    """RF-9 (Ubiquitous): un movimiento TRANSF confirmado antes de la
-    migración con origen FO En Uso (cantidad 3) sigue consultable — por
-    detalle y por listado — con su origen y cantidad ORIGINALES."""
-    m = await crear_material(client, descripcion="Material movimiento histórico")
-    mid = m["id_lista"]
-    equipo = await crear_equipo(client, nombre="Unidad movimiento histórico")
-    eq = equipo["equipo_id"]
-    await session.execute(
-        text(
-            "INSERT INTO movimientos_cabecera "
-            "(tipo_movimiento, estado, usuario, origen_almacen_id, "
-            "destino_equipo_id) "
-            "VALUES ('TEAMS','CONFIRMADO','qa',:origen,:eq)"
-        ),
-        {"origen": ALMACEN_EN_USO, "eq": eq},
-    )
-    mv = (
-        await session.execute(text("SELECT max(id) FROM movimientos_cabecera"))
-    ).scalar_one()
-    await session.execute(
-        text(
-            "INSERT INTO movimientos_detalle "
-            "(movimiento_id, material_id, cantidad, origen_almacen_id) "
-            "VALUES (:mv, :m, 3, :origen)"
-        ),
-        {"mv": mv, "m": mid, "origen": ALMACEN_EN_USO},
-    )
-    await session.commit()
-
-    resp = await client.get(f"/api/v1/movimientos/{mv}")
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["estado"] == "CONFIRMADO"
-    assert body["origen_almacen_id"] == ALMACEN_EN_USO
-    assert body["destino_equipo_id"] == eq
-    assert [(d["material_id"], d["cantidad"], d["origen_almacen_id"])
-            for d in body["detalle"]] == [(mid, 3, ALMACEN_EN_USO)]
-
-    resp = await client.get("/api/v1/movimientos")
-    assert resp.status_code == 200, resp.text
-    listado = {mov["id"]: mov for mov in resp.json()["movimientos"]}
-    assert listado[mv]["origen_almacen_id"] == ALMACEN_EN_USO
-
-    # BD: datos originales intactos (sin migrar ni reescribir el origen).
-    fila = (
-        await session.execute(
-            text("SELECT origen_almacen_id, estado FROM movimientos_cabecera WHERE id = :i"),
-            {"i": mv},
-        )
-    ).one()
-    assert (fila.origen_almacen_id, fila.estado) == (ALMACEN_EN_USO, "CONFIRMADO")
-
-
-# ── E8: BORRADOR legacy cancelable contra el Inventario FO ───────────────
-
-
-async def test_RF_009_E8_borrador_legacy_origen_en_uso_descartable_sin_tocar_stock(
-    client: AsyncClient, session
-) -> None:
-    """E8 (RF-9): un movimiento BORRADOR en curso con origen legacy FO En
-    Uso puede DESCARTARSE (la cancelación de un borrador es `DELETE
-    /movimientos/{id}`; `POST .../cancelar` es solo para CONFIRMADOS y
-    responde 409): 204, la cabecera desaparece y las existencias del
-    Inventario FO unificado y de la Unidad quedan intactas."""
-    m = await crear_material(client, descripcion="Material borrador legacy descartable")
-    mid = m["id_lista"]
-    await fibra_carga_inicial(client, material_id=mid, cantidad=9)
-    equipo = await crear_equipo(client, nombre="Unidad borrador legacy")
-    eq = equipo["equipo_id"]
-    await session.execute(
-        text(
-            "INSERT INTO actor_almacen_scopes (actor_id, almacen_id) "
-            "VALUES ('qa', :i) ON CONFLICT DO NOTHING"
-        ),
-        {"i": ALMACEN_EN_USO},
-    )
-    await session.commit()
-    b = await borrador_teams(
-        client, almacen_id=ALMACEN_EN_USO, equipo_id=eq, material_id=mid, cantidad=4
-    )
-
-    # `cancelar` no aplica a un BORRADOR (409 canónico), sin efectos.
-    resp = await client.post(
-        f"/api/v1/movimientos/{b['id']}/cancelar", json={"motivo": "No aplica"}
-    )
-    assert resp.status_code == 409, resp.text
-
-    resp = await client.delete(f"/api/v1/movimientos/{b['id']}")
-    assert resp.status_code == 204, resp.text
-
-    assert (await client.get(f"/api/v1/movimientos/{b['id']}")).status_code == 404
-    assert (await inventario_fo(client))[mid]["stock_actual"] == 9
-    assert mid not in await inventario_equipo(client, eq)
-    assert await _stock_bd(session, "inventario_fibra", mid) == Decimal("9.000")
-    n = (
-        await session.execute(
-            text("SELECT count(*) FROM movimientos_cabecera WHERE id = :i"),
-            {"i": b["id"]},
-        )
-    ).scalar_one()
-    assert n == 0
 
 
 # ── RF-4: el Valor Total refleja TODA mutación de existencias ────────────

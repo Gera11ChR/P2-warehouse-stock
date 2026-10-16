@@ -15,6 +15,21 @@ from decimal import Decimal
 from tests.helpers.migraciones import alembic, esquema_en, sql
 
 
+def _asegurar_secciones_legacy() -> None:
+    """Desde 0028 las secciones legacy están purgadas; estas pruebas verifican
+    el comportamiento de 0027 (publicada) y las resiembran en 0026, cuyo CHECK
+    todavía admite FO_PAQUETE/FO_EN_USO."""
+    for nombre, tipo in (
+        ("Fibra Optica - Paquete", "FO_PAQUETE"),
+        ("Fibra Optica - En Uso", "FO_EN_USO"),
+    ):
+        sql(
+            "INSERT INTO secciones (nombre, tipo, is_active) VALUES (%s, %s, FALSE) "
+            "ON CONFLICT (nombre) DO NOTHING",
+            (nombre, tipo),
+        )
+
+
 def _audit_rows_antes() -> list[tuple]:
     """Snapshot de identidad (contenido íntegro) de los eventos previos."""
     return sql(
@@ -42,6 +57,7 @@ def test_RF_001_007_fusion_fo_unificado_y_ledger_intacto() -> None:
     existente y conserva íntegros (conteo Y contenido) los eventos previos
     del ledger."""
     with esquema_en("0026"):
+        _asegurar_secciones_legacy()
         # Siembra 0026: catálogo, particiones FO legacy y ledger previo.
         m1 = sql(
             "INSERT INTO catalogo_materiales (codigo, descripcion, u_m) "
@@ -251,7 +267,7 @@ def test_RF_001_E13_migracion_repetida_es_idempotente_sin_duplicar_eventos() -> 
 
         # Reintentos: ambos terminan en éxito y no cambian NADA.
         alembic("upgrade", "0027")
-        alembic("upgrade", "head")
+        alembic("upgrade", "0027")
         assert _estado() == primero
 
 
@@ -277,6 +293,7 @@ def test_RF_009_D2_scopes_legacy_se_copian_a_la_seccion_fo_y_downgrade_los_retir
     de forma idempotente, conservando los scopes legacy; y el downgrade
     retira los scopes copiados (no queda bloqueado por su propio upgrade)."""
     with esquema_en("0026"):
+        _asegurar_secciones_legacy()
         ids = {
             t: sql("SELECT almacen_id FROM secciones WHERE tipo = %s", (t,))[0][0]
             for t in ("GENERAL", "FO_PAQUETE", "FO_EN_USO")
@@ -307,7 +324,7 @@ def test_RF_009_D2_scopes_legacy_se_copian_a_la_seccion_fo_y_downgrade_los_retir
 
         # Idempotencia: reintentos no duplican ni cambian nada.
         alembic("upgrade", "0027")
-        alembic("upgrade", "head")
+        alembic("upgrade", "0027")
         assert _scopes() == despues
 
         # Downgrade: retira los scopes FO copiados y NO aborta por ellos.
@@ -342,6 +359,7 @@ def test_RF_009_D2_actor_con_scope_legacy_y_fo_directo_downgrade_conserva_legacy
     sección FO no existe en 0026); su scope legacy —permiso efectivo previo
     a 0027— se conserva y el downgrade termina limpio."""
     with esquema_en("0026"):
+        _asegurar_secciones_legacy()
         legacy = sql("SELECT almacen_id FROM secciones WHERE tipo = 'FO_EN_USO'")[0][0]
         sql(
             "INSERT INTO actor_almacen_scopes (actor_id, almacen_id) "

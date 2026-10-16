@@ -8,12 +8,9 @@ import {
 } from '../operadorPayload'
 
 describe('resolverInventario', () => {
-  it('mapea GENERAL y FO 1:1 y rechaza otros (incl. orígenes FO históricos)', () => {
+  it('mapea GENERAL y FO 1:1 y rechaza otros', () => {
     expect(resolverInventario('GENERAL')).toBe('GENERAL')
     expect(resolverInventario('FO')).toBe('FO')
-    // RF-9: FO_PAQUETE / FO_EN_USO ya no son opciones seleccionables.
-    expect(resolverInventario('FO_PAQUETE')).toBeNull()
-    expect(resolverInventario('FO_EN_USO')).toBeNull()
     expect(resolverInventario('EQUIPO')).toBeNull()
   })
 })
@@ -176,7 +173,7 @@ describe('construirPayloadMover (POST /inventario/mover)', () => {
     },
   )
 
-  it('rechaza cantidad inválida, material inválido y tipos desconocidos (o históricos)', () => {
+  it('rechaza cantidad inválida, material inválido y tipos desconocidos', () => {
     const base = {
       origen: 'GENERAL',
       destino: 'FO',
@@ -199,9 +196,6 @@ describe('construirPayloadMover (POST /inventario/mover)', () => {
     })
     expect(
       construirPayloadMover({ ...base, destino: 'X' as never }),
-    ).toMatchObject({ ok: false, codigo: 'TIPO_INVENTARIO_INVALIDO' })
-    expect(
-      construirPayloadMover({ ...base, destino: 'FO_PAQUETE' as never }),
     ).toMatchObject({ ok: false, codigo: 'TIPO_INVENTARIO_INVALIDO' })
   })
 

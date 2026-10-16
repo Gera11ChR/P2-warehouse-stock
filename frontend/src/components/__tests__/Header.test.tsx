@@ -13,7 +13,7 @@ describe('Header — breadcrumb sin prefijo Dashboard', () => {
   })
 
   it('no renderiza el texto "Dashboard" para una subvista compuesta', () => {
-    render(<Header breadcrumb="Fibra Óptica / Paquete" onSearch={vi.fn()} />)
+    render(<Header breadcrumb="Inventario FO / Stock" onSearch={vi.fn()} />)
 
     expect(screen.queryByText('Dashboard')).not.toBeInTheDocument()
   })
@@ -26,9 +26,9 @@ describe('Header — breadcrumb sin prefijo Dashboard', () => {
   })
 
   it('muestra únicamente la ruta limpia de la subvista compuesta', () => {
-    render(<Header breadcrumb="Fibra Óptica / Paquete" onSearch={vi.fn()} />)
+    render(<Header breadcrumb="Inventario FO / Stock" onSearch={vi.fn()} />)
 
-    expect(screen.getByText('Fibra Óptica / Paquete')).toBeInTheDocument()
+    expect(screen.getByText('Inventario FO / Stock')).toBeInTheDocument()
   })
 
   it('conserva el separador interno de la subvista pero sin nodo raíz', () => {

@@ -1,9 +1,8 @@
 """Transferencias TEAMS/DEVOL hacia y desde el Inventario FO unificado —
 RF-1/RF-9 (cambio 2026-10-fo-unificado-valor-unitario).
 
-La sección de ruteo única 'FO' (y las secciones legacy FO_PAQUETE/
-FO_EN_USO, conservadas como valores históricos) enrutan hacia el MISMO
-`inventario_fibra` unificado por `material_id` (RF-1/RF-9): validación de
+La sección de ruteo única 'FO' enruta hacia `inventario_fibra` unificado
+por `material_id` (RF-1; las secciones legacy fueron purgadas en 0028): validación de
 stock, cancelaciones simétricas y aislamiento por scope/sección (SEC-002)
 y por integrante de la unidad (V3). Los eventos TEAMS_TRANSFERENCIA /
 DEVOL_DEVOLUCION / MOVIMIENTO_CANCELADO ya no registran `modulo_fo`.
@@ -27,8 +26,9 @@ from tests.helpers.fabrica import (
     seccion_fo,
 )
 
-ALMACEN_PAQUETE = 2  # sección legacy FO_PAQUETE (valor histórico, RF-9)
-ALMACEN_EN_USO = 3   # sección legacy FO_EN_USO (valor histórico, RF-9)
+# Ids de las secciones legacy purgadas (0028): solo para aseverar su ausencia.
+ALMACEN_PAQUETE = 2
+ALMACEN_EN_USO = 3
 
 
 async def _scopes_fo(session, *ids: int) -> None:
@@ -100,39 +100,6 @@ async def test_REQ_FO_001_002_teams_desde_fo_200_ajuste_y_auditoria(
     assert detalles["stock_remanente_origen"] == 20
     assert evento.almacen_origen_id == origen
     assert evento.cantidad == 30
-
-
-async def test_RF_9_teams_desde_origen_legacy_en_uso_enruta_fo_unificado(
-    client: AsyncClient, session
-) -> None:
-    """RF-9: un TRANSF cuyo origen es la sección legacy FO_EN_USO (almacén 3)
-    descuenta el Inventario FO UNIFICADO — los orígenes antiguos enrutan al
-    mismo inventario (compatibilidad con movimientos históricos)."""
-    material, equipo, _ = await _setup_fo(client, session, seccion_id=ALMACEN_EN_USO)
-
-    b = await borrador_teams(
-        client,
-        almacen_id=ALMACEN_EN_USO,
-        equipo_id=equipo["equipo_id"],
-        material_id=material["id_lista"],
-        cantidad=30,
-    )
-    await procesar(client, b["id"])
-
-    filas = await inventario_fo(client)
-    assert filas[material["id_lista"]]["stock_actual"] == 20
-    equipo_filas = await inventario_equipo(client, equipo["equipo_id"])
-    assert equipo_filas[material["id_lista"]]["stock_actual"] == 30
-
-    evento = (
-        await session.execute(
-            select(AuditoriaEvento).where(
-                AuditoriaEvento.tipo_accion == "TEAMS_TRANSFERENCIA"
-            )
-        )
-    ).scalars().one()
-    assert evento.almacen_origen_id == ALMACEN_EN_USO
-    assert (evento.detalles or {}).get("stock_remanente_origen") == 20
 
 
 async def test_REQ_FO_002_teams_fo_stock_insuficiente_400(
@@ -238,40 +205,6 @@ async def test_REQ_FO_002_cancelar_teams_fo_restituye_inventario_fibra(
     assert detalles["motivo_cancelacion"] == "FO errónea"
 
 
-async def test_RF_9_cancelar_teams_legacy_restituye_fo_unificado(
-    client: AsyncClient, session
-) -> None:
-    """RF-9: cancelar un TRANSF CONFIRMADO cuyo origen era la sección legacy
-    FO_PAQUETE revierte EXACTAMENTE contra el Inventario FO unificado
-    (restauración simétrica, cero pérdida)."""
-    material, equipo, _ = await _setup_fo(client, session, seccion_id=ALMACEN_PAQUETE)
-
-    b = await borrador_teams(
-        client,
-        almacen_id=ALMACEN_PAQUETE,
-        equipo_id=equipo["equipo_id"],
-        material_id=material["id_lista"],
-        cantidad=30,
-    )
-    await procesar(client, b["id"])
-    await cancelar(client, b["id"], motivo="FO errónea")
-
-    filas = await inventario_fo(client)
-    assert filas[material["id_lista"]]["stock_actual"] == 50
-    equipo_filas = await inventario_equipo(client, equipo["equipo_id"])
-    assert material["id_lista"] not in equipo_filas
-
-    evento = (
-        await session.execute(
-            select(AuditoriaEvento).where(
-                AuditoriaEvento.tipo_accion == "MOVIMIENTO_CANCELADO"
-            )
-        )
-    ).scalars().one()
-    assert evento.almacen_origen_id == ALMACEN_PAQUETE
-    assert (evento.detalles or {})["motivo_cancelacion"] == "FO errónea"
-
-
 async def test_REQ_FO_002_cancelar_devol_fo_restituye_equipo(
     client: AsyncClient, session
 ) -> None:
@@ -303,13 +236,13 @@ async def test_REQ_FO_002_cancelar_devol_fo_restituye_equipo(
     assert equipo_filas[material["id_lista"]]["stock_actual"] == 30
 
 
-async def test_RF_9_secciones_transferibles_incluyen_fo_excluyen_legacy(
+async def test_RF_4_secciones_transferibles_solo_general_y_fo(
     client: AsyncClient,
 ) -> None:
-    """RF-1/RF-9: las secciones transferibles emiten la sección única FO
-    (transferible=true aunque is_active=false) y EXCLUYEN las secciones
-    legacy FO_PAQUETE/FO_EN_USO (no seleccionables en el dominio vivo),
-    sin alterar el contrato de GET /secciones."""
+    """RF-1/RF-4: las secciones transferibles emiten la sección única FO
+    (transferible=true aunque is_active=false) y las GENERAL activas; las
+    secciones legacy ya no existen (purga 0028), sin alterar el contrato de
+    GET /secciones."""
     fo = await seccion_fo(client)
     resp = await client.get("/api/v1/inventario/secciones/transferibles")
     assert resp.status_code == 200
@@ -317,7 +250,7 @@ async def test_RF_9_secciones_transferibles_incluyen_fo_excluyen_legacy(
     assert fo["almacen_id"] in por_id
     tipos = {s["tipo"] for s in resp.json()}
     assert tipos == {"GENERAL", "FO"}
-    # Legacy excluidos (RF-9: los orígenes antiguos no se ofrecen).
+    # Los ids antiguos (2 y 3) ya no existen (purga 0028).
     assert ALMACEN_PAQUETE not in por_id
     assert ALMACEN_EN_USO not in por_id
     assert por_id[fo["almacen_id"]]["nombre"] == "Inventario FO"

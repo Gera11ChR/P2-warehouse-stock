@@ -121,8 +121,7 @@ async def secciones_transferibles(
 ) -> list[SeccionTransferibleOut]:
     """Secciones válidas como origen/destino de movimientos TEAMS/DEVOL
     (RF-9): GENERAL activas + la sección única de ruteo FO (transferible
-    aunque inactiva). Las secciones legacy FO_PAQUETE/FO_EN_USO NO se
-    emiten. No altera el contrato de GET /secciones."""
+    aunque inactiva). No altera el contrato de GET /secciones."""
     return [
         SeccionTransferibleOut(**s)
         for s in await inventario.listar_secciones_transferibles(session)

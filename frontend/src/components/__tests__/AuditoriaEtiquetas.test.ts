@@ -18,11 +18,11 @@ describe('Etiquetas de auditoría', () => {
     }
   })
 
-  it('RF-7/RF-10: etiqueta la fusión FO_UNIFICADO y el cambio de Valor Unitario (MATERIAL_MODIFICADO) con la nomenclatura oficial', () => {
-    expect(TIPOS_ACCION_AUDITORIA.FO_UNIFICADO).toBe('Inventario FO unificado')
+  it('etiqueta la purga del legado FO (PURGA_LEGACY_FO) y el cambio de Valor Unitario (MATERIAL_MODIFICADO) con la nomenclatura oficial', () => {
+    expect(TIPOS_ACCION_AUDITORIA.PURGA_LEGACY_FO).toBe('Purga del legado FO')
     expect(TIPOS_ACCION_AUDITORIA.MATERIAL_MODIFICADO).toBe('Material modificado')
     for (const etiqueta of [
-      TIPOS_ACCION_AUDITORIA.FO_UNIFICADO,
+      TIPOS_ACCION_AUDITORIA.PURGA_LEGACY_FO,
       TIPOS_ACCION_AUDITORIA.MATERIAL_MODIFICADO,
     ]) {
       expect(etiqueta).not.toMatch(/paquete|en uso/i)

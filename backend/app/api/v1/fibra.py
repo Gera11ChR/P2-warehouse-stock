@@ -1,9 +1,7 @@
-"""Fibra Óptica — Inventario FO unificado (RF-1, migración 0027).
+"""Fibra Óptica — Inventario FO unificado (RF-1).
 
 El Inventario FO es UNA sola locación por material (`inventario_fibra` con
-PK `material_id`): los antiguos subapartados PAQUETE/EN_USO desaparecen del
-dominio vivo (los tipos legacy `FO_PAQUETE`/`FO_EN_USO` solo sobreviven
-como valores históricos del ledger, RF-9). Toda mutación de stock se
+PK `material_id`), sin subapartados. Toda mutación de stock se
 delega a las stored functions `fn_cargar_stock_inicial_fibra` /
 `fn_ajustar_stock_fibra` / `fn_eliminar_inventario_fibra` vía
 services.transaccional — CERO aritmética de stock y CERO escritura directa

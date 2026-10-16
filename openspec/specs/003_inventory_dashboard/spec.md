@@ -95,7 +95,7 @@ The system SHALL render a top header with breadcrumbs (e.g., "Dashboard / Secci√
 - **THEN** the header shows breadcrumbs and the global search input with the specified placeholder and shortcut badge
 
 ### Requirement: REQ-FO-003 Official Inventario FO nomenclature
-The system SHALL name the single fiber-optic location "Inventario FO" in the side navigation, page title, TRANSF/Mover/+Cantidad selectors, reports, audit and messages, SHALL present a single fiber-optic navigation entry without sub-entries, and IF a visible text contains "Paquete", "En Uso", "FO Paquete" or "FO En Uso" as an inventory name THEN a sweep test SHALL fail (historical technical values and comments exempt).
+The system SHALL name the single fiber-optic location "Inventario FO" in the side navigation, page title, TRANSF/Mover/+Cantidad selectors, reports, audit and messages, SHALL present a single fiber-optic navigation entry without sub-entries, and IF a visible text contains "Paquete", "En Uso", "FO Paquete" or "FO En Uso" as an inventory name THEN a sweep test SHALL fail (comments and the unit of measure `PAQUETE (100 PZ)` exempt).
 
 #### Scenario: Nomenclature sweep
 - **WHEN** the sweep test runs over the visible texts

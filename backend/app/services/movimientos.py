@@ -54,13 +54,10 @@ async def _validar_referencias(
             ],
         )
 
-    # Enrutamiento FO (0027, RF-9): la sección de ruteo única 'FO' y las
-    # secciones legacy FO_PAQUETE/FO_EN_USO referencian el mismo
-    # inventario_fibra unificado; se aceptan aunque is_active=FALSE (un
-    # BORRADOR histórico con origen legacy sigue siendo editable y
-    # confirmable, caso E8). Solo las secciones GENERAL exigen
-    # is_active=TRUE. Los mensajes de sección inexistente permanecen
-    # idénticos al contrato previo.
+    # Enrutamiento FO: la sección de ruteo única 'FO' se acepta aunque
+    # is_active=FALSE (su stock vive en inventario_fibra). Solo las
+    # secciones GENERAL exigen is_active=TRUE. Un almacen_id inexistente
+    # responde "Sección origen/destino inexistente" (422).
     origenes: set[int] = set()
     if payload.tipo_movimiento == "TEAMS":
         # Multi-origen (0026): se validan TODOS los orígenes distintos.

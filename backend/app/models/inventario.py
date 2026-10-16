@@ -21,15 +21,13 @@ class Seccion(Base):
     """Maestro de secciones de inventario central (la entidad oficial del
     dominio; el término legacy `almacenes` queda erradicado).
 
-    Migración 0027 (RF-1/RF-9): se añade el tipo de ruteo `FO` (sección
-    única "Inventario FO"); `FO_PAQUETE`/`FO_EN_USO` se conservan como
-    valores HISTÓRICOS del ledger (referenciados por movimientos previos)
-    y jamás se eliminan."""
+    Solo existen dos tipos: `GENERAL` y `FO` (sección única de ruteo
+    "Inventario FO")."""
 
     __tablename__ = "secciones"
     __table_args__ = (
         CheckConstraint(
-            "tipo IN ('GENERAL','FO','FO_PAQUETE','FO_EN_USO')",
+            "tipo IN ('GENERAL','FO')",
             name="ck_secciones_tipo",
         ),
     )
@@ -133,11 +131,9 @@ class InventarioEquipo(Base):
 
 
 class InventarioFibra(Base):
-    """Inventario FO unificado (RF-1, migración 0027).
+    """Inventario FO unificado (RF-1).
 
-    UNA sola fila por material (PK `material_id`): el concepto `modulo`
-    (PAQUETE/EN_USO) desaparece del dominio vivo y solo sobrevive como
-    valor histórico en el ledger. La fila se crea con
+    UNA sola fila por material (PK `material_id`), sin subapartados. La fila se crea con
     `fn_cargar_stock_inicial_fibra` y se muta SOLO con
     `fn_ajustar_stock_fibra`; la métrica la gobierna `u_m` del catálogo
     maestro. LECTURA ESTRICTA desde el backend: prohibido session.add/delete

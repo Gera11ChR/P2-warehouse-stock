@@ -444,14 +444,14 @@ describe('Transferencias — Inventario FO único (REQ-TRF-001/002)', () => {
     )
   })
 
-  it('RF-9: un movimiento histórico con origen_almacen_id fuera de las secciones transferibles se rotula «Inventario FO»', async () => {
+  it('RF-5: un movimiento con origen_almacen_id fuera de las secciones transferibles se rotula «Sección #id»', async () => {
     ;(listMovimientos as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: 31,
         tipo_movimiento: 'TEAMS',
         estado: 'CONFIRMADO',
         usuario: 'demo-operador',
-        origen_almacen_id: 99, // FO_PAQUETE histórico: no figura en transferibles
+        origen_almacen_id: 99, // no figura en transferibles
         destino_almacen_id: null,
         origen_equipo_id: null,
         destino_equipo_id: 5,
@@ -462,8 +462,8 @@ describe('Transferencias — Inventario FO único (REQ-TRF-001/002)', () => {
     renderConQueryClient()
 
     const fila = (await screen.findByText('31')).closest('tr') as HTMLElement
-    expect(fila).toHaveTextContent('Inventario FO → Equipo QA')
-    expect(fila).not.toHaveTextContent('Sección 99')
+    expect(fila).toHaveTextContent('Sección #99 → Equipo QA')
+    expect(fila).not.toHaveTextContent('Inventario FO')
   })
 
   it('RF-9/RF-10: el selector de Sección Origen ofrece solo «Inventario General» e «Inventario FO» (sin «Paquete»/«En Uso»)', async () => {

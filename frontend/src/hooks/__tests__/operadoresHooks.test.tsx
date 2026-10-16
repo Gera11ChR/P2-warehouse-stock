@@ -74,7 +74,6 @@ describe('useSumarCantidad', () => {
       ]),
     )
     expect(claves()).not.toContainEqual(['stock'])
-    expect(claves()).not.toContainEqual(['fibra', 'EN_USO'])
     expect(claves()).not.toContainEqual(['fibra', 'PAQUETE'])
   })
 
@@ -114,7 +113,6 @@ describe('useMoverMaterial', () => {
       ]),
     )
     expect(claves()).not.toContainEqual(['fibra', 'PAQUETE'])
-    expect(claves()).not.toContainEqual(['fibra', 'EN_USO'])
   })
 
   it('FO → General: invalida ["fibra"] y ["stock"] (cada clave una sola vez)', async () => {

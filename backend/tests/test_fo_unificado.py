@@ -2,10 +2,9 @@
 históricos (RF-9) — cambio 2026-10-fo-unificado-valor-unitario.
 
 RF-1: una sola existencia FO por material, sin `modulo` en el contrato
-vivo (enviarlo → 422 sin efectos). RF-9: movimientos históricos con
-orígenes/destinos legacy FO_PAQUETE/FO_EN_USO siguen consultables,
-procesables (BORRADOR, E8) y cancelables contra el Inventario FO unificado
-(reversión exacta), y las secciones legacy no son seleccionables.
+vivo (enviarlo → 422 sin efectos). RF-4 (2026-10-purga-legacy-fo): las
+secciones legacy FO_PAQUETE/FO_EN_USO fueron purgadas (0028); un
+`almacen_id` purgado responde 422 «Sección … inexistente».
 """
 
 from decimal import Decimal
@@ -26,8 +25,10 @@ from tests.helpers.fabrica import (
     seccion_fo,
 )
 
-ALMACEN_PAQUETE = 2  # sección legacy FO_PAQUETE (histórica, RF-9)
-ALMACEN_EN_USO = 3   # sección legacy FO_EN_USO (histórica, RF-9)
+# Ids de las secciones legacy ya purgadas (0028): NO existen; se usan solo
+# para verificar el rechazo 422 (RF-4).
+ALMACEN_PAQUETE = 2
+ALMACEN_EN_USO = 3
 
 
 # ── RF-1: una sola existencia por material, sin subapartados ──────────────
@@ -127,127 +128,15 @@ async def test_RF_001_modulo_rechazado_en_toda_operacion_fo(
     assert ajustes == []
 
 
-# ── RF-9: compatibilidad con movimientos históricos ───────────────────────
+# ── RF-4: secciones legacy purgadas (cambio 2026-10-purga-legacy-fo) ─────
 
 
-async def test_RF_009_cancelar_transf_confirmado_origen_legacy_en_uso_restaura(
+async def test_RF_4_secciones_transferibles_solo_general_y_fo(
     client: AsyncClient, session
 ) -> None:
-    """RF-9: cancelar un TRANSF CONFIRMADO previo a la migración cuyo origen
-    era FO En Uso (cantidad 3) REVIERTE contra el Inventario FO unificado:
-    la existencia aumenta exactamente 3, el movimiento queda CANCELADO y el
-    motivo se registra en el ledger."""
-    m = await crear_material(client, descripcion="FO histórico EN_USO")
-    mid = m["id_lista"]
-    # Estado post-migración: el material conserva su existencia unificada
-    # (7 = stock que quedó tras el consumo histórico).
-    await fibra_carga_inicial(client, material_id=mid, cantidad=7)
-    equipo = await crear_equipo(client, nombre="Unidad histórica")
-    eq = equipo["equipo_id"]
-
-    # Siembra DIRECTA del movimiento histórico CONFIRMADO (pre-0027): la
-    # unidad conserva las 3 unidades entregadas y la línea referencia la
-    # sección legacy FO_EN_USO (almacén 3).
-    await session.execute(
-        text(
-            "INSERT INTO inventario_equipos "
-            "(equipo_id, material_id, stock_actual, ultimo_movimiento_id) "
-            "VALUES (:eq, :m, 3, NULL)"
-        ),
-        {"eq": eq, "m": mid},
-    )
-    await session.execute(
-        text(
-            "INSERT INTO movimientos_cabecera "
-            "(tipo_movimiento, estado, usuario, origen_almacen_id, "
-            "destino_equipo_id) "
-            "VALUES ('TEAMS','CONFIRMADO','qa',:origen,:eq) RETURNING id"
-        ),
-        {"origen": ALMACEN_EN_USO, "eq": eq},
-    )
-    mv = (
-        await session.execute(
-            text("SELECT max(id) FROM movimientos_cabecera")
-        )
-    ).scalar_one()
-    await session.execute(
-        text(
-            "INSERT INTO movimientos_detalle "
-            "(movimiento_id, material_id, cantidad, origen_almacen_id) "
-            "VALUES (:mv, :m, 3, :origen)"
-        ),
-        {"mv": mv, "m": mid, "origen": ALMACEN_EN_USO},
-    )
-    await session.commit()
-
-    await cancelar(client, mv, motivo="Baja histórica EN_USO")
-
-    # Reversión EXACTA contra el FO unificado (7 + 3 = 10).
-    filas = await inventario_fo(client)
-    assert filas[mid]["stock_actual"] == 10
-    # La unidad devuelve las 3 unidades (fila 0: sin fantasmas).
-    equipo_filas = await inventario_equipo(client, eq)
-    assert mid not in equipo_filas
-
-    resp = await client.get(f"/api/v1/movimientos/{mv}")
-    assert resp.json()["estado"] == "CANCELADO"
-
-    evento = (
-        await session.execute(
-            select(AuditoriaEvento).where(
-                AuditoriaEvento.tipo_accion == "MOVIMIENTO_CANCELADO"
-            )
-        )
-    ).scalars().one()
-    assert evento.almacen_origen_id == ALMACEN_EN_USO
-    assert evento.cantidad == 3
-    assert (evento.detalles or {})["motivo_cancelacion"] == (
-        "Baja histórica EN_USO"
-    )
-
-
-async def test_RF_009_borrador_legacy_origen_paquete_procesable(
-    client: AsyncClient, session
-) -> None:
-    """RF-9/E8: un movimiento BORRADOR en curso con origen legacy FO_PAQUETE
-    (previo a la migración) se puede CONFIRMAR contra el Inventario FO
-    unificado."""
-    from sqlalchemy import text
-
-    m = await crear_material(client, descripcion="FO borrador legacy")
-    mid = m["id_lista"]
-    await fibra_carga_inicial(client, material_id=mid, cantidad=20)
-    equipo = await crear_equipo(client, nombre="Unidad legacy")
-    await session.execute(
-        text(
-            "INSERT INTO actor_almacen_scopes (actor_id, almacen_id) "
-            "VALUES ('qa', :i) ON CONFLICT DO NOTHING"
-        ),
-        {"i": ALMACEN_PAQUETE},
-    )
-    await session.commit()
-
-    b = await borrador_teams(
-        client,
-        almacen_id=ALMACEN_PAQUETE,
-        equipo_id=equipo["equipo_id"],
-        material_id=mid,
-        cantidad=8,
-    )
-    await procesar(client, b["id"])
-
-    filas = await inventario_fo(client)
-    assert filas[mid]["stock_actual"] == 12
-    equipo_filas = await inventario_equipo(client, equipo["equipo_id"])
-    assert equipo_filas[mid]["stock_actual"] == 8
-
-
-async def test_RF_009_secciones_legacy_no_seleccionables(
-    client: AsyncClient,
-) -> None:
-    """RF-9: el selector de origen/destino (secciones/transferibles) ofrece
-    SOLO "Inventario FO" — las secciones legacy FO_PAQUETE/FO_EN_USO no
-    aparecen como opciones."""
+    """RF-4: el selector de origen/destino (secciones/transferibles) ofrece
+    SOLO GENERAL activas e "Inventario FO"; los ids 2 y 3 (antes legacy) ya
+    no existen en la base."""
     fo = await seccion_fo(client)
     resp = await client.get("/api/v1/inventario/secciones/transferibles")
     assert resp.status_code == 200
@@ -256,7 +145,83 @@ async def test_RF_009_secciones_legacy_no_seleccionables(
     assert tipos == ["GENERAL", "FO"] or set(tipos) == {"GENERAL", "FO"}
     assert ALMACEN_PAQUETE not in {s["almacen_id"] for s in datos}
     assert ALMACEN_EN_USO not in {s["almacen_id"] for s in datos}
+    # La tabla tampoco conserva tipos legacy (ck_secciones_tipo).
+    legacy = await session.execute(
+        text("SELECT count(*) FROM secciones WHERE tipo NOT IN ('GENERAL','FO')")
+    )
+    assert legacy.scalar_one() == 0
     fo_seccion = next(s for s in datos if s["tipo"] == "FO")
     assert fo_seccion["nombre"] == "Inventario FO"
     assert fo_seccion["almacen_id"] == fo["almacen_id"]
     assert fo_seccion["transferible"] is True
+
+
+async def test_RF_4_origen_purgado_responde_422_sin_efectos(
+    client: AsyncClient, session
+) -> None:
+    """RF-4/E10: un borrador TEAMS con origen_almacen_id = 2 (antes
+    FO_PAQUETE) responde 422 «Sección origen inexistente» y no persiste
+    nada."""
+    m = await crear_material(client, descripcion="FO origen purgado")
+    equipo = await crear_equipo(client, nombre="Unidad purgada")
+    antes = (
+        await session.execute(text("SELECT count(*) FROM movimientos_cabecera"))
+    ).scalar_one()
+
+    resp = await client.post(
+        "/api/v1/movimientos",
+        json={
+            "tipo_movimiento": "TEAMS",
+            "origen_almacen_id": ALMACEN_PAQUETE,
+            "destino_equipo_id": equipo["equipo_id"],
+            "detalle": [{"material_id": m["id_lista"], "cantidad": 1}],
+        },
+    )
+    assert resp.status_code == 422, resp.text
+    assert "Sección origen inexistente" in resp.text
+
+    despues = (
+        await session.execute(text("SELECT count(*) FROM movimientos_cabecera"))
+    ).scalar_one()
+    assert despues == antes
+
+
+async def test_RF_4_destino_devol_purgado_y_origen_id3_responden_422(
+    client: AsyncClient, session
+) -> None:
+    """RF-4/E10: el id 3 (antes FO_EN_USO) como origen TEAMS y el id 2 como
+    destino DEVOL responden 422 «Sección … inexistente», sin efectos."""
+    m = await crear_material(client, descripcion="FO ids purgados")
+    equipo = await crear_equipo(client, nombre="Unidad ids purgados")
+    antes = (
+        await session.execute(text("SELECT count(*) FROM movimientos_cabecera"))
+    ).scalar_one()
+
+    r1 = await client.post(
+        "/api/v1/movimientos",
+        json={
+            "tipo_movimiento": "TEAMS",
+            "origen_almacen_id": ALMACEN_EN_USO,
+            "destino_equipo_id": equipo["equipo_id"],
+            "detalle": [{"material_id": m["id_lista"], "cantidad": 1}],
+        },
+    )
+    assert r1.status_code == 422, r1.text
+    assert "Sección origen inexistente" in r1.text
+
+    r2 = await client.post(
+        "/api/v1/movimientos",
+        json={
+            "tipo_movimiento": "DEVOL",
+            "origen_equipo_id": equipo["equipo_id"],
+            "destino_almacen_id": ALMACEN_PAQUETE,
+            "detalle": [{"material_id": m["id_lista"], "cantidad": 1}],
+        },
+    )
+    assert r2.status_code == 422, r2.text
+    assert "Sección destino inexistente" in r2.text
+
+    despues = (
+        await session.execute(text("SELECT count(*) FROM movimientos_cabecera"))
+    ).scalar_one()
+    assert despues == antes

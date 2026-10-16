@@ -477,10 +477,7 @@ async def cargar_stock_inicial_ruteada(
     soft-inactiva (no alberga stock propio: su inventario vive en
     `inventario_fibra`), por lo que NO se le exige `is_active` — solo se
     valida su existencia (404). Para GENERAL la exigencia de sección activa
-    permanece íntegra dentro de `cargar_stock_inicial`. Los tipos legacy
-    FO_PAQUETE/FO_EN_USO ya NO son destinos de carga inicial (RF-1: el
-    ruteo histórico desaparece; los movimientos legacy siguen leyéndose de
-    la BD).
+    permanece íntegra dentro de `cargar_stock_inicial`.
 
     CERO aritmética de stock en Python: toda la lógica (unicidad, auditoría
     'STOCK_INICIAL'/'STOCK_INICIAL_FO') vive en PostgreSQL; esta función
