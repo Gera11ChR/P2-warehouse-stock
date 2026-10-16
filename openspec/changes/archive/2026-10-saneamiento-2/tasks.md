@@ -76,4 +76,8 @@
 
 ## Registro de destrucción (D-7)
 
-_Pendiente de confirmación humana explícita._
+Confirmada por el solicitante el 2026-10-16. Ejecutado: `find /tmp/opencode -xdev -type f -exec shred -u {} +` y `find /tmp/opencode -depth -mindepth 1 -type d -empty -delete`.
+
+- Destruidos: 92 archivos regulares (0 symlinks) — el `pg_dump` previo a `0028` (`p2_pre_0028.dump`), los scripts auxiliares de las compuertas y de verificación, los baselines/volcados de OpenAPI y los logs de ejecución. No se registra su contenido.
+- Resultado: `/tmp/opencode` conservado, vacío (0 archivos, 0 subdirectorios).
+- La purga de `p2` ejecutada por `0028` ya no es recuperable. `/tmp` es tmpfs: `shred` es de mejor esfuerzo.
