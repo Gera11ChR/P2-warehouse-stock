@@ -50,12 +50,27 @@ async def test_listar_con_filtros(client: AsyncClient) -> None:
     assert resp.status_code == 200
     assert [m["codigo"] for m in resp.json()["materiales"]] == ["B-002"]
 
-    resp = await client.get(
-        "/api/v1/catalogo", params={"desde_sku": "B", "hasta_sku": "CZZ"}
-    )
+
+async def test_filtros_eliminados_son_ignorados(client: AsyncClient) -> None:
+    """RF-4/E6: `desde_sku`, `hasta_sku`, `desde_id_lista` y `hasta_id_lista`
+    ya no existen; un cliente externo que los envíe recibe 200 y el listado
+    SIN filtrar (parámetros de consulta desconocidos, ignorados)."""
+    await crear_material(client, descripcion="AAA", codigo="A-001")
+    await crear_material(client, descripcion="BBB", codigo="B-002")
+    await crear_material(client, descripcion="CCC", codigo="C-003")
+
+    resp = await client.get("/api/v1/catalogo")
     assert resp.status_code == 200
-    codigos = {m["codigo"] for m in resp.json()["materiales"]}
-    assert codigos == {"B-002", "C-003"}
+    todos = {m["codigo"] for m in resp.json()["materiales"]}
+    assert todos == {"A-001", "B-002", "C-003"}
+
+    for params in (
+        {"desde_sku": "B", "hasta_sku": "CZZ"},
+        {"desde_id_lista": 2, "hasta_id_lista": 2},
+    ):
+        resp = await client.get("/api/v1/catalogo", params=params)
+        assert resp.status_code == 200, resp.text
+        assert {m["codigo"] for m in resp.json()["materiales"]} == todos
 
 
 async def test_obtener_inexistente_404(client: AsyncClient) -> None:

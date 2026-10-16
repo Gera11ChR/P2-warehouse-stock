@@ -97,10 +97,6 @@ async def listar(
     *,
     buscar: str | None = None,
     categoria_id: int | None = None,
-    desde_id_lista: int | None = None,
-    hasta_id_lista: int | None = None,
-    desde_sku: str | None = None,
-    hasta_sku: str | None = None,
     desde_numero_lista: int | None = None,
     hasta_numero_lista: int | None = None,
     desde_descripcion: str | None = None,
@@ -109,8 +105,8 @@ async def listar(
     """Listado del catálogo activo con posicionamiento ordinal opcional.
 
     Orden de aplicación (REQ-API-006/007): primero se filtran los criterios
-    de negocio — buscar, categoria_id, rangos id_lista/SKU y rangos de
-    descripción — y DESPUÉS se aplica el OFFSET/LIMIT ordinal
+    de negocio — buscar, categoria_id y rangos de descripción — y DESPUÉS
+    se aplica el OFFSET/LIMIT ordinal
     (determinista: ORDER BY descripcion ASC, id_lista ASC,
     OFFSET = desde_numero_lista - 1, LIMIT = hasta - desde + 1,
     start_index = desde_numero_lista or 1). Sin parámetros ordinales se
@@ -129,14 +125,6 @@ async def listar(
         )
     if categoria_id is not None:
         stmt = stmt.where(CatalogoMaterial.categoria_id == categoria_id)
-    if desde_id_lista is not None:
-        stmt = stmt.where(CatalogoMaterial.id_lista >= desde_id_lista)
-    if hasta_id_lista is not None:
-        stmt = stmt.where(CatalogoMaterial.id_lista <= hasta_id_lista)
-    if desde_sku is not None:
-        stmt = stmt.where(CatalogoMaterial.codigo >= desde_sku)
-    if hasta_sku is not None:
-        stmt = stmt.where(CatalogoMaterial.codigo <= hasta_sku)
     # Rangos por descripción (REQ-API-007): filtros deterministas que
     # aplican junto con el resto de criterios ANTES del posicionamiento.
     if desde_descripcion:

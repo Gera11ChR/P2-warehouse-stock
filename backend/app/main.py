@@ -6,6 +6,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError
 
 from app.api.v1 import (
     ajustes,
@@ -105,6 +106,37 @@ async def movimiento_state_handler(
     request: Request, exc: MovimientoStateError
 ) -> JSONResponse:
     return JSONResponse(status_code=409, content=exc.to_http_detail())
+
+
+SQLSTATE_NUMERIC_VALUE_OUT_OF_RANGE = "22003"
+
+
+@app.exception_handler(DBAPIError)
+async def dbapi_error_handler(
+    request: Request, exc: DBAPIError
+) -> JSONResponse:
+    """RF-2: un identificador/valor entero fuera del rango de la columna que
+    PostgreSQL rechaza en el servidor (SQLSTATE 22003, NumericValueOutOfRange)
+    responde HTTP 400 con el cuerpo de error canónico, en lugar de un 500.
+
+    El predicado es EXCLUSIVO por SQLSTATE (sin fallback por mensaje ni por
+    `psycopg.DataError`). Cualquier otro error de base de datos se relanza y
+    conserva su tratamiento actual. El mensaje es fijo: no interpola la
+    excepción ni expone SQL, parámetros o nombres internos."""
+    sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None)
+    if sqlstate != SQLSTATE_NUMERIC_VALUE_OUT_OF_RANGE:
+        raise exc
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": {
+                "code": "NUMERIC_OUT_OF_RANGE",
+                "message": "Un valor numérico de la solicitud excede el "
+                "rango soportado",
+                "coordinates": [],
+            }
+        },
+    )
 
 
 def _sanitizar_floats_no_finitos(valor: Any) -> Any:

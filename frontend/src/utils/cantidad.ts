@@ -143,16 +143,6 @@ export function mensajeCantidadInvalida(
   }
 }
 
-/** Cantidad decimal válida (>0 salvo `permitirCero`) o null. Atajo sobre
- *  `validarCantidad`. */
-export function parseCantidadDecimal(
-  valor: string,
-  opciones: OpcionesCantidad = {},
-): number | null {
-  const r = validarCantidad(valor, opciones)
-  return r.ok ? r.cantidad : null
-}
-
 /** ¿El número cumple la escala/rango de cantidad (≤3 decimales, ≤12
  *  dígitos, finito)? Guardia de payload; no redondea. */
 export function esCantidadDecimalValida(

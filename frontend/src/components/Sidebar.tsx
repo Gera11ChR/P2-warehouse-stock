@@ -14,7 +14,6 @@ interface NavItem {
   page: string
   sub?: string
   icon: typeof Boxes
-  children?: NavItem[]
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -70,31 +69,6 @@ export default function Sidebar({ current, onNavigate }: SidebarProps) {
                 <Icon className="h-4 w-4" />
                 <span>{item.label}</span>
               </button>
-              {item.children && (
-                <div className="ml-4 mt-1 space-y-1">
-                  {item.children.map((child) => {
-                    const childActive = isActive(child)
-                    const ChildIcon = child.icon
-                    return (
-                      <button
-                        key={child.label}
-                        type="button"
-                        onClick={() =>
-                          onNavigate({ page: child.page, sub: child.sub })
-                        }
-                        className={`flex w-full items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors ${
-                          childActive
-                            ? 'bg-blue-600 text-white'
-                            : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                        }`}
-                      >
-                        <ChildIcon className="h-3.5 w-3.5" />
-                        <span>{child.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
             </div>
           )
         })}

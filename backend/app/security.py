@@ -9,7 +9,30 @@ from app.db import SessionLocal
 from app.errors import AuthorizationError
 from app.models import ActorAlmacenScope, EquipoIntegrante
 
-ActorHeader = Annotated[str, Header(alias="X-Actor")]
+# RF-3: `X-Actor` es un identificador NO autenticado (la autenticación real
+# queda fuera de alcance). Solo se acota su forma: 1..100 caracteres, al menos
+# un carácter no blanco y sin caracteres de control (C0 y DEL/C1). El rechazo
+# es un 422 de validación que ocurre ANTES de abrir sesión de base de datos.
+# El carácter "no blanco" es `[^\s<controles>]` (y no `\S`): `\S` también
+# casa NUL/DEL/C1 no blancos y dejaría pasar un control como único "visible".
+ActorHeader = Annotated[
+    str,
+    Header(
+        alias="X-Actor",
+        description=(
+            "Identificador del actor (NO autenticado; la autenticación real "
+            "está fuera de alcance). 1..100 caracteres, sin caracteres de "
+            "control."
+        ),
+        min_length=1,
+        max_length=100,
+        pattern=(
+            r"^[^\x00-\x1f\x7f-\x9f]*"
+            r"[^\s\x00-\x1f\x7f-\x9f]"
+            r"[^\x00-\x1f\x7f-\x9f]*$"
+        ),
+    ),
+]
 
 
 @dataclass(frozen=True)

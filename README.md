@@ -4,9 +4,9 @@
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](#2-technology-stack)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Pydantic_V2-009688.svg)](#2-technology-stack)
 [![Database](https://img.shields.io/badge/PostgreSQL-18_PL%2FpgSQL-336791.svg)](#2-technology-stack)
-[![Backend Tests](https://img.shields.io/badge/Pytest-303%2F303_Passed-success.svg)](#8-quality-assurance)
-[![Frontend Tests](https://img.shields.io/badge/Vitest-341%2F341_Passed-success.svg)](#8-quality-assurance)
-[![Types](https://img.shields.io/badge/Mypy-0_Errors_73_files-brightgreen.svg)](#8-quality-assurance)
+[![Backend Tests](https://img.shields.io/badge/Pytest-519%2F519_Passed-success.svg)](#8-quality-assurance)
+[![Frontend Tests](https://img.shields.io/badge/Vitest-529%2F529_Passed-success.svg)](#8-quality-assurance)
+[![Types](https://img.shields.io/badge/Mypy-0_Errors_88_files-brightgreen.svg)](#8-quality-assurance)
 [![License](https://img.shields.io/badge/License-Proprietary_All_Rights_Reserved-red.svg)](#license)
 
 Enterprise **fiber-optic logistics and fleet inventory platform** built on **FastAPI + PostgreSQL 18** with a **React 19** console. Designed under the principles of transactional atomicity, immutable auditability and strict specification-driven governance.
@@ -33,7 +33,7 @@ It replaces spreadsheet-driven inventory control with a transactional system of 
 | --- | --- |
 | Materials dispatched to crews are never returned/corroborated | `TEAMS` (dispatch) and `DEVOL` (return) movements, atomically processed and reversible via cancellation |
 | Stock discrepancies discovered after the fact | Justification is **optional** (2026-10-04 ergonomics): every adjustment, edit or cancellation is still ledgered with the motivo exactly as received (`NULL` allowed). Exception: FO deletion with stock > 0 keeps a mandatory reason (`REQ-DEL-004`) |
-| Fiber-optic stock treated as an anonymous lump sum | Dedicated **FO modules** (`PAQUETE` / `EN_USO`) with their own isolated inventory, CRUD and audit trail |
+| Fiber-optic stock treated as an anonymous lump sum | A single dedicated **Inventario FO** (one row per material) with its own isolated inventory, CRUD and audit trail |
 | Consumption of materials (lists taken vs. consumed) tracked informally | **Seguimientos de CONSUMO** lifecycle per crew: open → close, closing records the **consumed** quantity per material (one line per material, required), `fn_cerrar_seguimiento` deducts it directly from the unit's stock, and an Acta de Consumo is recorded in the same transaction |
 | No forensics on who changed what | Immutable `auditoria_eventos` ledger (LEFT-JOIN readable), correlation `trace_id` per request |
 
@@ -79,7 +79,7 @@ Six operational screens (one React page each) over ten backend routers:
 | --- | --- |
 | **Sección General** | Master catalog (SKUs, categories, units of measure), initial stock loads, warehouse-level inventory with a single unified search |
 | **Inventario por Unidad** | Fleet/crew-scoped inventory, local configuration, crew membership, seguimientos de CONSUMO |
-| **Fibra Óptica** | Isolated `PAQUETE` / `EN_USO` roots: view, edit, adjust, delete (motivo mandatory only when stock > 0) |
+| **Fibra Óptica** | Unified **Inventario FO** (one row per material, no sub-sections): view, edit, adjust, delete (motivo mandatory only when stock > 0) |
 | **Transferencias** | `TEAMS` (shown in the UI as **TRANSF**; warehouse/FO → crew) and `DEVOL` (crew → warehouse/FO) with cart review and cancellation; a `TEAMS` cart can **mix General and Fibra Óptica lines** — each line carries its own origin, is validated and deducted against it in one atomic transaction, and the operation yields a single acta and history row |
 | **Reportes** | Official reports: Actas de Entrega / Consumo — JSON listing or XLSX injected onto the corporate templates |
 | **Auditoría** | Read-only, human-readable immutable ledger |
@@ -98,14 +98,14 @@ Six operational screens (one React page each) over ten backend routers:
 | **SQLAlchemy 2** | `[asyncio] >= 2.0.41` (installed 2.0.52) | Async ORM for reads and models; **never** for stock arithmetic |
 | **psycopg 3** | `[binary] >= 3.2` | PostgreSQL async driver under SQLAlchemy |
 | **PostgreSQL** | 18, PL/pgSQL | System of record, locking, stored functions, triggers, audit ledger |
-| **Alembic** | `>= 1.16` | Schema migrations — 23 revisions, `0001_initial` → `0023_justificacion_opcional` |
-| **pytest / pytest-asyncio** | `>= 8` / `>= 1.0` | 303-case integration suite against a real, isolated database |
+| **Alembic** | `>= 1.16` | Schema migrations — 28 revisions, `0001_initial` → `0028_purga_legacy_fo` (head `0028`) |
+| **pytest / pytest-asyncio** | `>= 8` / `>= 1.0` | 519-case integration suite against a real, isolated database (+ 25 raw-SQL tests in `backend/sql_tests/`) |
 | **HTTPX** | `>= 0.27` | Async ASGI test client (`ASGITransport`) for endpoint contracts |
 | **mypy** | `>= 1.11` (installed 2.3.1) | Static type verification over `app/` + `tests/` (see honest status in [§10.2](#10-known-limitations--technical-debt)) |
 | **pyotp + cryptography** | `>= 2.9` / `>= 44` | MFA primitives: Fernet key handling and TOTP attempt/lockout knobs in `app/config.py` — **not yet exposed by any endpoint** (see §10) |
 | **uvicorn** | ASGI server | Local/production serving (`--reload` in development) |
 
-The schema's source of truth is the Alembic migrations in `backend/alembic/versions/` (head `0027`); `backend/db/ddl.sql` is kept only as a **historical reference** (it predates the unified Inventario FO and `valor_unitario`). Runtime wiring in `backend/app/{main,config,db,errors,security,telemetry}.py`.
+The schema's source of truth is the Alembic migrations in `backend/alembic/versions/` (head `0028`); `backend/db/ddl.sql` is a **schema-only snapshot of head `0028`** — a non-executable reference regenerated and verified with `backend/scripts/generar_ddl.py` (never run it against a real database). Runtime wiring in `backend/app/{main,config,db,errors,security,telemetry}.py`.
 
 ### 2.2 Frontend — `frontend/`
 
@@ -119,7 +119,7 @@ The schema's source of truth is the Alembic migrations in `backend/alembic/versi
 | **Zod** | `^4.6.5` | Client-side form validation (`src/schemas/*`) before submission |
 | **Tailwind CSS** | `^4.3.3` | Styling via the `@tailwindcss/vite` plugin (no `tailwind.config` — v4 CSS-first setup) |
 | **lucide-react** | `^1.40.0` | Icon system |
-| **Vitest + Testing Library** | `^5.0.0` / `^16` | 341 tests across 31 files in `jsdom` |
+| **Vitest + Testing Library** | `^5.0.0` / `^16` | 529 tests across 43 files in `jsdom` |
 | **ESLint (flat config)** | `^10.9.0` | Lint gate (`react-hooks`, `react-refresh`, `typescript-eslint`) |
 
 Architecture: `pages/` (6 screens) → `components/` (31) → `hooks/` (21, typed Query wrappers) → `services/` (9, one file per domain documenting the real HTTP contract) → `types.ts` (shared DTOs). Toast-based error surfacing; the UI never interprets an API error as stock = 0 (fail-closed).
@@ -184,6 +184,9 @@ Authority is layered in five levels (`.agents.md`): **L1** `docs/constitution.md
 | 2026-10-04 | **Operative ergonomics & UI cleanup** | Optional justification in adjustments/transfers; bulk search removed from Sección General; clean breadcrumbs without the "Dashboard /" prefix (`2026-10-04-ergonomia-justificacion-opcional`, `2026-10-04-eliminar-buscador-a-granel`, `2026-10-04-eliminar-breadcrumb-dashboard`) |
 | 2026-10-04 | **Forensic credential purge** | PostgreSQL credentials surgically purged from the entire Git history via `git filter-repo` (`***REDACTED***`), zero traces verified (see [§4.5.4](#454-forensic-credential-purge-of-git-history)) |
 | 2026-10-04 | **Proprietary relicensing** | MIT license replaced by a proprietary license reserving all rights to Gerardo Chávez Rodríguez (LFDA/LFPPI) — see [License](#license) |
+| 2026-10-16 | **Unified Inventario FO + Valor Unitario / Valor Total + decimal quantities** | One FO stock per material (no Paquete / En Uso), `valor_unitario` per material, `Valor Total` KPI and quantities with up to 3 decimals (`2026-10-fo-unificado-valor-unitario`, migration `0027`) |
+| 2026-10-16 | **Legacy FO purge** | Physical removal of the FO Paquete / En Uso sections and their test data under a scoped constitutional amendment (E-1), bridge code pruned (`2026-10-purga-legacy-fo`, migration `0028`) |
+| 2026-10-16 | **Technical-debt sanitation 2** | IDs out of INT4 answer 400, `X-Actor` shape validation, dead code and deprecated filters pruned, schema snapshot regenerated, docs aligned (`2026-10-saneamiento-2`) |
 
 Seven change packages were archived progressively through 2026-10-01; the six packages consolidated on 2026-10-04 raised the archive to thirteen (Fase 13, paquete `2026-10-04-saneamiento-deuda-tecnica`), leaving exactly one active change.
 
@@ -204,6 +207,8 @@ Seven change packages were archived progressively through 2026-10-01; the six pa
 ## 4. Recent consolidation & technical milestones
 
 ### 4.1 Critical fix — FO module `DELETE` returning HTTP 500
+
+> Historical (2026-09): this section describes the former `PAQUETE` / `EN_USO` modules and `modulo` parameters, superseded by the unified Inventario FO (§4.6).
 
 **Symptom** (`docs/fo_report_1.md`): deleting a material from Fibra Óptica, in both `PAQUETE` and `EN_USO`, returned `HTTP 500 Internal Server Error`; the operator only saw a generic *"Ocurrió un error"*. The frontend was validated as correct — it built the URL and the mandatory `motivo` query parameter properly.
 
@@ -252,7 +257,7 @@ cd backend
 .venv/bin/python scripts/seed_catalogo_oficial.py
 ```
 
-### 4.3 Quality assurance — verified results (2026-10-04)
+### 4.3 Quality assurance — verified results (2026-10-04, historical snapshot; current state in [§8](#8-quality-assurance))
 
 | Gate | Command | Result |
 | --- | --- | --- |
@@ -262,11 +267,13 @@ cd backend
 | Type + bundle build | `npm run build` (`tsc -b && vite build`) | **✓ built in ~1 s** (single chunk-size advisory, pre-existing) |
 | Lint | `npm run lint` (`eslint .`) | **✓ clean, zero findings** |
 
-How the backend suite stays trustworthy: it runs **exclusively against an isolated `p2_test` database** — created and migrated to `alembic upgrade head` (0001 → 0023) at collection time, then `TRUNCATE … RESTART IDENTITY CASCADE` over the 18 domain tables plus a deterministic re-seed **before every test**. The development database `p2` is never touched. Each test asserts both the HTTP contract and the resulting database/ledger state, and is traceable to an EARS requirement ID.
+How the backend suite stays trustworthy: it runs **exclusively against an isolated `p2_test` database** — created and migrated to `alembic upgrade head` (0001 → head) at collection time, then `TRUNCATE … RESTART IDENTITY CASCADE` over the 18 domain tables plus a deterministic re-seed **before every test**. The development database `p2` is never touched. Each test asserts both the HTTP contract and the resulting database/ledger state, and is traceable to an EARS requirement ID.
 
 Details and repro instructions: [§8 Quality Assurance](#8-quality-assurance).
 
 ### 4.4 Adjacent iterations consolidated in the same window
+
+> Historical (2026-09): the Paquete / En Uso routing described below was superseded by the unified **Inventario FO** (§4.6).
 
 * **NIS catalog fixes** (`2026-09-28-nis-catalog-fixes`, `docs/nis_report.md`):
   * Initial-load target section now offers **Fibra Óptica – Paquete / En Uso** and routes stock to `inventario_fibra` via `fn_cargar_stock_inicial_fibra`.
@@ -274,9 +281,17 @@ Details and repro instructions: [§8 Quality Assurance](#8-quality-assurance).
   * `Transferencias` now reads FO origins from `GET /fibra/{modulo}` when a fiber root is selected, fixing an empty-cart latent defect.
 * **FO CRUD autonomy** (`2026-09-29-fo-crud-management`, `docs/fo_report.md`): view detail, edit catalog fields and delete with mandatory reason — audited as `ELIMINACION_FO` / `AJUSTE_INVENTARIO_FO`, isolated per module, without altering `TEAMS`/`DEVOL`.
 
+### 4.6 2026-10-16 — Unified Inventario FO, purge of the legacy and sanitation
+
+* **Unification (`0027`)**: one `inventario_fibra` row per material (PK `material_id`), the `modulo` concept removed from API and UI; `catalogo_materiales.valor_unitario` (MXN, `NUMERIC(12,3)`) and `GET /inventario/resumen-general` (Valor Total computed in PostgreSQL); every quantity is a decimal (`NUMERIC(12,3)`, up to 3 decimals).
+* **Purge (`0028`)**: the `FO_PAQUETE` / `FO_EN_USO` sections and everything depending on them were physically deleted (test data only, scoped amendment E-1, one-time, both ledger-immutability triggers re-enabled and verified, traced by one `PURGA_LEGACY_FO` event); `secciones.tipo` is now `GENERAL` or `FO`.
+* **Sanitation 2**: out-of-range integer IDs (SQLSTATE `22003`) answer HTTP 400 through a global handler; `X-Actor` is shape-validated (1..100 chars, no control characters) but remains **unauthenticated**; dead code and deprecated catalog filters (`desde/hasta_id_lista`, `desde/hasta_sku`) were removed; `ddl.sql` regenerated.
+
 ### 4.5 2026-10-04 — Operative ergonomics, UI cleanup & security hygiene
 
 #### 4.5.1 Optional justification — global ergonomics (`2026-10-04-ergonomia-justificacion-opcional`, REQ-ERG-001…008)
+
+> Historical (2026-10-04): route names citing `{modulo}` below were superseded by the unified Inventario FO (§4.6).
 
 The justification field (motivo/observaciones) became **optional** across the inventory flows to speed up field operation: material edits (`PATCH /catalogo/{id_lista}`, `PATCH /fibra/{modulo}/materiales/{id}`), administrative stock adjustments (`POST /ajustes/stock-almacen`, `POST /fibra/ajuste`), TEAMS/DEVOL drafts and movement cancellation. The immutable ledger keeps auditing every mutation with the motivo exactly as received (`NULL` allowed); idempotency and audit invariants are untouched. Exception: FO deletion with stock > 0 keeps a mandatory reason (`REQ-DEL-004`). Contracted as the new `domain_rules.justificacion_opcional` in `openspec/openspec.yaml` (migration `0023`).
 
@@ -299,7 +314,7 @@ A plaintext PostgreSQL connection credential that had entered the repository his
 ```text
 P2/
 ├── backend/
-│   ├── alembic/versions/      # 23 migrations: 0001_initial … 0023_justificacion_opcional
+│   ├── alembic/versions/      # 28 migrations: 0001_initial … 0028_purga_legacy_fo
 │   ├── app/
 │   │   ├── api/v1/            # 10 routers (ajustes, auditoria, cancelaciones, catalog,
 │   │   │                      #   equipos, fibra, inventario, movimientos, reportes, seguimientos)
@@ -307,9 +322,9 @@ P2/
 │   │   ├── services/          # Domain services; transaccional.py = DB delegation
 │   │   ├── models/            # SQLAlchemy models (reads)
 │   │   └── {main,config,db,errors,security,telemetry}.py
-│   ├── db/ddl.sql             # HISTORICAL reference only — source of truth: alembic/versions (head 0027)
-│   ├── scripts/               # seed_catalogo_oficial.py · dev-db.sh
-│   ├── tests/                 # 23 files · 303 tests · isolated p2_test
+│   ├── db/ddl.sql             # Schema-only snapshot of head 0028 (reference) — source of truth: alembic/versions
+│   ├── scripts/               # seed_catalogo_oficial.py · generar_ddl.py · dev-db.sh
+│   ├── tests/                 # 34 files · 519 tests · isolated p2_test (+ sql_tests/: 25)
 │   ├── pyproject.toml         # Dependencies + pytest config
 │   └── .env.example           # Env template — real credentials never committed
 ├── frontend/
@@ -321,7 +336,7 @@ P2/
 │       └── test/setup.ts
 ├── openspec/
 │   ├── openspec.yaml          # Canonical architecture/API contract
-│   ├── changes/               # 1 active package + archive/ (13 archived)
+│   ├── changes/               # 0 active packages + archive/ (21 archived)
 │   └── specs/                 # Master specs sincronizados: 001_core_logistics,
 │                              #   002_stock_transfer, 003_inventory_dashboard
 ├── docs/                      # Constitution, operational flow, ADRs, NIS/FO reports, economic valuation
@@ -395,7 +410,7 @@ bash backend/scripts/dev-db.sh
 
 # Option B: your own PostgreSQL 18 instance, then:
 cd backend
-alembic upgrade head            # 0001 → 0023
+alembic upgrade head            # 0001 → 0028
 .venv/bin/python scripts/seed_catalogo_oficial.py   # optional: 53-item catalog
 ```
 
@@ -435,15 +450,15 @@ export P2_TEST_DATABASE_URL="postgresql+psycopg://USER:PASSWORD@127.0.0.1:5432/p
 
 > `tests/conftest.py` falls back to a **password-less** URL if `P2_ADMIN_DATABASE_URL` / `P2_TEST_DATABASE_URL` are not exported. If your cluster requires authentication, export both (as above) before running pytest.
 
-**Isolation model:** `p2_test` is created and migrated automatically at collection (`alembic upgrade head`, full chain 0001 → 0023); each test is preceded by `TRUNCATE … RESTART IDENTITY CASCADE` on the 18 domain tables plus a deterministic re-seed (section *Inventario General*, 10 master U.M., QA actor scopes). The development database `p2` is never written to.
+**Isolation model:** `p2_test` is created and migrated automatically at collection (`alembic upgrade head`, full chain 0001 → 0028); each test is preceded by `TRUNCATE … RESTART IDENTITY CASCADE` on the 18 domain tables plus a deterministic re-seed (section *Inventario General*, 10 master U.M., QA actor scopes). The development database `p2` is never written to.
 
-**Current state: 303 tests / 23 files, all green.**
+**Current state: 519 tests / 34 files (+ 25 in `sql_tests/`), all green; `mypy app/ tests/` reports 0 errors across 88 files.**
 
 ### 8.2 Frontend (Vitest + ESLint + tsc)
 
 ```bash
 cd frontend
-npm test          # vitest run — 341 tests / 31 files
+npm test          # vitest run — 529 tests / 43 files
 npm run lint      # eslint flat config
 npm run build     # tsc -b && vite build
 ```
@@ -460,7 +475,7 @@ A change set may not be merged, deployed or archived unless: all mapped automate
 * **Workflow:** `docs/flujo_operacional.md` — phases **0–13**, from domain validation and architecture sign-off through database design, backend implementation, testing, contract freeze, frontend implementation, zero-drift QA, human acceptance, security audit, evidence and archival.
 * **Constitution:** `docs/constitution.md` — 8 non-negotiable sections (specification supremacy, domain invariants, zero-trust security, atomicity/idempotency, API governance, telemetry/audit, QA gates, amendment procedure).
 * **Agents:** 11 specialists in `.opencode/agents/` — `@arq-reviewer`, `@auditor`, `@dba-guard`, `@sec-ops`, `@coder`, `@tester`, `@qa-agent`, `@ui-agent`, `@ux-agent`, `@form-agent`, `@state-agent`, with a defined responsibility matrix per phase.
-* **Change packages:** 1 active in `openspec/changes/`; 13 completed in `openspec/changes/archive/`.
+* **Change packages:** 0 active in `openspec/changes/`; 21 completed in `openspec/changes/archive/`.
 * **Operational reports:** business/field findings enter as documents (`docs/nis_report.md`, `docs/fo_report.md`, `docs/fo_report_1.md`) and are converted into proposals — this is the documented bridge between operations and engineering.
 
 ---
@@ -469,7 +484,7 @@ A change set may not be merged, deployed or archived unless: all mapped automate
 
 Tracked explicitly so that no document overstates the current state:
 
-1. **Authentication / authorization.** There is no external identity provider. The acting user arrives in the `X-Actor` header (the frontend sends a fixed `demo-operador`), and authorization is enforced exclusively server-side via warehouse scopes (`actor_almacen_scopes`) plus the `administradores` table. MFA/TOTP primitives (`pyotp`, `cryptography`) are wired but not user-facing. **OAuth2/JWT integration is planned.**
+1. **Authentication / authorization.** There is no external identity provider. `X-Actor` is shape-validated (1..100 characters, no control characters, HTTP 422 otherwise) but **not authenticated** — a known deviation from Constitution §3.1/§3.3 acknowledged by the owner. The acting user arrives in the `X-Actor` header (the frontend sends a fixed `demo-operador`), and authorization is enforced exclusively server-side via warehouse scopes (`actor_almacen_scopes`) plus the `administradores` table. MFA/TOTP primitives (`pyotp`, `cryptography`) are wired but not user-facing. **OAuth2/JWT integration is planned.**
 2. **Mypy — Resolved (2026-10-04, paquete `2026-10-04-saneamiento-deuda-tecnica`).** `mypy app/ tests/` now reports **0 errors across all 73 checked files**: `types-openpyxl==3.1.5.20260827` pinned in dev-deps (stubs typeshed) plus proper annotations for the XLSX acta templates (`app/services/plantilla_reporte.py`, `app/services/reportes.py`), `app/api/v1/auditoria.py` and their tests. There is still no `[tool.mypy] strict = true` — the honest default configuration remains, now clean.
 3. **`openspec/specs/` — Resolved (2026-10-04).** Master specs synced from the historical deltas of the archived packages (`001_core_logistics`, `002_stock_transfer`, `003_inventory_dashboard`); `openspec validate --specs --strict` passes with 0 violations.
 4. **Pending archival — Resolved (2026-10-04).** The six implemented packages (`2026-09-28-nis-catalog-fixes`, `2026-09-29-fo-delete-fix`, `2026-10-01-reportes-consumo-management`, `2026-10-04-ergonomia-justificacion-opcional`, `2026-10-04-eliminar-buscador-a-granel`, `2026-10-04-eliminar-breadcrumb-dashboard`) completed Fase 13 and were archived; the missing `.openspec.yaml` (`skip_specs: true`) of the reportes package was added. `openspec validate --all --strict` now reports 0 failures.

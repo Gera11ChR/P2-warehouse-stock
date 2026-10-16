@@ -4,7 +4,7 @@ import {
   cantidadMovimientoSchema,
   cantidadNoNegativaSchema,
 } from '../../schemas/cantidadDecimal'
-import { formatMxn, formatMxnConMoneda } from '../formatMxn'
+import { formatMxn } from '../formatMxn'
 
 // RF-2 / RF-3: validación PRELIMINAR del Valor Unitario (el backend decide) y
 // formato es-MX con mínimo 2 y máximo 3 decimales.
@@ -71,9 +71,5 @@ describe('formatMxn (RF-3, RF-5; C-7)', () => {
     [22.5, '22.50'],
   ])('formatea %s como %s', (valor, esperado) => {
     expect(formatMxn(valor)).toBe(esperado)
-  })
-
-  it('formatMxnConMoneda coloca la etiqueta MXN a la derecha', () => {
-    expect(formatMxnConMoneda(1)).toBe('1.00 MXN')
   })
 })

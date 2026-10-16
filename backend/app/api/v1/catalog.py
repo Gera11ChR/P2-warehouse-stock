@@ -71,10 +71,6 @@ async def list_materiales(
     params: Annotated[BusquedaGranelParams, Depends(busqueda_granel_params)],
     buscar: str | None = None,
     categoria_id: int | None = None,
-    desde_id_lista: int | None = None,
-    hasta_id_lista: int | None = None,
-    desde_sku: str | None = None,
-    hasta_sku: str | None = None,
 ) -> MaterialListOut:
     """Listado del catálogo activo con rango ordinal opcional
     (Buscador a granel, REQ-API-006/007).
@@ -88,10 +84,6 @@ async def list_materiales(
         session,
         buscar=buscar,
         categoria_id=categoria_id,
-        desde_id_lista=desde_id_lista,
-        hasta_id_lista=hasta_id_lista,
-        desde_sku=desde_sku,
-        hasta_sku=hasta_sku,
         desde_numero_lista=params.desde_numero_lista,
         hasta_numero_lista=params.hasta_numero_lista,
         desde_descripcion=params.desde_descripcion,

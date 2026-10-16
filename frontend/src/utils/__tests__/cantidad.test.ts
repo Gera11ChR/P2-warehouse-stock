@@ -4,7 +4,6 @@ import {
   esCantidadDecimalValida,
   formatearCantidad,
   mensajeCantidadInvalida,
-  parseCantidadDecimal,
   validarCantidad,
 } from '../cantidad'
 import type { MotivoCantidadInvalida } from '../cantidad'
@@ -125,18 +124,6 @@ describe('mensajeCantidadInvalida', () => {
     )
     expect(mensajeCantidadInvalida('excede_maximo')).toContain('999,999,999.999')
     expect(mensajeCantidadInvalida('exceso_decimales')).toContain('3 decimales')
-  })
-})
-
-describe('parseCantidadDecimal', () => {
-  it('devuelve el número o null', () => {
-    expect(parseCantidadDecimal('5')).toBe(5)
-    expect(parseCantidadDecimal('2.5')).toBe(2.5)
-    expect(parseCantidadDecimal('0')).toBeNull()
-    expect(parseCantidadDecimal('0', { permitirCero: true })).toBe(0)
-    expect(parseCantidadDecimal('-1')).toBeNull()
-    expect(parseCantidadDecimal('1.0005')).toBeNull()
-    expect(parseCantidadDecimal('9', { maxStock: 8 })).toBeNull()
   })
 })
 

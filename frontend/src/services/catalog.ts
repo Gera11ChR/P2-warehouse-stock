@@ -8,15 +8,6 @@ import type { Categoria, Material, MaterialList, Ums } from '../types'
 export interface CatalogFilters {
   buscar?: string
   categoria_id?: number
-  /** @deprecated La UI dejó de enviar estos filtros legacy (rango por PK).
-   *  El backend los conserva por compatibilidad. */
-  desde_id_lista?: number
-  /** @deprecated (ver desde_id_lista) */
-  hasta_id_lista?: number
-  /** @deprecated (ver desde_id_lista) */
-  desde_sku?: string
-  /** @deprecated (ver desde_id_lista) */
-  hasta_sku?: string
 }
 
 export interface MaterialCreatePayload {

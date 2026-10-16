@@ -268,6 +268,9 @@ export interface ActaItem {
   /** CONSUMO: tomada / consumida. */
   cantidad_tomada: number | null
   cantidad_consumida: number | null
+  /** ENTREGA multi-origen: sección de origen de la línea. */
+  origen_almacen_id?: number | null
+  origen_nombre?: string | null
 }
 
 export interface Acta {

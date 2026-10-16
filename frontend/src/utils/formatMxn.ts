@@ -16,8 +16,3 @@ const FORMATO = new Intl.NumberFormat('es-MX', {
 export function formatMxn(valor: number): string {
   return FORMATO.format(valor)
 }
-
-/** Cifra + etiqueta `MXN` a la derecha (`1.00 MXN`). */
-export function formatMxnConMoneda(valor: number, moneda: string = 'MXN'): string {
-  return `${formatMxn(valor)} ${moneda}`
-}
