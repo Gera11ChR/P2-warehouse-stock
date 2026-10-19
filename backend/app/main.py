@@ -19,6 +19,7 @@ from app.api.v1 import (
     movimientos,
     reportes,
     seguimientos,
+    actividades,
 )
 from app.errors import (
     AuthorizationError,
@@ -51,6 +52,7 @@ app.include_router(equipos.router, prefix="/api/v1")
 app.include_router(fibra.router, prefix="/api/v1")
 app.include_router(auditoria.router, prefix="/api/v1")
 app.include_router(seguimientos.router, prefix="/api/v1")
+app.include_router(actividades.router, prefix="/api/v1")
 app.include_router(reportes.router, prefix="/api/v1")
 
 
@@ -147,12 +149,23 @@ def _sanitizar_floats_no_finitos(valor: Any) -> Any:
     Necesario porque `JSONResponse` serializa con `json.dumps(...,
     allow_nan=False)`: si el detalle del 422 hiciera eco del `input`
     inválido (`nan`/`inf`), la serialización lanzaría `ValueError` y el 422
-    exigido por RF-8 se degradaría a 500 (Drift T5-2). Dicts, listas y
+    exigido por RF-8 se degradaría a 500 (Drift T5-2); lo mismo ocurre con
+    cadenas que contienen sustitutos Unicode sueltos. Dicts, listas y
     tuplas se recorren recursivamente; el resto de los tipos y la
     estructura `{loc, type, msg, input}` se conservan intactos.
     """
     if isinstance(valor, float) and not math.isfinite(valor):
         return str(valor)
+    if isinstance(valor, str):
+        # Mismo riesgo para cadenas con sustitutos Unicode sueltos
+        # (U+D800..U+DFFF): no son codificables en UTF-8 y el eco del `input`
+        # degradaría el 422 a 500 al serializar la respuesta (T7/F-1,
+        # REQ-ACT-013/019). Se escapan textualmente (`\\ud800`).
+        try:
+            valor.encode("utf-8")
+        except UnicodeEncodeError:
+            return valor.encode("utf-8", "backslashreplace").decode("utf-8")
+        return valor
     if isinstance(valor, dict):
         return {
             clave: _sanitizar_floats_no_finitos(v) for clave, v in valor.items()

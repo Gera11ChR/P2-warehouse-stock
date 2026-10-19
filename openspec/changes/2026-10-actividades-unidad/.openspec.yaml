@@ -1,0 +1,22 @@
+schema: spec-driven
+created: 2026-10-19
+skip_specs: false
+stage: "1/3 — ACTIVIDADES (Registro)"
+sdd_status:
+  fase_3_especificacion: redactada
+  fase_4_clarificacion: completada
+  fase_5_planificacion: redactada
+  fase_6_tareas: redactada
+  fase_7_implementacion: backend_completado_contrato_congelado  # T1-T7; frontend (T8-T10) pendiente
+contract:
+  # Contrato de API verificable ANTES de escribir frontend (compuerta T7 de tasks.md).
+  base_path: /api/v1/equipos/{equipo_id}/actividades
+  endpoints:
+    - { method: GET,  path: /pendiente, response: ActividadPendienteOut, status: [200, 400, 403, 404, 422] }
+    - { method: POST, path: "",         request: ActividadCreate, response: ActividadOut, status: [201, 400, 403, 404, 409, 422] }
+    - { method: GET,  path: "",         response: ActividadListOut, status: [200, 400, 403, 404, 422] }
+  frozen: true             # T7 (@qa-agent): PASS 2026-10-19; cambios posteriores exigen RFC (spec/plan primero)
+  openapi_snapshot: openapi.snapshot.json   # relativo al paquete
+  openapi_snapshot_sha256: 29ffce73d3e7b605266e79c35808ddee6ff0e5a9cac603c4c7ad3adb871b0837
+domain_rules_to_promote:   # Fase 9 -> openspec/openspec.yaml
+  - actividades_registro

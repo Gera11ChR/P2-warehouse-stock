@@ -20,6 +20,7 @@ import EquipoInventoryTable from '../components/EquipoInventoryTable'
 import EquipoForm from '../components/EquipoForm'
 import ConfigLocalForm from '../components/ConfigLocalForm'
 import SeguimientoPanel from '../components/SeguimientoPanel'
+import ActividadesPanel from '../components/ActividadesPanel'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../hooks/useToasts'
@@ -31,6 +32,7 @@ const TABS = [
   { value: 'consulta', label: 'Consulta' },
   { value: 'configuracion', label: 'Configuración' },
   { value: 'consumo', label: 'CONSUMO' },
+  { value: 'actividades', label: 'ACTIVIDADES' },
 ] as const
 
 type TabValue = (typeof TABS)[number]['value']
@@ -45,8 +47,8 @@ export default function InventarioPorEquipos() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [equipoToDelete, setEquipoToDelete] = useState<Equipo | null>(null)
 
-  // Pestañas del área de inventario (FASE 7): consulta / configuración /
-  // consumo.
+  // Pestañas del área de inventario: consulta / configuración / consumo /
+  // actividades.
   const [tab, setTab] = useState<TabValue>('consulta')
   const [configMaterial, setConfigMaterial] =
     useState<InventarioEquipoRow | null>(null)
@@ -386,6 +388,21 @@ export default function InventarioPorEquipos() {
           </div>
         ) : (
           <SeguimientoPanel
+            equipoId={effectiveEquipoId}
+            equipoNombre={
+              equipos.find((e) => e.equipo_id === effectiveEquipoId)?.nombre
+            }
+          />
+        ))}
+
+      {/* Actividades — registro documental de la jornada (0029) */}
+      {tab === 'actividades' &&
+        (effectiveEquipoId === null ? (
+          <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
+            <p className="text-slate-500">Seleccione una unidad</p>
+          </div>
+        ) : (
+          <ActividadesPanel
             equipoId={effectiveEquipoId}
             equipoNombre={
               equipos.find((e) => e.equipo_id === effectiveEquipoId)?.nombre

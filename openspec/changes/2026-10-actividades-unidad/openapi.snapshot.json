@@ -1,0 +1,556 @@
+{
+  "components": {
+    "schemas": {
+      "ActividadCreate": {
+        "additionalProperties": false,
+        "description": "Confirmación de actividad. El frontend descarta las celdas vacías; el\nbackend además las rechaza (defensa en profundidad, RF-6).",
+        "properties": {
+          "actividades": {
+            "items": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Actividades",
+            "type": "array"
+          },
+          "clientes": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Clientes",
+            "type": "string"
+          },
+          "comentarios": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comentarios"
+          },
+          "direcciones": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Direcciones",
+            "type": "string"
+          },
+          "seguimiento_id": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 2147483647.0,
+            "title": "Seguimiento Id",
+            "type": "integer"
+          },
+          "vehiculo": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Vehiculo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seguimiento_id",
+          "vehiculo",
+          "clientes",
+          "direcciones",
+          "actividades"
+        ],
+        "title": "ActividadCreate",
+        "type": "object"
+      },
+      "ActividadListOut": {
+        "description": "GET por Unidad: más reciente primero (RF-16).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActividadOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "ActividadListOut",
+        "type": "object"
+      },
+      "ActividadMaterialOut": {
+        "additionalProperties": false,
+        "description": "Material consumido dentro del snapshot (jsonb): valores como números\nJSON. Solo lectura.",
+        "properties": {
+          "cantidad_consumida": {
+            "title": "Cantidad Consumida",
+            "type": "number"
+          },
+          "codigo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo"
+          },
+          "descripcion": {
+            "title": "Descripcion",
+            "type": "string"
+          },
+          "material_id": {
+            "title": "Material Id",
+            "type": "integer"
+          },
+          "u_m": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "U M"
+          },
+          "valor_unitario": {
+            "title": "Valor Unitario",
+            "type": "number"
+          }
+        },
+        "required": [
+          "material_id",
+          "codigo",
+          "descripcion",
+          "u_m",
+          "cantidad_consumida",
+          "valor_unitario"
+        ],
+        "title": "ActividadMaterialOut",
+        "type": "object"
+      },
+      "ActividadOut": {
+        "additionalProperties": false,
+        "description": "Eco de lectura de una actividad confirmada. `folio` es presentación\npura (`R` + folio_num con 4 dígitos mínimo), nunca entrada del cliente.",
+        "properties": {
+          "actividad_id": {
+            "title": "Actividad Id",
+            "type": "integer"
+          },
+          "actividades": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actividades",
+            "type": "array"
+          },
+          "clientes": {
+            "title": "Clientes",
+            "type": "string"
+          },
+          "comentarios": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comentarios"
+          },
+          "direcciones": {
+            "title": "Direcciones",
+            "type": "string"
+          },
+          "equipo_id": {
+            "title": "Equipo Id",
+            "type": "integer"
+          },
+          "equipo_nombre": {
+            "title": "Equipo Nombre",
+            "type": "string"
+          },
+          "fecha": {
+            "format": "date-time",
+            "title": "Fecha",
+            "type": "string"
+          },
+          "folio": {
+            "title": "Folio",
+            "type": "string"
+          },
+          "folio_num": {
+            "title": "Folio Num",
+            "type": "integer"
+          },
+          "materiales": {
+            "items": {
+              "$ref": "#/components/schemas/ActividadMaterialOut"
+            },
+            "title": "Materiales",
+            "type": "array"
+          },
+          "seguimiento_id": {
+            "title": "Seguimiento Id",
+            "type": "integer"
+          },
+          "usuario": {
+            "title": "Usuario",
+            "type": "string"
+          },
+          "vehiculo": {
+            "title": "Vehiculo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actividad_id",
+          "folio",
+          "folio_num",
+          "seguimiento_id",
+          "equipo_id",
+          "equipo_nombre",
+          "fecha",
+          "usuario",
+          "vehiculo",
+          "clientes",
+          "direcciones",
+          "actividades",
+          "comentarios",
+          "materiales"
+        ],
+        "title": "ActividadOut",
+        "type": "object"
+      },
+      "ActividadPendienteOut": {
+        "description": "GET /pendiente: `seguimiento: null` si la Unidad no tiene seguimiento\npendiente de actividad (RF-3).",
+        "properties": {
+          "seguimiento": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActividadPendienteSeguimiento"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "seguimiento"
+        ],
+        "title": "ActividadPendienteOut",
+        "type": "object"
+      },
+      "ActividadPendienteSeguimiento": {
+        "additionalProperties": false,
+        "description": "Seguimiento CERRADA más reciente sin actividad (fn_actividad_pendiente):\nsus materiales y el valor unitario VIGENTE al momento de la consulta.",
+        "properties": {
+          "fecha_cierre": {
+            "format": "date-time",
+            "title": "Fecha Cierre",
+            "type": "string"
+          },
+          "materiales": {
+            "items": {
+              "$ref": "#/components/schemas/ActividadMaterialOut"
+            },
+            "title": "Materiales",
+            "type": "array"
+          },
+          "seguimiento_id": {
+            "title": "Seguimiento Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seguimiento_id",
+          "fecha_cierre",
+          "materiales"
+        ],
+        "title": "ActividadPendienteSeguimiento",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "paquete": "2026-10-actividades-unidad",
+    "title": "DMS - TELECOM Inventory API"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/equipos/{equipo_id}/actividades": {
+      "get": {
+        "description": "Historial de actividades confirmadas de la Unidad, más reciente\nprimero (RF-16).",
+        "operationId": "listar_actividades_api_v1_equipos__equipo_id__actividades_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "equipo_id",
+            "required": true,
+            "schema": {
+              "title": "Equipo Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
+            "in": "header",
+            "name": "X-Actor",
+            "required": true,
+            "schema": {
+              "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]*[^\\s\\x00-\\x1f\\x7f-\\x9f][^\\x00-\\x1f\\x7f-\\x9f]*$",
+              "title": "X-Actor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActividadListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Identificador numérico fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+          },
+          "403": {
+            "description": "Actor sin acceso a la Unidad (no integrante ni administrador)"
+          },
+          "404": {
+            "description": "Unidad no encontrada o inactiva"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Listar Actividades",
+        "tags": [
+          "actividades"
+        ]
+      },
+      "post": {
+        "description": "Confirmación delegada a fn_crear_actividad: folio global correlativo,\nfecha now(), snapshot de materiales, unicidad 1:1 con el seguimiento\nCERRADA y evento ACTIVIDAD_CONFIRMADA íntegros en PostgreSQL. El folio\ndevuelto es el asignado por la base (nunca aceptado del cliente).",
+        "operationId": "crear_actividad_api_v1_equipos__equipo_id__actividades_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "equipo_id",
+            "required": true,
+            "schema": {
+              "title": "Equipo Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
+            "in": "header",
+            "name": "X-Actor",
+            "required": true,
+            "schema": {
+              "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]*[^\\s\\x00-\\x1f\\x7f-\\x9f][^\\x00-\\x1f\\x7f-\\x9f]*$",
+              "title": "X-Actor",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActividadCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActividadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Identificador numérico fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+          },
+          "403": {
+            "description": "Actor sin acceso a la Unidad (no integrante ni administrador)"
+          },
+          "404": {
+            "description": "Unidad no encontrada (o seguimiento inexistente para la Unidad: SEGUIMIENTO_NO_ENCONTRADO)"
+          },
+          "409": {
+            "description": "Seguimiento no cerrado (SEGUIMIENTO_NO_CERRADO) o con actividad ya confirmada (ACTIVIDAD_DUPLICADA)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Crear Actividad",
+        "tags": [
+          "actividades"
+        ]
+      }
+    },
+    "/api/v1/equipos/{equipo_id}/actividades/pendiente": {
+      "get": {
+        "description": "Seguimiento CERRADA más reciente de la Unidad sin actividad, con sus\nmateriales consumidos y el valor unitario vigente (RF-2). `seguimiento:\nnull` si no hay (RF-3).",
+        "operationId": "actividad_pendiente_api_v1_equipos__equipo_id__actividades_pendiente_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "equipo_id",
+            "required": true,
+            "schema": {
+              "title": "Equipo Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
+            "in": "header",
+            "name": "X-Actor",
+            "required": true,
+            "schema": {
+              "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]*[^\\s\\x00-\\x1f\\x7f-\\x9f][^\\x00-\\x1f\\x7f-\\x9f]*$",
+              "title": "X-Actor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActividadPendienteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Identificador numérico fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+          },
+          "403": {
+            "description": "Actor sin acceso a la Unidad (no integrante ni administrador)"
+          },
+          "404": {
+            "description": "Unidad no encontrada o inactiva"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Actividad Pendiente",
+        "tags": [
+          "actividades"
+        ]
+      }
+    }
+  }
+}

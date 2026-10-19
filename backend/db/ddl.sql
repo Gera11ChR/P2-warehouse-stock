@@ -1,5 +1,5 @@
 -- Software Design Document (SDD) - DMS - TELECOM
--- Snapshot SCHEMA-ONLY del esquema vigente (cabeza Alembic 0028).
+-- Snapshot SCHEMA-ONLY del esquema vigente (cabeza Alembic 0029).
 --
 -- >>> REFERENCIA, NO EJECUTABLE sobre bases reales: la fuente de verdad del
 -- >>> esquema son las migraciones Alembic (`backend/alembic/versions/`).
@@ -7,14 +7,47 @@
 -- >>> funciones y triggers); se regenera y se verifica con
 -- >>> `backend/scripts/generar_ddl.py`.
 --
--- Generado: 2026-10-16 con pg_dump (PostgreSQL) 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)
+-- Generado: 2026-10-19 con pg_dump (PostgreSQL) 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)
 -- Comando : pg_dump --schema-only --no-owner --no-privileges  (base de pruebas
---           llevada a la cabeza 0028; sin host, rol ni credenciales)
+--           llevada a la cabeza 0029; sin host, rol ni credenciales)
 -- ===== FIN DE CABECERA (contenido generado por pg_dump) =====
 
 --
 -- PostgreSQL database dump
 --
+
+--
+-- Name: fn_actividad_pendiente(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_actividad_pendiente(p_equipo_id integer) RETURNS TABLE(seguimiento_id integer, fecha_cierre timestamp with time zone, materiales jsonb)
+    LANGUAGE sql STABLE
+    AS $$
+SELECT s.id,
+       s.closed_at,
+       COALESCE(
+           (SELECT jsonb_agg(
+               jsonb_build_object(
+                   'material_id', si.material_id,
+                   'codigo', cm.codigo,
+                   'descripcion', cm.descripcion,
+                   'u_m', cm.u_m,
+                   'cantidad_consumida', si.cantidad_consumida,
+                   'valor_unitario', cm.valor_unitario
+               ) ORDER BY si.material_id
+            )
+              FROM seguimiento_items si
+              JOIN catalogo_materiales cm ON cm.id_lista = si.material_id
+             WHERE si.seguimiento_id = s.id
+               AND si.cantidad_consumida > 0),
+           '[]'::jsonb)
+  FROM seguimientos s
+ WHERE s.equipo_id = p_equipo_id
+   AND s.estado = 'CERRADA'
+   AND NOT EXISTS (SELECT 1 FROM actividades_reportes a WHERE a.seguimiento_id = s.id)
+ ORDER BY s.closed_at DESC, s.id DESC
+ LIMIT 1;
+$$;
 
 --
 -- Name: fn_agregar_todo_seguimiento(integer, integer, text, text); Type: FUNCTION; Schema: public; Owner: -
@@ -918,6 +951,135 @@ END;
 $$;
 
 --
+-- Name: fn_crear_actividad(integer, integer, text, text, text, jsonb, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_crear_actividad(p_equipo_id integer, p_seguimiento_id integer, p_vehiculo text, p_clientes text, p_direcciones text, p_actividades jsonb, p_comentarios text, p_usuario text) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_seguimiento seguimientos%ROWTYPE;
+    v_folio integer;
+    v_materiales jsonb;
+    v_id integer;
+    v_item jsonb;
+    v_item_texto text;
+    v_veces integer;
+BEGIN
+    -- 1. Bloquear el seguimiento (serializa con cualquier otro cierre de
+    --    actividad sobre el mismo registro; REQ-ACT-011).
+    SELECT * INTO v_seguimiento
+      FROM seguimientos
+     WHERE id = p_seguimiento_id
+     FOR UPDATE;
+
+    IF NOT FOUND OR v_seguimiento.equipo_id <> p_equipo_id THEN
+        RAISE EXCEPTION 'Seguimiento inexistente para la Unidad.'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    -- 2. Solo seguimientos cerrados; uno por actividad (REQ-ACT-003).
+    IF v_seguimiento.estado <> 'CERRADA' THEN
+        RAISE EXCEPTION 'El seguimiento debe estar cerrado para registrar la actividad.'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM actividades_reportes WHERE seguimiento_id = p_seguimiento_id) THEN
+        RAISE EXCEPTION 'El seguimiento ya tiene una actividad confirmada.'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    -- 3. Defensa en profundidad de los campos manuales (Pydantic ya valida;
+    --    la función jamás deja pasar a los CHECK/22001).
+    IF btrim(p_vehiculo) = '' OR length(p_vehiculo) > 100 THEN
+        RAISE EXCEPTION 'El vehículo es obligatorio y no puede exceder 100 caracteres.'
+            USING ERRCODE = 'P0001';
+    END IF;
+    IF btrim(p_clientes) = '' OR length(p_clientes) > 500 THEN
+        RAISE EXCEPTION 'El cliente es obligatorio y no puede exceder 500 caracteres.'
+            USING ERRCODE = 'P0001';
+    END IF;
+    IF btrim(p_direcciones) = '' OR length(p_direcciones) > 500 THEN
+        RAISE EXCEPTION 'La dirección es obligatoria y no puede exceder 500 caracteres.'
+            USING ERRCODE = 'P0001';
+    END IF;
+    IF p_comentarios IS NOT NULL AND length(p_comentarios) > 2000 THEN
+        RAISE EXCEPTION 'Los comentarios no pueden exceder 2000 caracteres.'
+            USING ERRCODE = 'P0001';
+    END IF;
+    IF jsonb_typeof(p_actividades) <> 'array'
+       OR jsonb_array_length(p_actividades) < 1
+       OR jsonb_array_length(p_actividades) > 30 THEN
+        RAISE EXCEPTION 'Las actividades deben contener entre 1 y 30 celdas.'
+            USING ERRCODE = 'P0001';
+    END IF;
+    FOR v_veces IN 0..jsonb_array_length(p_actividades) - 1 LOOP
+        v_item := p_actividades -> v_veces;
+        IF jsonb_typeof(v_item) <> 'string' THEN
+            RAISE EXCEPTION 'Cada actividad debe ser un texto de 1 a 500 caracteres.'
+                USING ERRCODE = 'P0001';
+        END IF;
+        v_item_texto := v_item #>> '{}';
+        IF btrim(v_item_texto) = '' OR length(v_item_texto) > 500 THEN
+            RAISE EXCEPTION 'Cada actividad debe ser un texto de 1 a 500 caracteres.'
+                USING ERRCODE = 'P0001';
+        END IF;
+    END LOOP;
+
+    -- 4. Folio global correlativo sin huecos (REQ-ACT-008): el advisory lock
+    --    serializa a los escritores de actividades; el UNIQUE es la red de
+    --    seguridad. Un rollback posterior no consume número.
+    PERFORM pg_advisory_xact_lock(2900000001);
+    SELECT COALESCE(MAX(folio_num), 0) + 1 INTO v_folio FROM actividades_reportes;
+
+    -- 5. Snapshot de materiales consumidos con valor_unitario congelado
+    --    (REQ-ACT-010). Misma fuente y convención que el acta de consumo
+    --    (cm.id_lista = si.material_id, orden por material_id).
+    SELECT COALESCE(jsonb_agg(
+        jsonb_build_object(
+            'material_id', si.material_id,
+            'codigo', cm.codigo,
+            'descripcion', cm.descripcion,
+            'u_m', cm.u_m,
+            'cantidad_consumida', si.cantidad_consumida,
+            'valor_unitario', cm.valor_unitario
+        ) ORDER BY si.material_id
+    ), '[]'::jsonb) INTO v_materiales
+      FROM seguimiento_items si
+      JOIN catalogo_materiales cm ON cm.id_lista = si.material_id
+     WHERE si.seguimiento_id = p_seguimiento_id
+       AND si.cantidad_consumida > 0;
+
+    -- 6. Registro documental (fecha = now(); REQ-ACT-009, REQ-ACT-015).
+    INSERT INTO actividades_reportes (
+        folio_num, seguimiento_id, equipo_id, vehiculo, clientes, direcciones,
+        actividades, comentarios, materiales, usuario
+    ) VALUES (
+        v_folio, p_seguimiento_id, p_equipo_id, p_vehiculo, p_clientes,
+        p_direcciones, p_actividades, p_comentarios, v_materiales, p_usuario
+    ) RETURNING id INTO v_id;
+
+    -- 7. Auditoría (convención de ACTA_CONSUMO_GENERADA: equipo_origen_id y
+    --    detalles plano; REQ-ACT-012).
+    INSERT INTO auditoria_eventos (
+        usuario, tipo_accion, equipo_origen_id, resultado, detalles
+    ) VALUES (
+        p_usuario, 'ACTIVIDAD_CONFIRMADA', p_equipo_id, 'EXITO',
+        jsonb_build_object(
+            'actividad_id', v_id,
+            -- lpad TRUNCA si el texto excede el largo: se amplía a GREATEST(4, n)
+            -- para que R10000 no se registre como R1000 (REQ-ACT-008).
+            'folio', 'R' || lpad(v_folio::text, GREATEST(4, length(v_folio::text)), '0'),
+            'seguimiento_id', p_seguimiento_id,
+            'equipo_id', p_equipo_id
+        )
+    );
+
+    RETURN v_id;
+END;
+$$;
+
+--
 -- Name: fn_crear_seguimiento(integer, text, jsonb, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1814,6 +1976,49 @@ CREATE SEQUENCE public.actas_reportes_id_seq
 ALTER SEQUENCE public.actas_reportes_id_seq OWNED BY public.actas_reportes.id;
 
 --
+-- Name: actividades_reportes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.actividades_reportes (
+    id integer NOT NULL,
+    folio_num integer NOT NULL,
+    seguimiento_id integer NOT NULL,
+    equipo_id integer NOT NULL,
+    vehiculo character varying(100) NOT NULL,
+    clientes character varying(500) NOT NULL,
+    direcciones character varying(500) NOT NULL,
+    actividades jsonb NOT NULL,
+    comentarios character varying(2000),
+    materiales jsonb NOT NULL,
+    usuario character varying(100) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_actividades_actividades_rango CHECK (((jsonb_typeof(actividades) = 'array'::text) AND ((jsonb_array_length(actividades) >= 1) AND (jsonb_array_length(actividades) <= 30)))),
+    CONSTRAINT ck_actividades_clientes_no_vacio CHECK ((btrim((clientes)::text) <> ''::text)),
+    CONSTRAINT ck_actividades_direcciones_no_vacio CHECK ((btrim((direcciones)::text) <> ''::text)),
+    CONSTRAINT ck_actividades_folio_positivo CHECK ((folio_num > 0)),
+    CONSTRAINT ck_actividades_materiales_array CHECK ((jsonb_typeof(materiales) = 'array'::text)),
+    CONSTRAINT ck_actividades_vehiculo_no_vacio CHECK ((btrim((vehiculo)::text) <> ''::text))
+);
+
+--
+-- Name: actividades_reportes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.actividades_reportes_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: actividades_reportes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.actividades_reportes_id_seq OWNED BY public.actividades_reportes.id;
+
+--
 -- Name: actor_almacen_scopes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2581,6 +2786,12 @@ CREATE TABLE public.warehouses (
 ALTER TABLE ONLY public.actas_reportes ALTER COLUMN id SET DEFAULT nextval('public.actas_reportes_id_seq'::regclass);
 
 --
+-- Name: actividades_reportes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.actividades_reportes ALTER COLUMN id SET DEFAULT nextval('public.actividades_reportes_id_seq'::regclass);
+
+--
 -- Name: audit_logs log_id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2688,6 +2899,13 @@ ALTER TABLE ONLY public.ums ALTER COLUMN id SET DEFAULT nextval('public.ums_id_s
 
 ALTER TABLE ONLY public.actas_reportes
     ADD CONSTRAINT actas_reportes_pkey PRIMARY KEY (id);
+
+--
+-- Name: actividades_reportes actividades_reportes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.actividades_reportes
+    ADD CONSTRAINT actividades_reportes_pkey PRIMARY KEY (id);
 
 --
 -- Name: actor_almacen_scopes actor_almacen_scopes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -2921,6 +3139,20 @@ ALTER TABLE ONLY public.ums
     ADD CONSTRAINT ums_pkey PRIMARY KEY (id);
 
 --
+-- Name: actividades_reportes uq_actividades_folio; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.actividades_reportes
+    ADD CONSTRAINT uq_actividades_folio UNIQUE (folio_num);
+
+--
+-- Name: actividades_reportes uq_actividades_seguimiento; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.actividades_reportes
+    ADD CONSTRAINT uq_actividades_seguimiento UNIQUE (seguimiento_id);
+
+--
 -- Name: equipos_integrantes uq_equipos_integrantes_usuario; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3001,6 +3233,12 @@ CREATE INDEX ix_actas_reportes_seguimiento ON public.actas_reportes USING btree 
 --
 
 CREATE INDEX ix_actas_reportes_tipo_created ON public.actas_reportes USING btree (tipo, created_at);
+
+--
+-- Name: ix_actividades_equipo_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_actividades_equipo_created ON public.actividades_reportes USING btree (equipo_id, created_at DESC);
 
 --
 -- Name: ix_equipo_material_config_material; Type: INDEX; Schema: public; Owner: -
@@ -3117,6 +3355,12 @@ CREATE TRIGGER tg_auditar_um AFTER DELETE OR UPDATE ON public.ums FOR EACH ROW E
 CREATE TRIGGER tg_ledger_actas_inmutable BEFORE DELETE OR UPDATE ON public.actas_reportes FOR EACH ROW EXECUTE FUNCTION public.fn_bloquear_mutacion_ledger();
 
 --
+-- Name: actividades_reportes tg_ledger_actividades_inmutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tg_ledger_actividades_inmutable BEFORE DELETE OR UPDATE ON public.actividades_reportes FOR EACH ROW EXECUTE FUNCTION public.fn_bloquear_mutacion_ledger();
+
+--
 -- Name: auditoria_eventos tg_ledger_auditoria_inmutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3156,6 +3400,20 @@ ALTER TABLE ONLY public.actas_reportes
 
 ALTER TABLE ONLY public.actas_reportes
     ADD CONSTRAINT fk_actas_reportes_seguimiento FOREIGN KEY (seguimiento_id) REFERENCES public.seguimientos(id) ON DELETE RESTRICT;
+
+--
+-- Name: actividades_reportes fk_actividades_equipo; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.actividades_reportes
+    ADD CONSTRAINT fk_actividades_equipo FOREIGN KEY (equipo_id) REFERENCES public.equipos(equipo_id) ON DELETE RESTRICT;
+
+--
+-- Name: actividades_reportes fk_actividades_seguimiento; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.actividades_reportes
+    ADD CONSTRAINT fk_actividades_seguimiento FOREIGN KEY (seguimiento_id) REFERENCES public.seguimientos(id) ON DELETE RESTRICT;
 
 --
 -- Name: equipo_material_config fk_equipo_material_config_categoria; Type: FK CONSTRAINT; Schema: public; Owner: -

@@ -1,4 +1,5 @@
 from app.models.acta import ActaReporte
+from app.models.actividad import ActividadReporte
 from app.models.auditoria import AuditoriaEvento
 from app.models.equipo import Equipo, EquipoIntegrante
 from app.models.importacion import HistorialImportacion
@@ -19,6 +20,7 @@ from app.models.seguimiento import (
 
 __all__ = [
     "ActaReporte",
+    "ActividadReporte",
     "ActorAlmacenScope",
     "AuditoriaEvento",
     "CatalogoMaterial",

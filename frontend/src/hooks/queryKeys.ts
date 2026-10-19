@@ -33,6 +33,12 @@ export const queryKeys = {
     ['seguimientos', equipoId] as const,
   seguimiento: (equipoId: number | null, seguimientoId: number | null) =>
     ['seguimientos', equipoId, 'detalle', seguimientoId] as const,
+  /** Actividad pendiente de la Unidad (GET .../actividades/pendiente). */
+  actividadPendiente: (equipoId: number | null) =>
+    ['actividades', equipoId, 'pendiente'] as const,
+  /** Historial de actividades confirmadas de la Unidad (GET .../actividades). */
+  actividades: (equipoId: number | null) =>
+    ['actividades', equipoId] as const,
   /** Inventario autónomo del equipo (hook useEquipoInventario). */
   equipo: (equipoId: number | null) => ['equipo', equipoId] as const,
   /** Prefijo de TODAS las actas (Entrega y Consumo). */
@@ -73,6 +79,22 @@ export function invalidarActas(
   tipo: ReporteTipo,
 ): Promise<void> {
   return queryClient.invalidateQueries({ queryKey: queryKeys.actas(tipo) })
+}
+
+/** Actividades de la Unidad: tras confirmar se recargan pendiente, historial
+ *  y auditoría; React re-renderiza el estado PERSISTIDO (folio y fecha los
+ *  asigna PostgreSQL). NUNCA se parchea el cache con datos del cliente. */
+export function invalidarActividadesEquipo(
+  queryClient: QueryClient,
+  equipoId: number,
+): Promise<void> {
+  return Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.actividadPendiente(equipoId),
+    }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.actividades(equipoId) }),
+    invalidarAuditoria(queryClient),
+  ]).then(() => undefined)
 }
 
 /** Auditoría (ledger): toda operación de stock agrega eventos. */

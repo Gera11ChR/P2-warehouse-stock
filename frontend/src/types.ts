@@ -221,6 +221,72 @@ export interface AgregarTodoResultadoOut {
 }
 
 // ============================================================================
+// ACTIVIDADES POR UNIDAD (0029, paquete 2026-10-actividades-unidad) —
+// contrato congelado en T7: openapi.snapshot.json.
+// Folio, fecha, materiales y valor unitario los decide PostgreSQL; estos
+// tipos solo reflejan lecturas y el payload de confirmación.
+// ============================================================================
+
+/** Material consumido dentro del registro (ActividadMaterialOut). */
+export interface ActividadMaterial {
+  material_id: number
+  codigo: string | null
+  descripcion: string
+  u_m: string | null
+  cantidad_consumida: number
+  valor_unitario: number
+}
+
+/** Seguimiento CERRADA más reciente sin actividad (ActividadPendienteSeguimiento). */
+export interface ActividadPendienteSeguimiento {
+  seguimiento_id: number
+  fecha_cierre: string
+  materiales: ActividadMaterial[]
+}
+
+/** GET /equipos/{equipo_id}/actividades/pendiente (ActividadPendienteOut).
+ *  `seguimiento: null` cuando no hay pendiente (RF-3). */
+export interface ActividadPendiente {
+  seguimiento: ActividadPendienteSeguimiento | null
+}
+
+/** POST /equipos/{equipo_id}/actividades (ActividadCreate). Sin folio ni
+ *  fecha: los asigna el backend. `comentarios` debe enviarse `null` cuando
+ *  el campo queda vacío (observación T7). */
+export interface ActividadCreatePayload {
+  seguimiento_id: number
+  vehiculo: string
+  clientes: string
+  direcciones: string
+  actividades: string[]
+  comentarios?: string | null
+}
+
+/** Registro confirmado (ActividadOut). */
+export interface Actividad {
+  actividad_id: number
+  folio: string
+  folio_num: number
+  seguimiento_id: number
+  equipo_id: number
+  equipo_nombre: string
+  fecha: string
+  usuario: string
+  vehiculo: string
+  clientes: string
+  direcciones: string
+  actividades: string[]
+  comentarios: string | null
+  materiales: ActividadMaterial[]
+}
+
+/** GET /equipos/{equipo_id}/actividades (ActividadListOut). */
+export interface ActividadList {
+  items: Actividad[]
+  total: number
+}
+
+// ============================================================================
 // OPERADORES RÁPIDOS DE INVENTARIO (contrato certificado
 // POST /api/v1/inventario/sumar-cantidad y /inventario/mover).
 // Los payloads (SumarCantidadPayload / MoverMaterialPayload) viven en
@@ -526,6 +592,8 @@ export const TIPOS_ACCION_AUDITORIA: Record<string, string> = {
   SEGUIMIENTO_CERRADO: 'Seguimiento cerrado',
   ACTA_ENTREGA_GENERADA: 'Acta de Entrega generada',
   ACTA_CONSUMO_GENERADA: 'Acta de Consumo generada',
+  // 0029: registro documental de actividades por Unidad.
+  ACTIVIDAD_CONFIRMADA: 'Actividad confirmada',
   // Eventos HISTÓRICOS del flujo anterior. El ledger es inmutable (no se
   // actualizan filas): el mapeo se hace SOLO en lectura para que la UI no
   // muestre la nomenclatura legacy (REQ-P2-CON-001).

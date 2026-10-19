@@ -55,6 +55,7 @@ UMS_SEMILLA = [
 
 TABLAS_DOMINIO = [
     "actas_reportes",
+    "actividades_reportes",
     "operaciones_idempotencia",
     "seguimiento_items",
     "seguimientos",

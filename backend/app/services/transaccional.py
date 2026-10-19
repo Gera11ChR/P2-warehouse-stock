@@ -52,6 +52,11 @@ _SQL_CERRAR_SEGUIMIENTO = text(
     "SELECT fn_cerrar_seguimiento("
     ":seguimiento_id, CAST(:consumidos AS JSONB), :usuario, :observaciones_cierre)"
 )
+_SQL_CREAR_ACTIVIDAD = text(
+    "SELECT fn_crear_actividad("
+    ":equipo_id, :seguimiento_id, :vehiculo, :clientes, :direcciones, "
+    "CAST(:actividades AS JSONB), :comentarios, :usuario)"
+)
 _SQL_AGREGAR_TODO_SEGUIMIENTO = text(
     "SELECT fn_agregar_todo_seguimiento("
     ":seguimiento_id, :equipo_id, :usuario, :clave_idempotencia)"
@@ -217,6 +222,33 @@ async def _mapear_raise_exception(exc: DBAPIError) -> Exception:
     if "Cantidad tomada inválida" in mensaje:
         return BusinessRuleError(mensaje, status_code=400)
 
+    # ── Flujo ACTIVIDADES (fn_crear_actividad, 0029) ────────────────────
+    if "Seguimiento inexistente para la Unidad" in mensaje:
+        return BusinessRuleError(
+            mensaje, code="SEGUIMIENTO_NO_ENCONTRADO", status_code=404
+        )
+
+    if "debe estar cerrado para registrar la actividad" in mensaje:
+        return BusinessRuleError(
+            mensaje, code="SEGUIMIENTO_NO_CERRADO", status_code=409
+        )
+
+    if "ya tiene una actividad confirmada" in mensaje:
+        return BusinessRuleError(mensaje, code="ACTIVIDAD_DUPLICADA", status_code=409)
+
+    if any(
+        fragmento in mensaje
+        for fragmento in (
+            "vehículo es obligatorio",
+            "cliente es obligatorio",
+            "dirección es obligatoria",
+            "comentarios no pueden exceder",
+            "entre 1 y 30 celdas",
+            "texto de 1 a 500",
+        )
+    ):
+        return BusinessRuleError(mensaje, code="ACTIVIDAD_INVALIDA", status_code=422)
+
     return BusinessRuleError(mensaje, status_code=422)
 
 
@@ -318,12 +350,19 @@ async def _prechequear_seguimiento(
 
 
 async def _ejecutar(
-    session: AsyncSession, stmt, params: dict, *, scalar: bool = False
+    session: AsyncSession,
+    stmt,
+    params: dict,
+    *,
+    scalar: bool = False,
+    code_23505: str | None = None,
 ):
     """Ejecuta una Stored Function del contrato mapeando errores SQLSTATE:
 
       * P0001 (RAISE EXCEPTION) → _mapear_raise_exception (400/404/409/422).
-      * 23503/23505 (FK/unicidad, SEC-012) → 409 conflicto de integridad.
+      * 23503/23505 (FK/unicidad, SEC-012) → 409 conflicto de integridad;
+        con `code_23505` el 409 usa ese código de dominio (p. ej.
+        ACTIVIDAD_DUPLICADA para la carrera residual del folio/UNIQUE).
 
     Con `scalar=True` devuelve el valor escalar de la función (p.ej. el id
     generado por fn_crear_seguimiento)."""
@@ -340,6 +379,13 @@ async def _ejecutar(
                 status_code=400,
             ) from exc
         if sqlstate in ("23503", "23505"):
+            if code_23505 is not None and sqlstate == "23505":
+                raise BusinessRuleError(
+                    "Conflicto de integridad referencial o de unicidad en la "
+                    "base de datos (SEC-012)",
+                    code=code_23505,
+                    status_code=409,
+                ) from exc
             raise BusinessRuleError(
                 "Conflicto de integridad referencial o de unicidad en la "
                 "base de datos (SEC-012)",
@@ -724,6 +770,46 @@ async def cerrar_seguimiento(
             "usuario": usuario,
             "observaciones_cierre": observaciones_cierre,
         },
+    )
+
+
+async def crear_actividad(
+    session: AsyncSession,
+    *,
+    equipo_id: int,
+    seguimiento_id: int,
+    vehiculo: str,
+    clientes: str,
+    direcciones: str,
+    actividades: list[str],
+    comentarios: str | None,
+    usuario: str,
+) -> int:
+    """fn_crear_actividad (0029): confirmación 100 % en PostgreSQL. Devuelve
+    el id generado. Folio global, fecha now(), snapshot de materiales con
+    valor_unitario congelado, unicidad 1:1 con el seguimiento CERRADA y el
+    evento ACTIVIDAD_CONFIRMADA viven íntegros en la stored function.
+
+    CERO aritmética de stock/valor en Python: `actividades` viaja como
+    lista de textos ya validada por el DTO (extra="forbid"); la validación
+    autoritativa es de la función. La carrera residual del UNIQUE se
+    traduce a 409 ACTIVIDAD_DUPLICADA (nunca 500)."""
+    await _prechequear_equipo(session, equipo_id=equipo_id)
+    return await _ejecutar(
+        session,
+        _SQL_CREAR_ACTIVIDAD,
+        {
+            "equipo_id": equipo_id,
+            "seguimiento_id": seguimiento_id,
+            "vehiculo": vehiculo,
+            "clientes": clientes,
+            "direcciones": direcciones,
+            "actividades": _dumps_json(actividades),
+            "comentarios": comentarios,
+            "usuario": usuario,
+        },
+        scalar=True,
+        code_23505="ACTIVIDAD_DUPLICADA",
     )
 
 

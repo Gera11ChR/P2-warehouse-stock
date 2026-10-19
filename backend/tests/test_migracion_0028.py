@@ -399,7 +399,7 @@ def test_RF_008_ciclo_head_0026_head_en_p2_test_limpia() -> None:
     referencias a la sección FO (lo que usan esquema_en('0024'|'0025'|'0026'))."""
     with esquema_en("0026"):
         assert _rev() == "0026"
-    assert _rev() == "0028"
+    assert _rev() == "0029"
     assert Path(BACKEND_DIR / "alembic" / "versions" / "0028_purga_legacy_fo.py").exists()
 
 
