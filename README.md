@@ -398,7 +398,7 @@ P2_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@127.0.0.1:5432/p2
 # P2_TEST_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@127.0.0.1:5432/p2_test
 ```
 
-Optional operational knobs read by `app/config.py`: `P2_TRANSFER_APPROVAL_THRESHOLD` (100), `P2_MFA_ENCRYPTION_KEY`, `P2_MFA_ELEVATION_TTL_SECONDS` (300), `P2_TOTP_MAX_ATTEMPTS` (5), `P2_TOTP_WINDOW_SECONDS` (600), `P2_TOTP_LOCKOUT_SECONDS` (900).
+Optional operational knobs read by `app/config.py`: `P2_TRANSFER_APPROVAL_THRESHOLD` (100), `P2_MFA_ENCRYPTION_KEY`, `P2_MFA_ELEVATION_TTL_SECONDS` (300), `P2_TOTP_MAX_ATTEMPTS` (5), `P2_TOTP_WINDOW_SECONDS` (600), `P2_TOTP_LOCKOUT_SECONDS` (900), `P2_REPORTES_TZ` (America/Mexico_City).
 
 **Never commit real credentials.** The repository history was forensically purged of credentials on 2026-10-04 (see [§4.5.4](#454-forensic-credential-purge-of-git-history)).
 

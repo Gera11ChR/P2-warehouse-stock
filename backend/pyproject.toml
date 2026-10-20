@@ -31,6 +31,9 @@ dependencies = [
     # la aplicabilidad aquí es baja (solo PNGs de plantillas locales de
     # confianza), pero la deuda CVE era evitable.
     "Pillow==12.3.0",
+    # tzdata fijado (F-13): ZoneInfo debe funcionar sin depender de la tzdata
+    # del sistema; la versión coincide con la entrada ya presente en uv.lock.
+    "tzdata==2026.5",
     "uvicorn>=0.54.0",
     "python-dotenv>=1.2.4",
 ]

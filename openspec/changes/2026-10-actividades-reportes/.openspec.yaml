@@ -1,0 +1,26 @@
+schema: spec-driven
+created: 2026-10-20
+skip_specs: false
+stage: "2/3 — ACTIVIDADES (Reportes y Exportación)"
+depends_on: 2026-10-actividades-unidad   # Etapa 1, archivada y promovida a specs maestras (REQ-ACT-001..020)
+sdd_status:
+  fase_3_especificacion: redactada
+  fase_4_clarificacion: completada          # T1 (@arq-reviewer): APROBADO CON CORRECCIONES; clase A aplicada; humano decidió B-1(a)=C-8 deuda, B-2=C-2..C-7 ratificadas, B-3(a)=C-10; paquete re-aprobado
+  c1_zona_horaria: America/Mexico_City     # DECIDIDA por el humano; verificada en pg_timezone_names
+  fase_5_planificacion: redactada
+  fase_6_tareas: redactada
+  fase_7_implementacion: pendiente         # T2-T10; frontend (T8-T10) bloqueado hasta el PASS de T7
+  fase_8_validacion_auditoria: pendiente   # T11
+  fase_9_evolucion_archivado: pendiente    # T12
+migration: none                            # sin DDL: actividades_reportes (0029) ya contiene todo lo necesario
+contract:
+  # Contrato de API verificable ANTES de escribir frontend (compuerta T7 de tasks.md).
+  base_path: /api/v1/reportes/actividades
+  endpoints:
+    - { method: GET, path: "", query: [equipo_id, desde, hasta, actividad_id, formato], response: "ActividadListOut (formato=json) | XLSX (formato=xlsx)", status: [200, 400, 403, 404, 422] }
+  reused_schemas: [ActividadListOut, ActividadOut, ActividadMaterialOut]   # definidos y congelados en la Etapa 1; sin DTOs nuevos
+  frozen: false            # se congela en T7 (@qa-agent); cambios posteriores exigen RFC (spec/plan primero)
+  openapi_snapshot: null   # openapi.snapshot.json, relativo al paquete; se escribe en T7
+  openapi_snapshot_sha256: null
+domain_rules_to_promote:   # Fase 9 -> openspec/openspec.yaml y openspec/specs/003_inventory_dashboard
+  - reportes_actividades

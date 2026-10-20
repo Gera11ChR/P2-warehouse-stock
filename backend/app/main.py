@@ -18,6 +18,7 @@ from app.api.v1 import (
     inventario,
     movimientos,
     reportes,
+    reportes_actividades,
     seguimientos,
     actividades,
 )
@@ -54,6 +55,7 @@ app.include_router(auditoria.router, prefix="/api/v1")
 app.include_router(seguimientos.router, prefix="/api/v1")
 app.include_router(actividades.router, prefix="/api/v1")
 app.include_router(reportes.router, prefix="/api/v1")
+app.include_router(reportes_actividades.router, prefix="/api/v1")
 
 
 @app.middleware("http")

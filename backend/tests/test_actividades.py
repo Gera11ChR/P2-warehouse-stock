@@ -94,11 +94,17 @@ async def _post_actividad(
 
 async def test_req_act_001_endpoints_en_contrato_openapi(client: AsyncClient) -> None:
     """REQ-ACT-001: la sección ACTIVIDADES expone sus tres rutas en el
-    contrato OpenAPI (pendiente, POST y lista por Unidad)."""
+    contrato OpenAPI (pendiente, POST y lista por Unidad). El alcance se
+    limita al prefijo por Unidad para coexistir con el reporte
+    `/reportes/actividades` de la Etapa 2 (2026-10-actividades-reportes)."""
     from app.main import app
 
     openapi = app.openapi()
-    rutas = sorted(p for p in openapi["paths"] if "actividades" in p)
+    rutas = sorted(
+        p
+        for p in openapi["paths"]
+        if p.startswith("/api/v1/equipos/{equipo_id}/actividades")
+    )
     assert rutas == [
         "/api/v1/equipos/{equipo_id}/actividades",
         "/api/v1/equipos/{equipo_id}/actividades/pendiente",
