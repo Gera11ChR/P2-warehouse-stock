@@ -7,7 +7,8 @@ sdd_status:
   fase_4_clarificacion: completada
   fase_5_planificacion: redactada
   fase_6_tareas: redactada
-  fase_7_implementacion: backend_completado_contrato_congelado  # T1-T7; frontend (T8-T10) pendiente
+  fase_7_implementacion: completada  # T1-T10: backend, contrato congelado (T7), frontend y pruebas vitest (T8-T10)
+  fase_8_validacion_auditoria: completada  # T11: Drift Report APPROVED, QA PASS, trazabilidad REQ-ACT-001..020 al 100 %; aprobado por el humano
 contract:
   # Contrato de API verificable ANTES de escribir frontend (compuerta T7 de tasks.md).
   base_path: /api/v1/equipos/{equipo_id}/actividades

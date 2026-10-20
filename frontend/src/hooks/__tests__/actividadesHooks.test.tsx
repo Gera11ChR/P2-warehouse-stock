@@ -122,6 +122,34 @@ describe('useCrearActividad', () => {
     expect(clavesInvalidadas).toContain(JSON.stringify(['auditoria']))
   })
 
+  it('mutación rechazada: el error se propaga y NO se invalida nada', async () => {
+    const { wrapper, claves } = setup()
+    crearMock.mockRejectedValue({
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: {
+          error: { message: 'El seguimiento ya tiene una actividad confirmada.' },
+        },
+      },
+    })
+    const { result } = renderHook(() => useCrearActividad(4), { wrapper })
+    await waitFor(() =>
+      result.current
+        .mutateAsync({
+          seguimiento_id: 9,
+          vehiculo: 'V',
+          clientes: 'C',
+          direcciones: 'D',
+          actividades: ['A'],
+        })
+        .catch(() => undefined)
+        .then(() => undefined),
+    )
+    expect(result.current.isError).toBe(true)
+    expect(claves()).toEqual([])
+  })
+
   it('el folio devuelto por el backend llega intacto (sin cálculo local)', async () => {
     const { wrapper } = setup()
     crearMock.mockResolvedValue({ ...actividad, folio: 'R0002', folio_num: 2 })

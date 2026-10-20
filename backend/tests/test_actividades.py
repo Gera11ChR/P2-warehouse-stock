@@ -18,7 +18,6 @@ from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from app.models import AuditoriaEvento, InventarioEquipo
 from tests.helpers.fabrica import (
     borrador_teams,
     carga_inicial,
@@ -574,7 +573,7 @@ async def test_req_act_015_sin_efectos_sobre_inventario_y_actas(
 
 
 async def test_req_act_016_lista_ordenada_de_mas_reciente_a_antigua(
-    client: AsyncClient, session
+    client: AsyncClient,
 ) -> None:
     """REQ-ACT-016: GET lista devuelve las actividades de la Unidad con
     folio, fecha y campos, ordenadas de la más reciente a la más antigua."""
