@@ -98,6 +98,7 @@
 - **REQ:** 001, 005, 006, 007, 017
 - **Hacer:** vitest para `ActividadesPanel` (pestaña visible, sin seguimiento pendiente → «Confirmar» deshabilitado, placeholders exactos, «+ Agregar», límite de celdas, descarte de vacías, éxito con folio, error del backend), hooks, servicio y schema; seguir el patrón `vi.mock('../../services/*')` + `QueryClientProvider` + `ToastProvider`.
 - **Hecho cuando:** vitest completo pasa al 100 % (incluida la suite previa).
+- **Estado:** COMPLETADA y aprobada por el humano (49 archivos / 571 vitest en verde; `tsc -b` sin errores; commit `a5489e5`).
 - **PARADA.**
 
 ### T11 — Validación y auditoría (Fase 8)
@@ -105,12 +106,14 @@
 - **REQ:** todos
 - **Hacer:** Drift Report (Entity/Logic/Exception/Traceability, incluido código muerto, solo reporte); Matriz de Trazabilidad REQ-ACT-001..020 con prueba que pasa y aserta HTTP + BD; regresión completa (pytest, vitest, build, `openspec validate --specs --strict`); verificación de que Etapas 2 y 3 no fueron adelantadas.
 - **Hecho cuando:** `@auditor` = APPROVED; `@qa-agent` = PASS (cobertura de trazabilidad 100 %); `@arq-reviewer` otorga visto bueno; el humano aprueba el cierre.
+- **Estado:** COMPLETADA y aprobada por el humano (Drift Report APPROVED, `@qa-agent` PASS, trazabilidad REQ-ACT-001..020 al 100 %; pytest 561 + sql_tests 39 + vitest 571; commit `a5489e5`).
 - **PARADA.**
 
 ### T12 — Evolución y archivado (Fase 9)
 - **Agente:** Orquestador (condiciones de archivado verificadas por `@auditor`)
 - **Hacer:** promover REQ-ACT y la regla `actividades_registro` a `openspec/specs/` y `openspec/openspec.yaml`: `domain_rules` (`mandatory_functions`: `fn_crear_actividad`; eventos: `ACTIVIDAD_CONFIRMADA`; glosario: Actividad, Folio) **y** `paths`/`components` con los 3 endpoints y DTOs de actividades tomados del `openapi.snapshot.json`; mover el paquete a `openspec/changes/archive/2026-10-actividades-unidad/`; no registrar en `.agents.md` enlaces al paquete archivado.
 - **Hecho cuando:** el paquete está en `archive/`, las specs maestras actualizadas y `openspec validate --specs --strict` pasa.
+- **Estado:** COMPLETADA (ver «Fase 9 — Registro de ejecución»).
 - **PARADA.** Solo entonces el humano solicita el SDD de la **Etapa 2**.
 
 ---
@@ -131,3 +134,17 @@
 | 017 | T8, T9 | T10 |
 | 018, 019 | T4, T5 | T7 |
 | 020 | T2 | T3, T11 |
+
+---
+
+## Fase 9 — Registro de ejecución (2026-10-20)
+
+- **Archivado:** paquete movido (`git mv`) a `openspec/changes/archive/2026-10-actividades-unidad/`; `openspec/changes/` queda solo con `archive/`.
+- **Specs maestras promovidas** a `openspec/specs/003_inventory_dashboard/spec.md` (formato `Requirement`/`Scenario`, «SHALL», sin prefijo `RF-n`): REQ-ACT-001..020 (20 de 20). `Purpose` ampliado. Sin cambios en `001_core_logistics` ni `002_stock_transfer`.
+- **`openspec/openspec.yaml`:**
+  - `domain_rules`: nueva regla `actividades_registro`; `fn_crear_actividad` en `transaction_delegation.mandatory_functions`; `fn_actividad_pendiente` en `read_only_calculation_functions`; evento `ACTIVIDAD_CONFIRMADA` en `audit_ledger_immutability.events`; glosario `Actividad` y `Folio`.
+  - `paths`: `GET .../actividades/pendiente`, `POST` y `GET .../actividades`.
+  - `components.schemas`: `ActividadMaterialOut`, `ActividadPendienteSeguimiento`, `ActividadPendienteOut`, `ActividadCreate`, `ActividadOut`, `ActividadListOut` (tomados de `openapi.snapshot.json`; sha256 del snapshot sin cambios).
+- **`.agents.md`:** verificado sin enlaces al paquete archivado.
+- **Hallazgos LOW diferidos (Etapa 2):** `ActividadInput`, `useActividades` y `listarActividades` se conservan sin uso de producción (los consumirá la Etapa 2); `_prechequear_equipo` se ejecuta dos veces en el POST (redundante, inofensivo).
+- **Etapas 2 y 3:** no iniciadas. Solo se solicitan tras esta parada.

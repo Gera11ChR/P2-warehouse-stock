@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provides the operator-facing warehouse management surface: Spanish-language navigation, KPI dashboard, filter toolbar, per-(SKU+Almacén) inventory browsing, material detail drawer, bulk search, the unified fiber-optic inventory (Inventario FO), the Valor Unitario / Valor Total valuation, team inventory assignment, and the material/inventory/team/fiber/KPI API contracts.
+Provides the operator-facing warehouse management surface: Spanish-language navigation, KPI dashboard, filter toolbar, per-(SKU+Almacén) inventory browsing, material detail drawer, bulk search, the unified fiber-optic inventory (Inventario FO), the Valor Unitario / Valor Total valuation, team inventory assignment, the per-Unidad ACTIVIDADES registration (immutable activity records with automatic folio and date), and the material/inventory/team/fiber/KPI API contracts.
 
 ## Requirements
 
@@ -248,3 +248,143 @@ The system SHALL consolidate custody of the official catalog inventory in the `C
 #### Scenario: Multi-warehouse transfer schema preserved
 - **WHEN** a transfer between any two existing warehouses is dispatched or received
 - **THEN** the operation behaves exactly as before the catalog consolidation with no schema or endpoint changes
+
+### Requirement: REQ-ACT-001 ACTIVIDADES subsection
+The system SHALL offer in Inventario por Unidad a subsection named "ACTIVIDADES", placed after CONSUMO in the subsection bar.
+
+#### Scenario: Tab order
+- **WHEN** an operator opens Inventario por Unidad
+- **THEN** the subsection bar lists Consulta, Configuración, CONSUMO and ACTIVIDADES in that order, and selecting ACTIVIDADES mounts the activity registration panel for the selected Unidad
+
+### Requirement: REQ-ACT-002 Inherited consumed materials
+WHEN an operator opens ACTIVIDADES for a Unidad that has a seguimiento pending an activity, the system SHALL display, read-only, the materials consumed in that seguimiento with CANTIDAD, MATERIAL, U.M. and VALOR UNITARIO (the current value of the material at query time, computed by PostgreSQL).
+
+#### Scenario: Pending seguimiento shows consumed materials
+- **WHEN** `GET /equipos/{equipo_id}/actividades/pendiente` is requested for a Unidad whose most recent CERRADA seguimiento has no activity
+- **THEN** the response lists that seguimiento with one line per material having `cantidad_consumida` > 0 and the current `valor_unitario`, and no row is written
+
+### Requirement: REQ-ACT-003 One-to-one link with the seguimiento
+IF the Unidad has no seguimiento pending an activity, THEN the system SHALL disable "Confirmar", show a notice that a seguimiento must be closed in CONSUMO, and the backend SHALL reject the confirmation with HTTP 409. IF the submitted `seguimiento_id` does not exist or does not belong to the Unidad, THEN the system SHALL respond 404. IF the seguimiento is not CERRADA or already has a confirmed activity, THEN the system SHALL respond 409 without creating a record. The backend SHALL NOT require the seguimiento to be the most recent one; only the interface offers the most recent.
+
+#### Scenario: Rejections create nothing
+- **WHEN** an activity is submitted for an ABIERTA seguimiento, a non-existent seguimiento, or a seguimiento of another Unidad
+- **THEN** the response is 409 (`SEGUIMIENTO_NO_CERRADO`), 404 (`SEGUIMIENTO_NO_ENCONTRADO`) or 404 respectively, and no row is written to `actividades_reportes` nor to the audit ledger
+
+### Requirement: REQ-ACT-004 Seguimiento without consumption
+WHILE a closed seguimiento has zero materials with `cantidad_consumida` > 0, the system SHALL allow confirming the activity with an empty materials list.
+
+#### Scenario: Empty consumption is confirmable
+- **WHEN** an activity is confirmed for a CERRADA seguimiento whose consumed quantities are all zero
+- **THEN** the response is 201 and the persisted `materiales` snapshot is `[]`
+
+### Requirement: REQ-ACT-005 Header fields and placeholders
+The system SHALL present Fecha (read-only, labelled "Automatizado"), Vehículo, Nombre Cliente(s) and Dirección(es), with the exact placeholders «Ej. Acelmo Hernández, Guillermina Juárez, …» (Cliente) and «Ej. Huapacal 2da, Los Palmares, …» (Dirección). The system SHALL require Vehículo, Cliente(s) and Dirección(es) to be non-empty after trimming, with maximum lengths 100, 500 and 500 characters respectively.
+
+#### Scenario: Required header fields
+- **WHEN** an activity is submitted with a blank or over-limit Vehículo, Cliente(s) or Dirección(es)
+- **THEN** the interface blocks the submission with a field message and the API responds 422 with no row written
+
+### Requirement: REQ-ACT-006 Activity cells and "+ Agregar"
+The system SHALL initially present one activity cell. WHEN the operator presses "+ Agregar", the system SHALL add one empty cell, up to a maximum of 30 cells. The system SHALL require at least one cell with content; empty cells are discarded on confirmation; each cell admits at most 500 characters.
+
+#### Scenario: Cell limit and discard
+- **WHEN** the operator adds cells until 30 exist
+- **THEN** "+ Agregar" is disabled; and when empty cells remain at confirmation they are omitted from the payload, while an empty list, more than 30 cells or a cell over 500 characters is rejected with 422
+
+### Requirement: REQ-ACT-007 Optional comments
+WHERE the operator captures Comentarios, the system SHALL save them (maximum 2000 characters, line breaks allowed); if omitted, the system SHALL save the absence of comments. The interface SHALL send `comentarios: null` when the field is empty.
+
+#### Scenario: Comments persisted or absent
+- **WHEN** an activity is confirmed without comments, or with a multi-line comment
+- **THEN** the stored `comentarios` is NULL or the literal text respectively; a comment over 2000 characters or with control characters other than line break is rejected with 422
+
+### Requirement: REQ-ACT-008 Automatic folio
+WHEN an activity is confirmed, PostgreSQL SHALL assign the next global correlative number, unique and without gaps among confirmed activities, and the system SHALL expose the folio as `R` plus the number zero-padded to at least 4 digits (never truncated). The system SHALL NOT accept a client-supplied folio.
+
+#### Scenario: Global correlative folio
+- **WHEN** two Unidades confirm activities in sequence
+- **THEN** their folios are `R0001` and `R0002`, `folio_num` is 1 and 2 in the database, and a request carrying `folio` is rejected with 422; a rolled-back confirmation consumes no number
+
+### Requirement: REQ-ACT-009 Automatic date
+WHEN an activity is confirmed, PostgreSQL SHALL record the date-time with `now()` (timestamptz). The system SHALL NOT accept a client-supplied date. The interface SHALL present the date in the user's browser local time.
+
+#### Scenario: Server-assigned timestamp
+- **WHEN** an activity is confirmed
+- **THEN** `created_at` is a `timestamp with time zone` set by the database and equal to the `fecha` returned by the API, and a request carrying `fecha` is rejected with 422
+
+### Requirement: REQ-ACT-010 Materials and unit value snapshot
+WHEN an activity is confirmed, the system SHALL freeze in the record the materials list (`material_id`, code, description, U.M., consumed quantity and current `valor_unitario`) derived exclusively from PostgreSQL. Later changes to the catalog or to seguimientos SHALL NOT alter the confirmed record. The system SHALL NOT accept client-supplied materials or unit values.
+
+#### Scenario: Snapshot survives catalog changes
+- **WHEN** the `valor_unitario` of a consumed material changes after the activity was confirmed
+- **THEN** the stored `materiales` and the activity listing keep the value in force at confirmation
+
+### Requirement: REQ-ACT-011 Atomicity and idempotency
+The system SHALL execute the confirmation in a single transaction through the Stored Function `fn_crear_actividad`, with a `FOR UPDATE` lock on the seguimiento and a UNIQUE constraint on `seguimiento_id`. Two concurrent confirmations, or a retry, over the same seguimiento SHALL produce exactly one record; the other request SHALL respond 409 (`ACTIVIDAD_DUPLICADA`).
+
+#### Scenario: Concurrent confirmations
+- **WHEN** two confirmations for the same seguimiento run concurrently
+- **THEN** one responds 201 and the other 409, and the database holds exactly one row and one folio for that seguimiento
+
+### Requirement: REQ-ACT-012 Immutability and audit
+The system SHALL treat a confirmed activity as append-only: UPDATE and DELETE SHALL be rejected by a database trigger, and the system SHALL NOT offer editing or deleting it. WHEN an activity is confirmed, the system SHALL emit in `auditoria_eventos` an `ACTIVIDAD_CONFIRMADA` event with `usuario` = actor, `equipo_origen_id` = Unidad, result `EXITO` and `detalles` containing `actividad_id`, `folio`, `seguimiento_id` and `equipo_id`.
+
+#### Scenario: Trigger and ledger event
+- **WHEN** an UPDATE or DELETE is attempted on a confirmed activity row
+- **THEN** it fails with an append-only error, and exactly one `ACTIVIDAD_CONFIRMADA` event exists with the actor, Unidad, folio and ids of the activity
+
+### Requirement: REQ-ACT-013 Input validation
+IF the request body contains undeclared fields, wrong types, texts outside the limits of REQ-ACT-005/006/007, control characters (C0 except line break in Comentarios, DEL, C1) or unpaired Unicode surrogates, THEN the system SHALL respond HTTP 422 without accessing business data.
+
+#### Scenario: Strict payload
+- **WHEN** the payload carries an extra field such as `usuario` or `materiales`, a non-integer `seguimiento_id`, or a control character in any text
+- **THEN** the response is 422 and no row or audit event is written; a path identifier outside INT4 yields the canonical 400 `NUMERIC_OUT_OF_RANGE`
+
+### Requirement: REQ-ACT-014 Authorization per Unidad
+WHILE the actor is neither an administrator nor a member of the Unidad, the system SHALL respond 403 on every activities endpoint; IF the Unidad does not exist, THEN 404 (404 before 403). The system SHALL require an authenticated actor on the POST.
+
+#### Scenario: Access control
+- **WHEN** an actor without membership calls any of the three endpoints, or an administrator without membership confirms an activity
+- **THEN** the first receives 403 with no row written, an unknown Unidad receives 404 even for that actor, and the administrator succeeds with 201 and is recorded as `usuario`
+
+### Requirement: REQ-ACT-015 No effect on inventory
+The system SHALL NOT modify `inventario_equipos`, `seguimientos`, `seguimiento_items`, `actas_reportes`, the catalog or any stock balance when querying or confirming an activity.
+
+#### Scenario: Inventory untouched
+- **WHEN** an activity is confirmed
+- **THEN** the Unidad inventory, the seguimiento state (still CERRADA) and the number of actas are identical before and after
+
+### Requirement: REQ-ACT-016 Unidad activity listing
+WHEN a client requests `GET /equipos/{equipo_id}/actividades`, the system SHALL return the confirmed activities of that Unidad ordered from most recent to oldest, with folio, date, vehicle, clients, addresses, activities, comments and materials.
+
+#### Scenario: Ordered listing
+- **WHEN** a Unidad has two confirmed activities
+- **THEN** the list returns them newest first with `total` = 2 and the full record of each
+
+### Requirement: REQ-ACT-017 Operation state presentation
+The system SHALL show the user at all times the state of the confirmation operation (pending, successful, rejected); after success it SHALL show the assigned folio and refresh the state from the backend (no local stock state), and the form SHALL be left without a pending seguimiento (REQ-ACT-003); after a rejection the backend message SHALL be shown and the captured data preserved for retry.
+
+#### Scenario: Success and rejection states
+- **WHEN** the operator confirms and the backend answers 201
+- **THEN** the interface shows the folio, invalidates the pending, history and audit queries, and re-reads the pending seguimiento; and when the backend answers 409 the message is shown, the entered data remain, and no query is invalidated
+
+### Requirement: REQ-ACT-018 Contract and nomenclature
+The system SHALL expose the activities fields in Spanish snake_case as frozen in the package OpenAPI contract (no legacy aliases), and UI texts SHALL use "Unidad" (never "Equipo"); technical identifiers `equipo`/`equipo_id` are kept.
+
+#### Scenario: Frozen contract
+- **WHEN** the live OpenAPI document is compared with the frozen contract of the three activities endpoints and their schemas
+- **THEN** paths, methods, status codes, field names, types and limits are identical
+
+### Requirement: REQ-ACT-019 Deterministic errors
+The system SHALL map the errors of the Stored Functions to HTTP 400/404/409/422 with the canonical body `{"error":{"code","message","coordinates"}}`; business rules SHALL NEVER produce HTTP 500 nor expose SQL details.
+
+#### Scenario: Domain error codes
+- **WHEN** a confirmation is rejected by `fn_crear_actividad` or by a residual UNIQUE race
+- **THEN** the body carries one of `SEGUIMIENTO_NO_ENCONTRADO` (404), `SEGUIMIENTO_NO_CERRADO` (409), `ACTIVIDAD_DUPLICADA` (409) or `ACTIVIDAD_INVALIDA` (422)
+
+### Requirement: REQ-ACT-020 Reversibility and regression
+The system SHALL provide Alembic migration 0029 with a `downgrade()` that removes the activities objects without loss of pre-existing tables, and SHALL keep the full backend and frontend suites green, the build without warnings and `openspec validate --specs --strict` passing.
+
+#### Scenario: Migration round trip
+- **WHEN** migration 0029 is upgraded, downgraded and upgraded again
+- **THEN** the table, constraints, trigger and both functions are created and removed cleanly, audit events already written are preserved, and no pre-existing table is modified

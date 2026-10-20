@@ -27,8 +27,10 @@ domain_rules:
       - "fn_sumar_cantidad"
       - "fn_mover_material"
       - "fn_agregar_todo_seguimiento"
+      - "fn_crear_actividad"
     read_only_calculation_functions:
       - "fn_valor_total_inventario"
+      - "fn_actividad_pendiente"
     prohibition: "Cálculos matemáticos de stock Y de valor (Valor Total = Σ Stock Actual × Valor Unitario) prohibidos en Python/FastAPI y en React: el cálculo vive en PostgreSQL (fn_valor_total_inventario, solo lectura, aritmética NUMERIC exacta con redondeo a 3 decimales al final)."
   nomenclature_glossary:
     required: true
@@ -40,6 +42,8 @@ domain_rules:
       "Inventario FO": "Locación ÚNICA de fibra óptica (antes FO Paquete / FO En Uso): inventario_fibra con una fila por material, sin módulos; sección de ruteo secciones.tipo='FO'."
       "Valor Unitario": "Atributo de catalogo_materiales (MXN, NUMERIC(12,3), default 1.000) compartido por Inventario General, Inventario FO e Inventario por Unidad."
       "Valor Total": "Σ Stock Actual × Valor Unitario de General activo + Inventario FO; GET /inventario/resumen-general."
+      Actividad: "Registro documental inmutable de la jornada de una Unidad (tabla actividades_reportes), asociado 1:1 a un seguimiento CERRADA; se captura en la subsección ACTIVIDADES de Inventario por Unidad."
+      Folio: "Identificador visible de la Actividad: 'R' + número correlativo global con mínimo 4 dígitos (R0001, R0002, …, R10000; sin truncar). Lo asigna PostgreSQL; en BD vive como folio_num (integer)."
       historical_technical_values: "TEAMS y DEVOL son valores técnicos (tipos de movimiento) exentos: jamás se renombran. FO_PAQUETE/FO_EN_USO ya NO existen (purgados por 0028, 2026-10-purga-legacy-fo)."
   audit_ledger_immutability:
     required: true
@@ -52,6 +56,7 @@ domain_rules:
       - "MOVIMIENTO_INVENTARIO"
       - "ACTA_ENTREGA_GENERADA"
       - "ACTA_CONSUMO_GENERADA"
+      - "ACTIVIDAD_CONFIRMADA"
       - "MATERIAL_MODIFICADO"
       - "PURGA_LEGACY_FO"
     attribution: "Los eventos emitidos por triggers de catálogo toman el actor de `app.actor` (COALESCE(NULLIF(current_setting('app.actor', true), ''), CURRENT_USER)); el servicio DEBE fijar `app.actor` ANTES de mutar el ORM (el autoflush de session.execute emitiría el UPDATE antes del set_config). Eventos históricos con usuario = rol de BD no se reescriben (append-only)."
@@ -93,6 +98,18 @@ domain_rules:
     milestones:
       entrega: "Acta de Entrega: trigger tg_acta_entrega en la MISMA transacción SQL que confirma el movimiento TEAMS (estado transaccional real CONFIRMADO; COMPLETED no existe en el esquema)."
       consumo: "Acta de Consumo: registrada por fn_cerrar_seguimiento al cerrar el seguimiento (CANT. = cantidad consumida calculada en SQL)."
+  actividades_registro:
+    required: true
+    description: "2026-10 (Etapa 1/3, paquete 2026-10-actividades-unidad): la subsección ACTIVIDADES de Inventario por Unidad registra un documento inmutable por seguimiento CERRADA. fn_crear_actividad (única vía de escritura, VOLATILE) bloquea el seguimiento con FOR UPDATE, valida pertenencia a la Unidad / estado CERRADA / unicidad (UNIQUE seguimiento_id), asigna el folio global correlativo sin huecos (pg_advisory_xact_lock + MAX+1; UNIQUE folio_num como red de seguridad), fija la fecha con now() (timestamptz), congela en jsonb el snapshot de materiales consumidos con valor_unitario vigente y emite el evento ACTIVIDAD_CONFIRMADA (detalles: actividad_id, folio, seguimiento_id, equipo_id; convención de ACTA_CONSUMO_GENERADA). fn_actividad_pendiente (STABLE, solo lectura) devuelve el seguimiento CERRADA más reciente (closed_at DESC, id DESC) sin actividad. actividades_reportes es append-only (trigger tg_ledger_actividades_inmutable → fn_bloquear_mutacion_ledger) y sin efectos sobre inventario_equipos, seguimientos, seguimiento_items ni actas_reportes. El cliente NO puede enviar folio, fecha, materiales, valor_unitario ni usuario (ActividadCreate extra=forbid → 422). La UI ofrece solo el seguimiento pendiente más reciente; el backend acepta cualquier seguimiento CERRADA de la Unidad sin actividad (C-1). Sin vía de edición o corrección tras confirmar (riesgo aceptado por inmutabilidad). Identificadores técnicos equipo/equipo_id se conservan (REQ-UNI-005); 'Unidad' solo en UI. Errores de función → 404 SEGUIMIENTO_NO_ENCONTRADO, 409 SEGUIMIENTO_NO_CERRADO / ACTIVIDAD_DUPLICADA, 422 ACTIVIDAD_INVALIDA. Fuera de alcance de la Etapa 1: emisión de REPORTE DE ACTIVIDADES.xlsx y selectores en Reportes (Etapa 2), 'Referencia' de materiales (Etapa 3)."
+    mandatory_functions:
+      - "fn_crear_actividad"
+    read_only_calculation_functions:
+      - "fn_actividad_pendiente"
+    events:
+      - "ACTIVIDAD_CONFIRMADA"
+    glossary:
+      - "Actividad"
+      - "Folio"
   classification_schema:
     legacy_removed: "TIPO"
     fields:
@@ -753,6 +770,70 @@ paths:
           description: "Más de una sección GENERAL activa o ninguna activa (destino/origen no determinable) o clave de idempotencia en uso por otro actor"
         "422":
           description: "Destino igual al origen, payload inválido (campo no permitido, incluidos `origen_modulo`/`destino_modulo`) o cantidad con más de 3 decimales / fuera del rango decimal NUMERIC(12,3)"
+  /api/v1/equipos/{equipo_id}/actividades/pendiente:
+    get:
+      summary: "Seguimiento CERRADA más reciente de la Unidad sin actividad, con sus materiales consumidos y el valor unitario vigente (fn_actividad_pendiente)"
+      operationId: "actividadPendiente"
+      responses:
+        "200":
+          description: "ActividadPendienteOut; `seguimiento: null` si la Unidad no tiene seguimiento pendiente de actividad"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActividadPendienteOut"
+        "400":
+          description: "Identificador numérico fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+        "403":
+          description: "Actor sin acceso a la Unidad (no integrante ni administrador)"
+        "404":
+          description: "Unidad no encontrada o inactiva (404 antes de 403)"
+        "422":
+          description: "Cabecera X-Actor o identificador inválidos"
+  /api/v1/equipos/{equipo_id}/actividades:
+    post:
+      summary: "Confirmar la actividad de un seguimiento CERRADA vía fn_crear_actividad (folio, fecha y snapshot de materiales los asigna PostgreSQL)"
+      operationId: "crearActividad"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActividadCreate"
+      responses:
+        "201":
+          description: "Actividad confirmada (evento ACTIVIDAD_CONFIRMADA en la misma transacción)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActividadOut"
+        "400":
+          description: "Identificador numérico fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+        "403":
+          description: "Actor sin acceso a la Unidad (no integrante ni administrador) o no autenticado"
+        "404":
+          description: "Unidad no encontrada (o seguimiento inexistente para la Unidad: SEGUIMIENTO_NO_ENCONTRADO)"
+        "409":
+          description: "Seguimiento no cerrado (SEGUIMIENTO_NO_CERRADO) o con actividad ya confirmada (ACTIVIDAD_DUPLICADA, incluye la carrera concurrente)"
+        "422":
+          description: "Campos no declarados (folio, fecha, materiales, valor_unitario, usuario), tipos, límites o caracteres de control inválidos"
+    get:
+      summary: "Listar las actividades confirmadas de la Unidad, de la más reciente a la más antigua"
+      operationId: "listarActividades"
+      responses:
+        "200":
+          description: "ActividadListOut"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActividadListOut"
+        "400":
+          description: "Identificador numérico fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+        "403":
+          description: "Actor sin acceso a la Unidad (no integrante ni administrador)"
+        "404":
+          description: "Unidad no encontrada o inactiva (404 antes de 403)"
+        "422":
+          description: "Cabecera X-Actor o identificador inválidos"
   /api/v1/reportes/entrega:
     get:
       summary: "Acta(s) de Entrega (hito A: generadas al confirmar TEAMS) en JSON o XLSX sobre la plantilla corporativa"
@@ -1353,3 +1434,126 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AuditoriaOut"
+    ActividadMaterialOut:
+      type: object
+      additionalProperties: false
+      description: "Material consumido dentro del snapshot de la actividad (jsonb); solo lectura. En el pendiente valor_unitario es el VIGENTE; en la actividad confirmada es el CONGELADO al confirmar."
+      required: [material_id, codigo, descripcion, u_m, cantidad_consumida, valor_unitario]
+      properties:
+        material_id:
+          type: integer
+        codigo:
+          type: [string, "null"]
+        descripcion:
+          type: string
+        u_m:
+          type: [string, "null"]
+        cantidad_consumida:
+          type: number
+        valor_unitario:
+          type: number
+    ActividadPendienteSeguimiento:
+      type: object
+      additionalProperties: false
+      description: "Seguimiento CERRADA más reciente sin actividad (fn_actividad_pendiente) con sus materiales consumidos (puede ser [])"
+      required: [seguimiento_id, fecha_cierre, materiales]
+      properties:
+        seguimiento_id:
+          type: integer
+        fecha_cierre:
+          type: string
+          format: date-time
+        materiales:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActividadMaterialOut"
+    ActividadPendienteOut:
+      type: object
+      required: [seguimiento]
+      properties:
+        seguimiento:
+          oneOf:
+            - $ref: "#/components/schemas/ActividadPendienteSeguimiento"
+            - type: "null"
+    ActividadCreate:
+      type: object
+      additionalProperties: false
+      description: "Confirmación de actividad. Ausentes por diseño (los decide PostgreSQL): folio, fecha, materiales, valor_unitario, usuario. Las celdas vacías las descarta el cliente; el backend además las rechaza."
+      required: [seguimiento_id, vehiculo, clientes, direcciones, actividades]
+      properties:
+        seguimiento_id:
+          type: integer
+          exclusiveMinimum: 0
+          maximum: 2147483647
+        vehiculo:
+          type: string
+          minLength: 1
+          maxLength: 100
+        clientes:
+          type: string
+          minLength: 1
+          maxLength: 500
+        direcciones:
+          type: string
+          minLength: 1
+          maxLength: 500
+        actividades:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: string
+            minLength: 1
+            maxLength: 500
+        comentarios:
+          type: [string, "null"]
+          maxLength: 2000
+    ActividadOut:
+      type: object
+      additionalProperties: false
+      description: "Actividad confirmada. folio es presentación pura ('R' + folio_num con 4 dígitos mínimo); fecha = created_at (now() de PostgreSQL, ISO 8601 con zona)."
+      required: [actividad_id, folio, folio_num, seguimiento_id, equipo_id, equipo_nombre, fecha, usuario, vehiculo, clientes, direcciones, actividades, comentarios, materiales]
+      properties:
+        actividad_id:
+          type: integer
+        folio:
+          type: string
+        folio_num:
+          type: integer
+        seguimiento_id:
+          type: integer
+        equipo_id:
+          type: integer
+        equipo_nombre:
+          type: string
+        fecha:
+          type: string
+          format: date-time
+        usuario:
+          type: string
+        vehiculo:
+          type: string
+        clientes:
+          type: string
+        direcciones:
+          type: string
+        actividades:
+          type: array
+          items:
+            type: string
+        comentarios:
+          type: [string, "null"]
+        materiales:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActividadMaterialOut"
+    ActividadListOut:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActividadOut"
+        total:
+          type: integer
