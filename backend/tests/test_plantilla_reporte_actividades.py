@@ -418,6 +418,36 @@ def test_req_rep_010_caracteres_ilegales_xlsx_se_eliminan_y_los_saltos_se_conser
                 assert not any(ch in celda.value for ch in ilegales)
 
 
+def test_req_rep_010_prefijo_de_control_no_oculta_una_formula() -> None:
+    """REQ-REP-010 / N-1: un carácter ilegal antepuesto a `=`, `+`, `-` o `@`
+    no debe eludir la neutralización. Primero se eliminan los ilegales y
+    después se neutraliza: ninguna celda queda como fórmula real."""
+    variantes = [
+        ("\x01=1+1", "'=1+1"),
+        ("\x00+10+5", "'+10+5"),
+        ("\x1f- Instalación", "'- Instalación"),
+        ("\x07@SUM(A1:A9)", "'@SUM(A1:A9)"),
+        ("\x0b\x0c  =1+1", "'  =1+1"),
+    ]
+    for payload, esperado in variantes:
+        actividad = _actividad(
+            vehiculo=payload,
+            clientes=payload,
+            direcciones=payload,
+            actividades=[payload, "Actividad normal"],
+            comentarios=payload,
+            materiales=[_material(payload, u_m=payload)],
+        )
+        _, wb = _generar(actividad)
+        for hoja in wb.worksheets:
+            for fila in hoja.iter_rows():
+                for celda in fila:
+                    assert celda.data_type != "f"
+        ws = wb["R0001"]
+        for coord in ("E8", "B9", "B10", "A25", "C32", "C13", "B13"):
+            assert ws[coord].value == esperado
+
+
 def test_req_rep_007_unidad_de_medida_nula_deja_la_celda_vacia() -> None:
     """REQ-REP-007: una U.M. nula del snapshot no escribe nada en la celda
     (queda vacía, jamás la cadena "None")."""

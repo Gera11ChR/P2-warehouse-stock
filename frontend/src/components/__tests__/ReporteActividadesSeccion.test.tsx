@@ -243,6 +243,66 @@ describe('ReporteActividadesSeccion — descargas (REQ-REP-013)', () => {
     expect(alerta).toHaveTextContent('Detalle del servidor: La consulta excede el tope de 100 folios por libro')
   })
 
+  it('422 LIMITE_HOJAS_EXCEDIDO (mensaje real del backend): menciona el tope de 100 folios', async () => {
+    const user = userEvent.setup()
+    mockedDescargar.mockRejectedValue(
+      new ErrorDescargaReporte(
+        422,
+        'El libro excede el tope de 100 folios; acote los filtros (Unidad, fechas u operación) e intente de nuevo',
+        'LIMITE_HOJAS_EXCEDIDO',
+      ),
+    )
+    renderSeccion()
+
+    await screen.findByText('R0001')
+    await user.click(
+      screen.getByRole('button', { name: 'Descargar libro (XLSX)' }),
+    )
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(/tope de 100 folios por libro/)
+  })
+
+  it('422 LIMITE_FILAS_EXCEDIDO (mensaje real del backend): mensaje propio del límite de filas, no «revisa las fechas»', async () => {
+    const user = userEvent.setup()
+    const detalle =
+      'El libro excede el límite de 10000 filas inyectadas (materiales + actividades); acote los filtros e intente de nuevo'
+    mockedDescargar.mockRejectedValue(
+      new ErrorDescargaReporte(422, detalle, 'LIMITE_FILAS_EXCEDIDO'),
+    )
+    renderSeccion()
+
+    await screen.findByText('R0001')
+    await user.click(
+      screen.getByRole('button', { name: 'Descargar libro (XLSX)' }),
+    )
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(/límite de 10 000 filas/)
+    expect(alerta).not.toHaveTextContent(/Revisa las fechas/)
+    expect(alerta).toHaveTextContent(`Detalle del servidor: ${detalle}`)
+  })
+
+  it('422 RANGO_FECHAS_INVALIDO: conserva el mensaje genérico de filtros inválidos', async () => {
+    const user = userEvent.setup()
+    mockedDescargar.mockRejectedValue(
+      new ErrorDescargaReporte(
+        422,
+        'El rango de fechas es inválido: desde no puede ser posterior a hasta.',
+        'RANGO_FECHAS_INVALIDO',
+      ),
+    )
+    renderSeccion()
+
+    await screen.findByText('R0001')
+    await user.click(
+      screen.getByRole('button', { name: 'Descargar libro (XLSX)' }),
+    )
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(/Los filtros no son válidos/)
+  })
+
   it('durante la descarga consolidada el botón queda deshabilitado y el estado en curso es visible', async () => {
     const user = userEvent.setup()
     // Promesa diferida que nunca resuelve: la descarga queda en curso.

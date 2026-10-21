@@ -100,9 +100,13 @@ ANCHO_DEFECTO = 8.43
 
 
 def _limpiar_texto(valor: str) -> str:
-    """Texto listo para XLSX: neutraliza fórmulas (REQ-REP-010) y elimina
-    caracteres ilegales del formato."""
-    return ILLEGAL_CHARACTERS_RE.sub("", str(sanitizar_celda(valor)))
+    """Texto listo para XLSX: elimina caracteres ilegales del formato y
+    después neutraliza fórmulas (REQ-REP-010).
+
+    El orden importa: si se neutralizara primero, un prefijo de control
+    (p. ej. ``\\x01=1+1``) ocultaría el ``=`` a ``sanitizar_celda`` y, al
+    quitar el carácter ilegal, quedaría una fórmula real."""
+    return str(sanitizar_celda(ILLEGAL_CHARACTERS_RE.sub("", str(valor))))
 
 
 def _ancho_combinado(ws: Worksheet, col_inicio: int, col_fin: int) -> float:

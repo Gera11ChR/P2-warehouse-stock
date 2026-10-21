@@ -114,6 +114,8 @@ export type ReporteActividadesExportStatus =
       alcance: 'consolidado' | 'individual'
       httpStatus?: number
       detalle?: string
+      /** Código de negocio del backend (p. ej. `LIMITE_FILAS_EXCEDIDO`). */
+      code?: string
     }
 
 /**
@@ -170,6 +172,7 @@ export function useExportarReporteActividades() {
           error instanceof ErrorDescargaReporte ? error.httpStatus : undefined,
         detalle:
           error instanceof ErrorDescargaReporte ? error.detalle : undefined,
+        code: error instanceof ErrorDescargaReporte ? error.code : undefined,
       })
     },
   })

@@ -165,6 +165,35 @@ describe('services/reportes — descargarReporteActividadesXlsx', () => {
     expect(error.detalle).toBe('Input should be a valid date')
   })
 
+  it('422 por tope: propaga `code` de negocio (LIMITE_FILAS_EXCEDIDO) junto al detalle real', async () => {
+    const mensaje =
+      'El libro excede el límite de 10000 filas inyectadas (materiales + actividades); acote los filtros e intente de nuevo'
+    get.mockRejectedValue({
+      response: {
+        status: 422,
+        data: blobJson({
+          error: { code: 'LIMITE_FILAS_EXCEDIDO', message: mensaje },
+        }),
+      },
+    })
+    const error = await descargarReporteActividadesXlsx().catch((e) => e)
+    expect(error).toBeInstanceOf(ErrorDescargaReporte)
+    expect(error.httpStatus).toBe(422)
+    expect(error.code).toBe('LIMITE_FILAS_EXCEDIDO')
+    expect(error.detalle).toBe(mensaje)
+  })
+
+  it('sin `code` en el cuerpo (p. ej. {detail:[…]}) el código queda indefinido', async () => {
+    get.mockRejectedValue({
+      response: {
+        status: 422,
+        data: blobJson({ detail: [{ msg: 'Input should be a valid date' }] }),
+      },
+    })
+    const error = await descargarReporteActividadesXlsx().catch((e) => e)
+    expect(error.code).toBeUndefined()
+  })
+
   it('403: conserva el status aunque el cuerpo no sea JSON', async () => {
     get.mockRejectedValue({
       response: { status: 403, data: new Blob(['<html>prohibido</html>']) },

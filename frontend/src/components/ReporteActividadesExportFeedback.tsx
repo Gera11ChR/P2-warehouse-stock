@@ -19,10 +19,16 @@ const ALCANCE_LABEL = {
   individual: 'del folio',
 } as const
 
-/** El 422 por tope se distingue por el detalle del servidor (habla de
- *  folios/hojas): la UI debe mencionar el tope de 100 folios por libro. */
-function excedeTopeFolios(detalle?: string): boolean {
+/** El 422 por tope se distingue por el `code` del backend. Sin código
+ *  (respuestas antiguas o sin cuerpo) se recurre al detalle, que habla de
+ *  folios/hojas, como respaldo. */
+function excedeTopeFolios(code?: string, detalle?: string): boolean {
+  if (code !== undefined) return code === 'LIMITE_HOJAS_EXCEDIDO'
   return detalle !== undefined && /\b(folio|hoja)s?\b/i.test(detalle)
+}
+
+function excedeTopeFilas(code?: string): boolean {
+  return code === 'LIMITE_FILAS_EXCEDIDO'
 }
 
 export default function ReporteActividadesExportFeedback({
@@ -35,9 +41,12 @@ export default function ReporteActividadesExportFeedback({
     if (status.httpStatus === 404) {
       mensaje =
         'No hay actividades para los filtros seleccionados, así que no se generó el archivo. Ajusta la unidad o el rango de fechas e inténtalo de nuevo.'
-    } else if (status.httpStatus === 422 && excedeTopeFolios(status.detalle)) {
+    } else if (status.httpStatus === 422 && excedeTopeFolios(status.code, status.detalle)) {
       mensaje =
         'La consulta excede el tope de 100 folios por libro, así que no se generó el archivo. Ajusta la unidad, las fechas o la actividad e inténtalo de nuevo.'
+    } else if (status.httpStatus === 422 && excedeTopeFilas(status.code)) {
+      mensaje =
+        'El libro excede el límite de 10 000 filas de materiales y actividades, así que no se generó el archivo. Ajusta la unidad, las fechas o la actividad e inténtalo de nuevo.'
     } else if (status.httpStatus === 422) {
       mensaje =
         'Los filtros no son válidos y no se generó el libro. Revisa las fechas e inténtalo de nuevo.'

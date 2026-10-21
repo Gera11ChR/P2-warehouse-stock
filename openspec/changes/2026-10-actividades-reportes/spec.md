@@ -1,6 +1,6 @@
 # Especificación — ETAPA 2/3: ACTIVIDADES (Reportes y Exportación)
 
-**Paquete:** `2026-10-actividades-reportes` · **Fase SDD:** 3 (Especificación) · **Estado:** redactada, pendiente de aprobación del humano; Fase 4 (T1) abierta, ver §9.
+**Paquete:** `2026-10-actividades-reportes` · **Fase SDD:** 3 (Especificación) · **Estado:** aprobada (Fases 3-8 cerradas; archivado en Fase 9).
 **Fuente de requisitos:** `docs/2 Unities Functions.docx` (Reports_Logical_Automation, Emision_Reportes_*) y las directrices del humano para la Etapa 2 (modelo 1 hoja = 1 folio, tope de 100 hojas, desglose por folio en la interfaz). Gobernanza: `docs/constitution.md` (L1), `.agents.md` (L2). Base: `REQ-ACT-001..020` (Etapa 1, `openspec/specs/003_inventory_dashboard`).
 
 ## 1. Propósito
@@ -113,7 +113,7 @@ The system SHALL mantener en verde las suites completas de backend y frontend (i
 5. Sin consultas agregadas; COLABORADORES en blanco.
 6. Enlace directo desde el aviso de confirmación de actividad (adición aprobada por el humano) y promoción de los `REQ-REP` a `003_inventory_dashboard` en T12.
 
-## 9. Clarificaciones para la Fase 4 (T1, `@arq-reviewer`) — abiertas
+## 9. Clarificaciones de la Fase 4 (T1, `@arq-reviewer`) — decididas
 
 - **C-1 (DECIDIDA por el humano en T1):** zona de negocio por defecto `America/Mexico_City` para filtros, FECHA impresa y generación de reportes. La zona de sesión de la BD es `America/Ojinaga` (UTC-5 en horario de verano estadounidense; UTC-6 en invierno), mientras `America/Mexico_City` es UTC-6 constante desde el 30-oct-2022 (tzdata 2026c); durante marzo-noviembre difieren una hora. Verificado: la zona existe en `pg_timezone_names` (`CST -06:00`, sin DST).
 - **C-2 (propuesta, aceptada en T1):** la fecha del XLSX es **texto** `20 / OCTUBRE / 2026` (día con dos dígitos, sin prefijo «FECHA:» porque `A8` ya lo rotula; reutiliza los nombres de mes de `plantilla_reporte`) en lugar de una fecha de Excel con formato `d / mmmm / yyyy`, porque el nombre del mes de este último depende del idioma del Excel del usuario; el texto es determinista y consistente con las actas.

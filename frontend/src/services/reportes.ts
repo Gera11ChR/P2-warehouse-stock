@@ -43,17 +43,28 @@ export async function listarActas(
 export class ErrorDescargaReporte extends Error {
   readonly httpStatus: number | undefined
   readonly detalle: string | undefined
+  /** Código de negocio del backend (p. ej. `LIMITE_FILAS_EXCEDIDO`), si existe. */
+  readonly code: string | undefined
 
-  constructor(httpStatus?: number, detalle?: string) {
+  constructor(httpStatus?: number, detalle?: string, code?: string) {
     super(detalle ?? `Error al descargar el reporte (HTTP ${httpStatus ?? 'sin respuesta'})`)
     this.name = 'ErrorDescargaReporte'
     this.httpStatus = httpStatus
     this.detalle = detalle
+    this.code = code
   }
 }
 
 function esObjeto(valor: unknown): valor is Record<string, unknown> {
   return typeof valor === 'object' && valor !== null
+}
+
+/** `{error:{code}}` → código de negocio (o undefined). */
+function codigoDeCuerpo(cuerpo: unknown): string | undefined {
+  if (!esObjeto(cuerpo) || !esObjeto(cuerpo.error)) return undefined
+  return typeof cuerpo.error.code === 'string' && cuerpo.error.code
+    ? cuerpo.error.code
+    : undefined
 }
 
 /** `{error:{message}}` o `{detail:[{msg}]}` → texto de detalle (o undefined). */
@@ -76,15 +87,19 @@ function detalleDeCuerpo(cuerpo: unknown): string | undefined {
  * Blob: se lee como texto y se interpreta; cualquier fallo de lectura/parseo
  * se ignora (queda solo el status HTTP).
  */
-async function detalleDeRespuestaError(data: unknown): Promise<string | undefined> {
+async function infoDeRespuestaError(
+  data: unknown,
+): Promise<{ detalle?: string; code?: string }> {
   try {
+    let cuerpo: unknown = data
     if (typeof Blob !== 'undefined' && data instanceof Blob) {
-      return detalleDeCuerpo(JSON.parse(await data.text()))
+      cuerpo = JSON.parse(await data.text())
+    } else if (typeof data === 'string') {
+      cuerpo = JSON.parse(data)
     }
-    if (typeof data === 'string') return detalleDeCuerpo(JSON.parse(data))
-    return detalleDeCuerpo(data)
+    return { detalle: detalleDeCuerpo(cuerpo), code: codigoDeCuerpo(cuerpo) }
   } catch {
-    return undefined
+    return {}
   }
 }
 
@@ -136,10 +151,8 @@ export async function descargarActaXlsx(
       respuesta && typeof respuesta.status === 'number'
         ? respuesta.status
         : undefined
-    const detalle = respuesta
-      ? await detalleDeRespuestaError(respuesta.data)
-      : undefined
-    throw new ErrorDescargaReporte(httpStatus, detalle)
+    const info = respuesta ? await infoDeRespuestaError(respuesta.data) : {}
+    throw new ErrorDescargaReporte(httpStatus, info.detalle, info.code)
   }
 }
 
@@ -212,9 +225,7 @@ export async function descargarReporteActividadesXlsx(
       respuesta && typeof respuesta.status === 'number'
         ? respuesta.status
         : undefined
-    const detalle = respuesta
-      ? await detalleDeRespuestaError(respuesta.data)
-      : undefined
-    throw new ErrorDescargaReporte(httpStatus, detalle)
+    const info = respuesta ? await infoDeRespuestaError(respuesta.data) : {}
+    throw new ErrorDescargaReporte(httpStatus, info.detalle, info.code)
   }
 }
