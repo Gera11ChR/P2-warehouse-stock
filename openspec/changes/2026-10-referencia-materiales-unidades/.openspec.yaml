@@ -1,0 +1,22 @@
+schema: spec-driven
+created: 2026-10-21
+goal: "Referencia de materiales por Unidad: lista visual (Descripción, U.M.,
+  Cantidad Semanal) consultable y configurable sin afectar inventarios ni
+  catálogo"
+sdd:
+  paquete: 2026-10-referencia-materiales-unidades
+  etapa: "3/3"
+  fase_3_especificacion: completada
+  fase_4_clarificacion: pendiente          # T1
+  fase_5_planificacion: completada
+  fase_6_tareas: completada
+  fase_7_implementacion: pendiente         # T2-T10 (Backend-First)
+  fase_8_validacion_auditoria: pendiente   # T11
+  fase_9_evolucion_archivado: pendiente    # T12
+contract:
+  frozen: false                            # se congela en T7 (decisión D-4)
+  openapi_snapshot: openapi.snapshot.json  # borrador hasta T7
+  openapi_snapshot_sha256: null
+migration:
+  revision: "0030"
+  down_revision: "0029"
