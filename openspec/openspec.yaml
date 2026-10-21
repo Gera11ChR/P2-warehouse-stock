@@ -110,6 +110,9 @@ domain_rules:
     glossary:
       - "Actividad"
       - "Folio"
+  reportes_actividades:
+    required: true
+    description: "2026-10 (Etapa 2/3, paquete 2026-10-actividades-reportes): el reporte oficial de actividades (GET /api/v1/reportes/actividades) consulta y exporta las actividades confirmadas en la Etapa 1. La zona de negocio es configurable (P2_REPORTES_TZ, por defecto America/Mexico_City, UTC-6 sin DST): desde/hasta se interpretan como días completos de esa zona y la FECHA del XLSX se imprime con ella; los extremos son inclusivos (>= inicio de desde y < inicio del día siguiente a hasta) y desde>hasta responde 422 RANGO_FECHAS_INVALIDO antes de autorizar. Filtros equipo_id/desde/hasta/actividad_id con semántica AND; el aislamiento replica el patrón de /reportes/entrega (403 Unidad ajena, actividad ajena tratada como inexistente, sin excluir Unidades dadas de baja, y sin la regla '404 antes de 403' de REQ-ACT-014). El XLSX se genera sobre la plantilla corporativa REPORTE DE ACTIVIDADES.xlsx (estilos, celdas combinadas y logo conservados; archivo en disco intacto), con el modelo 1 hoja = 1 folio (titulada con el folio, orden ascendente, logo en todas, sin Sheet1), tope de 100 hojas (422 LIMITE_HOJAS_EXCEDIDO) y de 10 000 filas inyectadas (422 LIMITE_FILAS_EXCEDIDO), ambos evaluados antes de generar el archivo con LIMIT 101; los textos se sanean a [A-Za-z0-9._-] y se neutralizan las fórmulas (primero los caracteres ilegales y después sanitizar_celda, para que un prefijo de control no oculte el '='). Es SOLO LECTURA: sin escrituras, sin DDL, sin eventos de auditoría (REQ-REP-016). El listado JSON (formato=json por defecto, ActividadListOut) no tiene tope (paginación registrada como deuda). Errores canónicos: 400 NUMERIC_OUT_OF_RANGE, 403, 404 sin resultados, 422 (validación, RANGO_FECHAS_INVALIDO, LIMITE_HOJAS_EXCEDIDO, LIMITE_FILAS_EXCEDIDO). Los selectores de operación de Entrega (Acta) y Consumo (Seguimiento) son solo frontend y envían el acta_id existente (REQ-REP-014); el aviso de confirmación enlaza a Reportes › Actividades preseleccionando Unidad y folio, y la confirmación invalida ['reportes','actividades'] (REQ-REP-015). Limitación conocida (C-8, deuda): Entrega/Consumo filtran en la zona de sesión de la BD (America/Ojinaga) mientras Actividades usa la zona de negocio; entre 23:00 y 24:00 de México en horario de verano estadounidense una misma jornada puede caer en días distintos según la subsección. El OpenAPI congelado (openapi.snapshot.json del paquete) declara solo application/json en el 200; el XLSX se descarga con responseType blob (deuda H-1)."
   classification_schema:
     legacy_removed: "TIPO"
     fields:
@@ -916,6 +919,57 @@ paths:
           description: "Formato XLSX solicitado sin actas para los filtros indicados"
         "422":
           description: "Formato no soportado (p. ej. csv)"
+  /api/v1/reportes/actividades:
+    get:
+      summary: "Reporte oficial de actividades confirmadas (una hoja por folio en XLSX sobre la plantilla corporativa; json por defecto)"
+      operationId: "reporteActividades"
+      parameters:
+        - name: equipo_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: desde
+          in: query
+          required: false
+          description: "Fecha calendario AAAA-MM-DD: día completo de la zona de negocio (P2_REPORTES_TZ), extremo inclusivo"
+          schema:
+            type: string
+        - name: hasta
+          in: query
+          required: false
+          description: "Fecha calendario AAAA-MM-DD: día completo de la zona de negocio (P2_REPORTES_TZ), extremo inclusivo"
+          schema:
+            type: string
+        - name: actividad_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: formato
+          in: query
+          required: false
+          description: "json (listado, por defecto) | xlsx (libro de una hoja por folio, máx. 100 folios; el OpenAPI congelado declara solo application/json y la descarga usa responseType blob)"
+          schema:
+            type: string
+            enum: [json, xlsx]
+        - name: X-Actor
+          in: header
+          required: true
+          description: "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control"
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "json: ActividadListOut (items de la más reciente a la más antigua, con folio, fecha, Unidad, vehículo, clientes, direcciones, actividades, comentarios y materiales; valores congelados del snapshot). xlsx: adjunto generado inyectando datos en la plantilla corporativa (estilo, celdas combinadas y logo conservados), una hoja por folio"
+        "400":
+          description: "Identificador numérico fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+        "403":
+          description: "equipo_id al que el actor no pertenece (no integrante ni administrador)"
+        "404":
+          description: "formato=xlsx sin actividades para los filtros indicados"
+        "422":
+          description: "Parámetros inválidos o no declarados, X-Actor ausente o inválido, RANGO_FECHAS_INVALIDO, LIMITE_HOJAS_EXCEDIDO (más de 100 folios) o LIMITE_FILAS_EXCEDIDO (más de 10 000 filas inyectadas)"
   /api/v1/auditoria:
     get:
       summary: "Listar eventos del ledger de auditoría (solo lectura)"

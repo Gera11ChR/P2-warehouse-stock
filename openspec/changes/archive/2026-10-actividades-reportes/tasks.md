@@ -132,6 +132,7 @@
 - **Agente:** Orquestador (condiciones de archivado verificadas por `@auditor`)
 - **Hacer:** promover REQ-REP-001..017 a `openspec/specs/003_inventory_dashboard/spec.md` (formato `Requirement`/`Scenario`, «SHALL», sin prefijo `RF-n`) y la regla `reportes_actividades` a `openspec/openspec.yaml` (`domain_rules` con zona de negocio, modelo 1 hoja = 1 folio, tope de 100 hojas y de 10 000 filas, solo lectura; `paths` con `GET /api/v1/reportes/actividades` tomado del `openapi.snapshot.json`; sin `components` nuevos porque los DTOs ya existen); documentar `P2_REPORTES_TZ` en el README; mover el paquete a `openspec/changes/archive/2026-10-actividades-reportes/`; no registrar en `.agents.md` enlaces al paquete archivado.
 - **Hecho cuando:** el paquete está en `archive/`, las specs maestras actualizadas y `openspec validate --specs --strict` pasa.
+- **Estado:** COMPLETADA (2026-10-21): REQ-REP-001..017 promovidos a `specs/003_inventory_dashboard/spec.md` (formato Requirement/Scenario, sin RF-n); regla `reportes_actividades` y path `GET /api/v1/reportes/actividades` en `openspec.yaml`; `P2_REPORTES_TZ` documentado en el README; paquete movido a `archive/`; `openspec validate --specs --strict` en verde; sin enlaces al paquete en `.agents.md`.
 - **PARADA.** Solo entonces el humano solicita el SDD de la **Etapa 3** («Referencia»).
 
 ---

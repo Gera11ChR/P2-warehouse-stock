@@ -388,3 +388,151 @@ The system SHALL provide Alembic migration 0029 with a `downgrade()` that remove
 #### Scenario: Migration round trip
 - **WHEN** migration 0029 is upgraded, downgraded and upgraded again
 - **THEN** the table, constraints, trigger and both functions are created and removed cleanly, audit events already written are preserved, and no pre-existing table is modified
+
+
+### Requirement: REQ-REP-001 Reportes › Actividades subsection
+The system SHALL offer in Reportes a subsection named "Actividades", placed after "Consumo" in the subsection bar, without altering the order or the behavior of "Entrega" and "Consumo".
+
+#### Scenario: Tab order after Consumo
+- **WHEN** an operator opens Reportes
+- **THEN** the subsection bar lists Entrega, Consumo and Actividades in that order, and selecting Actividades mounts the activities report without changing how Entrega or Consumo behave
+
+### Requirement: REQ-REP-002 Query of confirmed activities
+WHEN the client requests `GET /reportes/actividades` with `formato=json` (the default), the system SHALL return the confirmed activities (frozen `ActividadListOut` DTO) matching the given filters, ordered from most recent to oldest, each with folio, fecha, Unidad, vehículo, clientes, direcciones, actividades, comentarios and materiales. The system SHALL accept the filters `equipo_id`, `desde`, `hasta` and `actividad_id`, combinable with AND semantics; without filters, the report SHALL cover every Unidad visible to the actor.
+
+#### Scenario: JSON listing ordered and total
+- **WHEN** `GET /reportes/actividades` is requested with `formato=json` and filters
+- **THEN** the response is 200 with `{items, total}` ordered by `created_at DESC, id DESC` and each item carries folio, fecha, Unidad, vehículo, clientes, direcciones, actividades, comentarios and materiales
+
+#### Scenario: AND semantics
+- **WHEN** several filters are combined (e.g. `equipo_id` + `desde` + `hasta` + `actividad_id`)
+- **THEN** only the activities satisfying all of them are returned
+
+### Requirement: REQ-REP-003 Per-Unidad isolation
+WHILE the actor is not an administrator, the system SHALL limit the report to the Unidades the actor belongs to: IF `equipo_id` names a foreign Unidad, THEN HTTP 403; IF `actividad_id` belongs to a foreign Unidad, THEN that activity SHALL be treated as nonexistent (empty result; 404 in `formato=xlsx`) without revealing its existence. The administrator SHALL see every Unidad. The system SHALL NOT exclude activities of decommissioned Unidades (documental history is preserved). IF `equipo_id` matches no Unidad, THEN the administrator SHALL receive an empty result (404 in `formato=xlsx`) and a non-administrator actor HTTP 403, indistinguishable from a foreign Unidad; this endpoint SHALL NOT apply the "404 before 403" rule of REQ-ACT-014.
+
+#### Scenario: Foreign Unidad is denied
+- **WHEN** a non-administrator actor requests `equipo_id` of a Unidad they do not belong to
+- **THEN** the response is 403 without querying activity rows
+
+#### Scenario: Decommissioned Unidad history is preserved
+- **WHEN** the filter includes a decommissioned Unidad the actor belongs to
+- **THEN** its confirmed activities remain visible
+
+### Requirement: REQ-REP-004 Date filter in the business timezone
+WHEN `desde` and/or `hasta` (calendar dates `AAAA-MM-DD`) are given, the system SHALL interpret them as whole days of the business timezone and include the activities whose confirmation date (REQ-ACT-009) satisfies `>= start of desde` and `< start of the day after hasta`, making both extremes inclusive. Each extreme SHALL apply independently: with only `desde` the filter is `>= start of desde`; with only `hasta`, `< start of the day after hasta`. IF `desde` is later than `hasta`, THEN the system SHALL respond HTTP 422 without querying business data; parameter validation (format and `desde > hasta`) SHALL precede authorization and the query. The system SHALL use the same business timezone to print the FECHA of the XLSX (REQ-REP-007).
+
+#### Scenario: Inclusive day in the business timezone
+- **WHEN** `desde` equals `hasta` and activities were confirmed at the local edges of that day (e.g. 00:30 and 23:30 in the business timezone)
+- **THEN** both activities are included
+
+#### Scenario: Invalid range rejects before anything else
+- **WHEN** `desde > hasta` is requested, even for a foreign `equipo_id`
+- **THEN** the response is 422 (`RANGO_FECHAS_INVALIDO`) without authorization or business queries
+
+### Requirement: REQ-REP-005 Selection by operation
+WHEN `actividad_id` is given, the system SHALL return only that activity (if it satisfies the other filters and the isolation), so the user can pick reports by operation, not only by dates. The system SHALL expose in the JSON response, per activity, the folio `R`+number as the operation label. `actividad_id` SHALL combine with AND with the other filters: an activity failing another filter produces an empty result (404 in `formato=xlsx`).
+
+#### Scenario: Single operation
+- **WHEN** the request carries a valid `actividad_id`
+- **THEN** exactly that folio is returned, and it is absent if any other filter excludes it
+
+### Requirement: REQ-REP-006 XLSX over the official template
+WHEN the client requests `formato=xlsx`, the system SHALL generate the workbook by loading the official `REPORTE DE ACTIVIDADES.xlsx` template and injecting data into its cells, preserving styles, merged cells and the corporate logo; the system SHALL NOT build a workbook from scratch. The template path SHALL be a server constant (no user data involved) and the file on disk SHALL remain unmodified.
+
+#### Scenario: Template reused, not rebuilt
+- **WHEN** the XLSX report is generated
+- **THEN** the workbook is produced from the official template with its styles, merges and logo, and the template file on disk keeps its checksum
+
+### Requirement: REQ-REP-007 Field mapping from the snapshot
+The system SHALL dump into every sheet, exclusively from the persisted record (never from the live catalog or stock): FOLIO (`FOLIO: R0001`), FECHA (confirmation date in the business timezone as text `20 / OCTUBRE / 2026`), VEHÍCULO, NOMBRE (clientes), DIRECCION, one materials row per snapshot line (CANTIDAD, U.M., MATERIAL and the **frozen** VALOR UNITARIO), one row per performed activity and COMENTARIOS (empty when absent). The system SHALL NOT perform stock or value arithmetic: quantities and unit value are transported as recorded; the COLABORADORES block SHALL stay blank.
+
+#### Scenario: Frozen values, no arithmetic
+- **WHEN** the sheet is filled from an activity record
+- **THEN** every cell comes from the frozen snapshot, and no stock or monetary computation is applied
+
+### Requirement: REQ-REP-008 Template overflow
+WHILE an activity has more than 10 materials, more than 4 performed activities, or comments longer than the template area, the system SHALL expand the sheet without losing information or format: insert material and activity rows copying the style and merged cells of the reference row, shift downstream content (cells, merges, heights and images) and adjust the heights of the COMENTARIOS rows and, if the required height exceeds their capacity (409.5 pt per row, Excel limit), expand the area by inserting rows and extending its merges, so the full text (up to 2000 characters, with line breaks) stays intact and visible. Verifiable criterion: the sum of the heights of the area rows >= estimated lines × 13.2 pt (estimated lines = Σ per paragraph of `max(1, ceil(length / chars per line))`), no row exceeds 409.5 pt and the cell value equals the original text. Material descriptions longer than their cell width SHALL wrap with the same rule. An activity with zero materials SHALL generate the sheet with an empty materials table.
+
+#### Scenario: Overflow expands, content survives
+- **WHEN** an activity has 11 materials, 5 activities or a 2000-character comment
+- **THEN** rows are inserted with copied style, downstream content shifts, and the resulting cell values equal the original texts
+
+#### Scenario: Zero materials
+- **WHEN** an activity has no materials
+- **THEN** its sheet renders with an empty materials table
+
+### Requirement: REQ-REP-009 One sheet per folio, 100-sheet cap
+The system SHALL generate the workbook with exactly one sheet per folio of the query, titled with the folio (`R0001`), ordered by ascending folio, and SHALL include the corporate logo in **every** sheet. The workbook SHALL contain only folio sheets (the template's residual `Sheet1` is not included). IF the query exceeds 100 folios, THEN the system SHALL respond HTTP 422 with an indicative message and SHALL NOT generate the file.
+
+#### Scenario: Folio sheets only, ascending
+- **WHEN** the XLSX report has several folios
+- **THEN** there is one sheet per folio titled `R####` in ascending order, each with the logo, and no `Sheet1`
+
+#### Scenario: Over the folio cap
+- **WHEN** the query matches 101 folios
+- **THEN** the response is 422 (`LIMITE_HOJAS_EXCEDIDO`) and no file is produced
+
+### Requirement: REQ-REP-010 XLSX safety and limits
+IF a user text starts (after whitespace) with `=`, `+`, `-` or `@`, THEN the system SHALL neutralize it before writing it into the cell (no formula evaluation). The system SHALL build the attachment name only from constants, the folio and the date, sanitized to `[A-Za-z0-9._-]`. IF `formato=xlsx` yields no activity, THEN HTTP 404 without a file. The system SHALL impose a limit of 10 000 injected rows per workbook (materials + activities across all sheets) with HTTP 422 `LIMITE_FILAS_EXCEDIDO`, and SHALL generate the XLSX without blocking other requests.
+
+#### Scenario: Formulas neutralized
+- **WHEN** a user text begins (after whitespace, even after stripped control characters) with `=`, `+`, `-` or `@`
+- **THEN** the cell is written as literal text, never as a formula
+
+#### Scenario: Filas cap
+- **WHEN** the workbook would exceed 10 000 injected rows
+- **THEN** the response is 422 (`LIMITE_FILAS_EXCEDIDO`) and no file is produced
+
+### Requirement: REQ-REP-011 Contract and canonical errors
+The system SHALL expose the endpoint `GET /api/v1/reportes/actividades` with the codes 200, 400, 403, 404 and 422, reusing the `ActividadListOut`/`ActividadOut` DTOs; invalid parameters (`formato`, dates, non-numeric or <= 0 identifiers) and undeclared parameters SHALL respond HTTP 422 with the standard validation body `{"detail":[…]}`; positive identifiers beyond INT4 SHALL respond the canonical 400 `NUMERIC_OUT_OF_RANGE`; business-rule errors (404 no results; 422 `RANGO_FECHAS_INVALIDO`, `LIMITE_HOJAS_EXCEDIDO`, `LIMITE_FILAS_EXCEDIDO`) SHALL use the body `{"error":{"code","message","coordinates"}}`; the 403 keeps the current authorization body. A missing or invalid `X-Actor` SHALL respond 422 without querying business data. No business-rule error SHALL produce HTTP 500 or expose SQL details.
+
+#### Scenario: Canonical bodies
+- **WHEN** the endpoint rejects a request for any contract reason
+- **THEN** the body matches the canonical shape of that code (validation detail, `NUMERIC_OUT_OF_RANGE`, or `{"error":{"code","message","coordinates"}}`)
+
+### Requirement: REQ-REP-012 Per-folio breakdown and individual inspection
+The system SHALL present in Reportes › Actividades a listing with one row per folio (folio, fecha in local time, Unidad, vehículo, cliente, dirección, number of activities and of materials, usuario) and SHALL let each folio be inspected — materials with CANTIDAD, MATERIAL, U.M. and frozen VALOR UNITARIO, performed activities and comments — without leaving the subsection. The system SHALL offer the filters Unidad, Desde, Hasta and the operation (folio) selector with the UI labels «Unidad», «Desde», «Hasta» and «Actividad».
+
+#### Scenario: Row per folio, expandable inspection
+- **WHEN** the operator views Reportes › Actividades
+- **THEN** one row per folio shows its summary and expands to show materials, activities and comments in place
+
+### Requirement: REQ-REP-013 Consolidated and per-folio downloads with states
+WHEN the user triggers the consolidated download, the system SHALL request `formato=xlsx` with the current filters; WHEN the user triggers a folio download, it SHALL request `actividad_id` of that folio. The system SHALL show at all times the download state (in progress, successful with file name, rejected with the backend detail, including 404 and the 422 over the 100-folio cap), SHALL disable downloads with a visible reason while there is no listing, there is an error, or the result is empty, and SHALL clear the result when filters change.
+
+#### Scenario: States and reasons
+- **WHEN** a download is started, succeeds or is rejected (404 or 422 by cap)
+- **THEN** the state is announced, and while idle conditions hold the download buttons are disabled with a visible reason
+
+### Requirement: REQ-REP-014 Operation selectors in Entrega and Consumo
+WHEN the user picks an operation in Reportes › Entrega (Acta) or Reportes › Consumo (Seguimiento), the system SHALL restrict the listing and the export to that operation by sending the existing backend `acta_id`; the options SHALL derive from the acts of the current listing (Unidad and dates) and show their visible identifier. The system SHALL NOT modify the backend, the contracts or the templates of Entrega and Consumo.
+
+#### Scenario: Frontend-only selectors
+- **WHEN** an operation is selected
+- **THEN** `listarActas` and the export are called with `acta_id`, the options come from the current listing, and no Entrega/Consumo backend, contract or template changed
+
+### Requirement: REQ-REP-015 Success link and listing freshness
+WHEN an activity is confirmed successfully (REQ-ACT-017), the system SHALL offer in the success notice a direct access to "Reportes › Actividades" that opens the subsection with the just-confirmed Unidad and folio preselected; IF no navigation is available, THEN the action SHALL be hidden (no inert button). The system SHALL invalidate the Reportes › Actividades listing after confirming an activity, so the new folio appears without a manual reload.
+
+#### Scenario: Link with preselection
+- **WHEN** the confirmation succeeds and navigation exists
+- **THEN** the success notice links to Reportes › Actividades with `equipoId` and `actividadId` preselected
+
+#### Scenario: Invalidation
+- **WHEN** an activity is confirmed
+- **THEN** the `['reportes','actividades']` query is invalidated and the new folio shows in the listing
+
+### Requirement: REQ-REP-016 Read-only with no side effects
+The system SHALL NOT modify `actividades_reportes`, `inventario_equipos`, `seguimientos`, `seguimiento_items`, `actas_reportes`, the catalog or any stock balance when querying or exporting activities, and SHALL NOT emit audit events for the query or the export.
+
+#### Scenario: No writes, no audit
+- **WHEN** the report is queried as JSON or XLSX
+- **THEN** the business tables keep identical snapshots and the audit ledger gains no events
+
+### Requirement: REQ-REP-017 Regression and reversibility
+The system SHALL keep the full backend and frontend suites green (including the Entrega and Consumo reports and the `/equipos/{equipo_id}/actividades*` endpoints), the build without warnings, the contracts of `/equipos/{equipo_id}/actividades*` in `openspec/openspec.yaml` free of drift and `openspec validate --specs --strict` passing. The system SHALL NOT require an Alembic migration; reverting the package SHALL consist of removing the router, the service and the new components.
+
+#### Scenario: Reversibility
+- **WHEN** the reportes-de-actividades router, service and frontend components are removed
+- **THEN** the Entrega/Consumo reports and the Etapa 1 endpoints remain intact, and no migration is needed

@@ -400,6 +400,8 @@ P2_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@127.0.0.1:5432/p2
 
 Optional operational knobs read by `app/config.py`: `P2_TRANSFER_APPROVAL_THRESHOLD` (100), `P2_MFA_ENCRYPTION_KEY`, `P2_MFA_ELEVATION_TTL_SECONDS` (300), `P2_TOTP_MAX_ATTEMPTS` (5), `P2_TOTP_WINDOW_SECONDS` (600), `P2_TOTP_LOCKOUT_SECONDS` (900), `P2_REPORTES_TZ` (America/Mexico_City).
 
+`P2_REPORTES_TZ` is the business timezone of the activities report (Etapa 2, package 2026-10-actividades-reportes): `desde`/`hasta` are interpreted as whole days of this IANA zone (both extremes inclusive) and the XLSX FECHA is printed with it. The default `America/Mexico_City` is UTC-6 with no DST (tzdata >= 2026c). An invalid zone prevents the backend from starting. Known limitation: Entrega/Consumo still filter by the database session zone (`America/Ojinaga`), so between 23:00 and 24:00 in Mexico during US daylight saving a same working day may fall on different calendar days depending on the subsection (recorded debt C-8).
+
 **Never commit real credentials.** The repository history was forensically purged of credentials on 2026-10-04 (see [§4.5.4](#454-forensic-credential-purge-of-git-history)).
 
 ### 7.3 Database

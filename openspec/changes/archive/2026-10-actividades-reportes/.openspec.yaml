@@ -11,7 +11,7 @@ sdd_status:
   fase_6_tareas: redactada
   fase_7_implementacion: completada  # T2-T7 backend (contrato congelado) + T8-T10 frontend
   fase_8_validacion_auditoria: completada  # T11 (auditor APPROVED, qa-agent PASS 17/17, arq VISTO BUENO, humano aprobó)
-  fase_9_evolucion_archivado: pendiente    # T12
+  fase_9_evolucion_archivado: completada  # T12 (promovido a specs maestras y archivado)
 migration: none                            # sin DDL: actividades_reportes (0029) ya contiene todo lo necesario
 contract:
   # Contrato de API verificable ANTES de escribir frontend (compuerta T7 de tasks.md).
