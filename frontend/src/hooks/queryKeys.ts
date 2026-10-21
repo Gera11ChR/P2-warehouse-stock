@@ -59,6 +59,11 @@ export const queryKeys = {
     params === undefined
       ? (['reportes', 'actividades'] as const)
       : (['reportes', 'actividades', params] as const),
+  /** Referencia de materiales de la Unidad (GET
+   *  /equipos/{equipoId}/referencia; paquete 2026-10-referencia-materiales-unidades).
+   *  Tras una mutación exitosa SOLO se invalida esta clave (REQ-REF-017):
+   *  jamás inventarios, catálogo, reportes, actividades ni auditoría. */
+  referencia: (equipoId: number) => ['referencia', equipoId] as const,
 }
 
 /** Valor Total (RF-4/RF-5): recarga el estado persistido tras una mutación

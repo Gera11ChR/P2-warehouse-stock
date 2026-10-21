@@ -641,3 +641,55 @@ export interface NavigationTarget {
   /** Folio de Actividades a preseleccionar en Reportes > Actividades (REQ-REP-015). */
   actividadId?: number
 }
+
+// ============================================================================
+// REFERENCIA DE MATERIALES POR UNIDAD (0030, paquete
+// 2026-10-referencia-materiales-unidades) — contrato CONGELADO en T7:
+// openapi.snapshot.json (sha256 93eb4b0050b75892a6ca8c55c78e483458517d3d87f9c1a7a64abd7d0b966259).
+// Espejo ESTRICTO del contrato: no agregar ni renombrar campos.
+// ============================================================================
+
+/**
+ * Línea listada (ReferenciaLineaOut; REQ-REF-005). Solo lectura: `codigo` y
+ * `descripcion` se leen del catálogo EN VIVO en cada consulta y `u_m` es la
+ * U.M. EFECTIVA de la Unidad (la local de `equipo_material_config` o, si no
+ * hay, la del catálogo) resuelta por el backend; el frontend solo la refleja.
+ */
+export interface ReferenciaLinea {
+  material_id: number
+  codigo: string | null
+  descripcion: string
+  u_m: string | null
+  cantidad_semanal: number
+}
+
+/** Listado `{items, total}` (ReferenciaListOut). `total` cuenta solo los
+ *  ítems listados; las líneas con material inactivo se conservan pero no se
+ *  listan. El POST responde con las líneas creadas y `total` = creadas. */
+export interface ReferenciaList {
+  items: ReferenciaLinea[]
+  total: number
+}
+
+/** Línea de alta (ReferenciaLineaCreate): material activo del catálogo y su
+ *  Cantidad Semanal (> 0, hasta 12 dígitos en total y 3 decimales). El origen
+ *  de la interfaz (Inventario General / Inventario FO) NO forma parte del
+ *  contrato. */
+export interface ReferenciaLineaCreate {
+  material_id: number
+  cantidad_semanal: number
+}
+
+/** Alta masiva todo-o-nada (ReferenciaCreate; REQ-REF-006): de 1 a 50 líneas
+ *  (límite defensivo del paquete). Si una línea es inválida, no se crea
+ *  ninguna. */
+export interface ReferenciaCreatePayload {
+  lineas: ReferenciaLineaCreate[]
+}
+
+/** Modificación de una línea (ReferenciaUpdate; REQ-REF-008): SOLO la
+ *  Cantidad Semanal (> 0, hasta 3 decimales). No permite cambiar el
+ *  material. */
+export interface ReferenciaUpdatePayload {
+  cantidad_semanal: number
+}

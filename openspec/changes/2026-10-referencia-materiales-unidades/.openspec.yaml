@@ -10,13 +10,13 @@ sdd:
   fase_4_clarificacion: completada         # T1: @arq-reviewer PASS CON CORRECCIONES; Q1-Q7 decididas por el humano; correcciones aplicadas
   fase_5_planificacion: completada         # visto bueno arquitectónico registrado tras T1
   fase_6_tareas: completada
-  fase_7_implementacion: pendiente         # T2-T10 (Backend-First)
+  fase_7_implementacion: backend_completado_contrato_congelado  # T2-T7; frontend (T8-T10) pendiente
   fase_8_validacion_auditoria: pendiente   # T11
   fase_9_evolucion_archivado: pendiente    # T12
 contract:
-  frozen: false                            # se congela en T7 (decisión D-4)
-  openapi_snapshot: openapi.snapshot.json  # borrador hasta T7
-  openapi_snapshot_sha256: null
+  frozen: true                             # congelado en T7 (decisión D-4)
+  openapi_snapshot: openapi.snapshot.json  # contrato congelado (regenerado en T7)
+  openapi_snapshot_sha256: 93eb4b0050b75892a6ca8c55c78e483458517d3d87f9c1a7a64abd7d0b966259
 migration:
   revision: "0030"
   down_revision: "0029"

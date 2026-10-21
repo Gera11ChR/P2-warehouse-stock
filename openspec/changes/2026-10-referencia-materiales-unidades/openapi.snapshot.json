@@ -1,16 +1,18 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "DMS - TELECOM Inventory API — Referencia de materiales por Unidad (BORRADOR)",
-    "version": "0.1.0-draft",
-    "description": "Borrador de contrato del paquete 2026-10-referencia-materiales-unidades, ajustado en T1. NO congelado: T7 lo regenera desde app.openapi() y marca frozen: true."
+    "title": "DMS - TELECOM Inventory API",
+    "version": "1.0.0"
   },
   "paths": {
     "/api/v1/equipos/{equipo_id}/referencia": {
       "get": {
+        "tags": [
+          "referencia"
+        ],
         "summary": "Listar la Referencia de materiales de la Unidad",
         "description": "Líneas de la Unidad ordenadas por descripción ascendente (collation de la BD) y material_id ascendente; descripción y código se leen del catálogo y u_m es la U.M. efectiva de la Unidad (local o, si no hay, del catálogo); los materiales inactivos del catálogo no se listan; total cuenta solo los ítems listados. Solo lectura, sin eventos de auditoría.",
-        "operationId": "listarReferencia",
+        "operationId": "listar_referencia_api_v1_equipos__equipo_id__referencia_get",
         "parameters": [
           {
             "name": "equipo_id",
@@ -26,14 +28,15 @@
             "name": "X-Actor",
             "in": "header",
             "required": true,
-            "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
             "schema": {
               "type": "string",
               "minLength": 1,
               "maxLength": 100,
-              "title": "X-Actor",
-              "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control."
-            }
+              "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]*[^\\s\\x00-\\x1f\\x7f-\\x9f][^\\x00-\\x1f\\x7f-\\x9f]*$",
+              "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
+              "title": "X-Actor"
+            },
+            "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control."
           }
         ],
         "responses": {
@@ -47,15 +50,6 @@
               }
             }
           },
-          "400": {
-            "description": "Identificador de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
-          },
-          "403": {
-            "description": "Actor sin acceso a la Unidad (no integrante ni administrador) o, en escrituras, sin alcance de sección asignado (cuerpo de autorización vigente)"
-          },
-          "404": {
-            "description": "Unidad no encontrada o inactiva (lectura y escritura; 404 antes de 403)"
-          },
           "422": {
             "description": "Validation Error ({detail:[…]}) o error de negocio ({error:{code,message,coordinates}}): campos no declarados, cantidad inválida, material_id de cuerpo fuera de INT4, X-Actor ausente o inválido, REFERENCIA_LINEA_DUPLICADA",
             "content": {
@@ -65,13 +59,25 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Identificador de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+          },
+          "403": {
+            "description": "Actor sin acceso a la Unidad (no integrante ni administrador) o, en escrituras, sin alcance de sección asignado (cuerpo de autorización vigente)"
+          },
+          "404": {
+            "description": "Unidad no encontrada o inactiva (lectura y escritura; 404 antes de 403)"
           }
         }
       },
       "post": {
+        "tags": [
+          "referencia"
+        ],
         "summary": "Agregar líneas a la Referencia de la Unidad (todo o nada)",
         "description": "1 a 50 líneas en una sola transacción, todo o nada. Precedencia de errores: duplicados del payload (422 REFERENCIA_LINEA_DUPLICADA), materiales inexistentes o inactivos (404 MATERIAL_NO_ENCONTRADO), ya presentes (409 REFERENCIA_DUPLICADA). Inserción en orden ascendente de material_id. Respuesta con las líneas creadas ordenadas como el listado (total = creadas). La escritura exige Unidad activa y la regla de autenticación de Configuración.",
-        "operationId": "crearReferencia",
+        "operationId": "crear_referencia_api_v1_equipos__equipo_id__referencia_post",
         "parameters": [
           {
             "name": "equipo_id",
@@ -87,14 +93,15 @@
             "name": "X-Actor",
             "in": "header",
             "required": true,
-            "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
             "schema": {
               "type": "string",
               "minLength": 1,
               "maxLength": 100,
-              "title": "X-Actor",
-              "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control."
-            }
+              "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]*[^\\s\\x00-\\x1f\\x7f-\\x9f][^\\x00-\\x1f\\x7f-\\x9f]*$",
+              "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
+              "title": "X-Actor"
+            },
+            "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control."
           }
         ],
         "requestBody": {
@@ -118,6 +125,16 @@
               }
             }
           },
+          "422": {
+            "description": "Validation Error ({detail:[…]}) o error de negocio ({error:{code,message,coordinates}}): campos no declarados, cantidad inválida, material_id de cuerpo fuera de INT4, X-Actor ausente o inválido, REFERENCIA_LINEA_DUPLICADA",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Identificador de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
           },
@@ -129,25 +146,18 @@
           },
           "409": {
             "description": "Material ya presente en la Referencia de la Unidad (REFERENCIA_DUPLICADA, coordinates con la línea; incluye la carrera concurrente)"
-          },
-          "422": {
-            "description": "Validation Error ({detail:[…]}) o error de negocio ({error:{code,message,coordinates}}): campos no declarados, cantidad inválida, material_id de cuerpo fuera de INT4, X-Actor ausente o inválido, REFERENCIA_LINEA_DUPLICADA",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
         }
       }
     },
     "/api/v1/equipos/{equipo_id}/referencia/{material_id}": {
       "patch": {
+        "tags": [
+          "referencia"
+        ],
         "summary": "Modificar la cantidad semanal de una línea de la Referencia",
         "description": "Solo cambia cantidad_semanal. Con la misma cantidad responde 200 sin escribir, sin tocar updated_at y sin auditar. 404 REFERENCIA_NO_ENCONTRADA si la línea no existe o su material está inactivo. La escritura exige Unidad activa y la regla de autenticación de Configuración.",
-        "operationId": "modificarReferencia",
+        "operationId": "modificar_referencia_api_v1_equipos__equipo_id__referencia__material_id__patch",
         "parameters": [
           {
             "name": "equipo_id",
@@ -173,14 +183,15 @@
             "name": "X-Actor",
             "in": "header",
             "required": true,
-            "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
             "schema": {
               "type": "string",
               "minLength": 1,
               "maxLength": 100,
-              "title": "X-Actor",
-              "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control."
-            }
+              "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]*[^\\s\\x00-\\x1f\\x7f-\\x9f][^\\x00-\\x1f\\x7f-\\x9f]*$",
+              "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
+              "title": "X-Actor"
+            },
+            "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control."
           }
         ],
         "requestBody": {
@@ -204,15 +215,6 @@
               }
             }
           },
-          "400": {
-            "description": "Identificador de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
-          },
-          "403": {
-            "description": "Actor sin acceso a la Unidad (no integrante ni administrador) o, en escrituras, sin alcance de sección asignado (cuerpo de autorización vigente)"
-          },
-          "404": {
-            "description": "Unidad no encontrada o inactiva (lectura y escritura; 404 antes de 403); línea inexistente o con material inactivo (REFERENCIA_NO_ENCONTRADA)"
-          },
           "422": {
             "description": "Validation Error ({detail:[…]}) o error de negocio ({error:{code,message,coordinates}}): campos no declarados, cantidad inválida, material_id de cuerpo fuera de INT4, X-Actor ausente o inválido, REFERENCIA_LINEA_DUPLICADA",
             "content": {
@@ -222,13 +224,25 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Identificador de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+          },
+          "403": {
+            "description": "Actor sin acceso a la Unidad (no integrante ni administrador) o, en escrituras, sin alcance de sección asignado (cuerpo de autorización vigente)"
+          },
+          "404": {
+            "description": "Unidad no encontrada o inactiva (lectura y escritura; 404 antes de 403); línea inexistente o con material inactivo (REFERENCIA_NO_ENCONTRADA)"
           }
         }
       },
       "delete": {
+        "tags": [
+          "referencia"
+        ],
         "summary": "Eliminar una línea de la Referencia",
         "description": "Borra la línea; el trigger de auditoría conserva los valores previos. 404 REFERENCIA_NO_ENCONTRADA si no existe o su material está inactivo. La escritura exige Unidad activa y la regla de autenticación de Configuración.",
-        "operationId": "eliminarReferencia",
+        "operationId": "eliminar_referencia_api_v1_equipos__equipo_id__referencia__material_id__delete",
         "parameters": [
           {
             "name": "equipo_id",
@@ -254,28 +268,20 @@
             "name": "X-Actor",
             "in": "header",
             "required": true,
-            "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
             "schema": {
               "type": "string",
               "minLength": 1,
               "maxLength": 100,
-              "title": "X-Actor",
-              "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control."
-            }
+              "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]*[^\\s\\x00-\\x1f\\x7f-\\x9f][^\\x00-\\x1f\\x7f-\\x9f]*$",
+              "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control.",
+              "title": "X-Actor"
+            },
+            "description": "Identificador del actor (NO autenticado; la autenticación real está fuera de alcance). 1..100 caracteres, sin caracteres de control."
           }
         ],
         "responses": {
           "204": {
             "description": "Successful Response"
-          },
-          "400": {
-            "description": "Identificador de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
-          },
-          "403": {
-            "description": "Actor sin acceso a la Unidad (no integrante ni administrador) o, en escrituras, sin alcance de sección asignado (cuerpo de autorización vigente)"
-          },
-          "404": {
-            "description": "Unidad no encontrada o inactiva (lectura y escritura; 404 antes de 403); línea inexistente o con material inactivo (REFERENCIA_NO_ENCONTRADA)"
           },
           "422": {
             "description": "Validation Error ({detail:[…]}) o error de negocio ({error:{code,message,coordinates}}): campos no declarados, cantidad inválida, material_id de cuerpo fuera de INT4, X-Actor ausente o inválido, REFERENCIA_LINEA_DUPLICADA",
@@ -286,6 +292,15 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Identificador de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+          },
+          "403": {
+            "description": "Actor sin acceso a la Unidad (no integrante ni administrador) o, en escrituras, sin alcance de sección asignado (cuerpo de autorización vigente)"
+          },
+          "404": {
+            "description": "Unidad no encontrada o inactiva (lectura y escritura; 404 antes de 403); línea inexistente o con material inactivo (REFERENCIA_NO_ENCONTRADA)"
           }
         }
       }
@@ -293,74 +308,47 @@
   },
   "components": {
     "schemas": {
-      "ReferenciaLineaCreate": {
-        "type": "object",
-        "title": "ReferenciaLineaCreate",
-        "additionalProperties": false,
-        "required": [
-          "material_id",
-          "cantidad_semanal"
-        ],
+      "ValidationError": {
         "properties": {
-          "material_id": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "title": "Material Id",
-            "maximum": 2147483647
-          },
-          "cantidad_semanal": {
-            "type": "number",
-            "exclusiveMinimum": 0,
-            "title": "Cantidad Semanal",
-            "description": "> 0, hasta 12 dígitos en total (máximo 999999999.999) y 3 decimales"
-          }
-        }
-      },
-      "ReferenciaCreate": {
-        "type": "object",
-        "title": "ReferenciaCreate",
-        "additionalProperties": false,
-        "required": [
-          "lineas"
-        ],
-        "properties": {
-          "lineas": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 50,
+          "loc": {
             "items": {
-              "$ref": "#/components/schemas/ReferenciaLineaCreate"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
             },
-            "title": "Lineas"
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
-        }
-      },
-      "ReferenciaUpdate": {
+        },
         "type": "object",
-        "title": "ReferenciaUpdate",
-        "additionalProperties": false,
         "required": [
-          "cantidad_semanal"
+          "loc",
+          "msg",
+          "type"
         ],
-        "properties": {
-          "cantidad_semanal": {
-            "type": "number",
-            "exclusiveMinimum": 0,
-            "title": "Cantidad Semanal",
-            "description": "> 0, hasta 12 dígitos en total (máximo 999999999.999) y 3 decimales"
-          }
-        }
+        "title": "ValidationError"
       },
       "ReferenciaLineaOut": {
-        "type": "object",
-        "title": "ReferenciaLineaOut",
-        "required": [
-          "material_id",
-          "codigo",
-          "descripcion",
-          "u_m",
-          "cantidad_semanal"
-        ],
         "properties": {
           "material_id": {
             "type": "integer",
@@ -397,74 +385,127 @@
             "type": "number",
             "title": "Cantidad Semanal"
           }
-        }
+        },
+        "type": "object",
+        "required": [
+          "material_id",
+          "codigo",
+          "descripcion",
+          "u_m",
+          "cantidad_semanal"
+        ],
+        "title": "ReferenciaLineaOut",
+        "description": "Línea listada (REQ-REF-005): `codigo`/`descripcion` se leen del\ncatálogo EN VIVO en cada consulta y `u_m` es la U.M. efectiva de la\nUnidad (la local de `equipo_material_config` o, si no hay, la del\ncatálogo — C-1/Q2/P-9). Solo lectura."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ReferenciaCreate": {
+        "properties": {
+          "lineas": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenciaLineaCreate"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Lineas"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lineas"
+        ],
+        "title": "ReferenciaCreate",
+        "description": "Alta masiva todo-o-nada de la Referencia (REQ-REF-006): de 1 a 50\nlíneas (límite defensivo del paquete, C-8). El origen de la interfaz\n(Inventario General / Inventario FO) NO forma parte del contrato."
       },
       "ReferenciaListOut": {
-        "type": "object",
-        "title": "ReferenciaListOut",
-        "required": [
-          "items",
-          "total"
-        ],
         "properties": {
           "items": {
-            "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReferenciaLineaOut"
             },
+            "type": "array",
             "title": "Items"
           },
           "total": {
             "type": "integer",
             "title": "Total"
           }
-        }
-      },
-      "HTTPValidationError": {
+        },
         "type": "object",
-        "title": "HTTPValidationError",
-        "properties": {
-          "detail": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail"
-          }
-        }
-      },
-      "ValidationError": {
-        "type": "object",
-        "title": "ValidationError",
         "required": [
-          "loc",
-          "msg",
-          "type"
+          "items",
+          "total"
         ],
+        "title": "ReferenciaListOut",
+        "description": "Listado `{items, total}` (REQ-REF-005): `total` cuenta solo los\nítems listados; las líneas con material inactivo se conservan pero no\nse listan. El POST responde con las líneas creadas y `total` = creadas\n(REQ-REF-006)."
+      },
+      "ReferenciaLineaCreate": {
         "properties": {
-          "loc": {
-            "type": "array",
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location"
+          "material_id": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Material Id"
           },
-          "msg": {
-            "type": "string",
-            "title": "Message"
-          },
-          "type": {
-            "type": "string",
-            "title": "Error Type"
+          "cantidad_semanal": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Cantidad Semanal",
+            "description": "> 0, hasta 12 dígitos en total (máximo 999999999.999) y 3 decimales"
           }
-        }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "material_id",
+          "cantidad_semanal"
+        ],
+        "title": "ReferenciaLineaCreate",
+        "description": "Línea de alta: `material_id` positivo dentro de INT4 (C-13) y su\nCantidad Semanal (REQ-REF-006/007). La cantidad es visual: no es stock\ny no se valida contra él (RN-5/RN-7)."
+      },
+      "ReferenciaUpdate": {
+        "properties": {
+          "cantidad_semanal": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Cantidad Semanal",
+            "description": "> 0, hasta 12 dígitos en total (máximo 999999999.999) y 3 decimales"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cantidad_semanal"
+        ],
+        "title": "ReferenciaUpdate",
+        "description": "Modificación de una línea: solo la Cantidad Semanal\n(REQ-REF-008, C-11/Q4). No permite cambiar el material."
       }
     }
   }

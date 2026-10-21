@@ -37,23 +37,27 @@ export default function Sidebar({ current, onNavigate }: SidebarProps) {
     current.page === item.page && current.sub === (item.sub ?? current.sub)
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col bg-slate-900 text-slate-200">
+    <aside className="flex h-screen w-14 shrink-0 flex-col bg-slate-900 text-slate-200 md:w-64">
       {/* Marca corporativa (REQ-P2-UI-001): logo en la esquina superior izquierda.
           El PNG es transparente con trazos negros: se asienta sobre una ficha
           clara para conservar el contraste en el sidebar oscuro. */}
-      <div className="flex h-16 items-center gap-2 border-b border-slate-700 px-3">
-        <span className="flex shrink-0 items-center rounded-md bg-white px-1.5 py-1">
+      <div className="flex h-16 items-center justify-center gap-2 border-b border-slate-700 px-1 md:justify-start md:px-3">
+        <span className="flex shrink-0 items-center rounded-md bg-white px-1 py-1 md:px-1.5">
           <img
             src={logoDms}
             alt="Logotipo corporativo DMS Telecom"
             width={1080}
             height={413}
-            className="h-8 w-auto"
+            className="h-5 w-auto md:h-8"
           />
         </span>
-        <span className="text-base font-semibold text-white">DMS - TELECOM</span>
+        {/* Shell responsivo (T9, Etapa 3): bajo `md` la sidebar es compacta y
+            solo muestra iconos; el nombre accesible se conserva con sr-only. */}
+        <span className="sr-only text-base font-semibold text-white md:not-sr-only">
+          DMS - TELECOM
+        </span>
       </div>
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-1.5 md:p-3">
         {NAV_ITEMS.map((item) => {
           const active = isActive(item)
           const Icon = item.icon
@@ -62,12 +66,13 @@ export default function Sidebar({ current, onNavigate }: SidebarProps) {
               <button
                 type="button"
                 onClick={() => onNavigate({ page: item.page, sub: item.sub })}
-                className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                title={item.label}
+                className={`flex w-full items-center justify-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors md:justify-start md:px-3 ${
                   active ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'
                 }`}
               >
-                <Icon className="h-4 w-4" />
-                <span>{item.label}</span>
+                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="sr-only md:not-sr-only">{item.label}</span>
               </button>
             </div>
           )

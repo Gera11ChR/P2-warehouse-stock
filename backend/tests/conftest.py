@@ -60,6 +60,7 @@ TABLAS_DOMINIO = [
     "seguimiento_items",
     "seguimientos",
     "equipo_material_config",
+    "referencia_materiales",
     "ums",
     "inventario_equipos",
     "inventario_almacen",

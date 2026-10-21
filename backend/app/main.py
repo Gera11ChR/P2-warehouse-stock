@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError
 
 from app.api.v1 import (
+    actividades,
     ajustes,
     auditoria,
     cancelaciones,
@@ -17,10 +18,10 @@ from app.api.v1 import (
     fibra,
     inventario,
     movimientos,
+    referencia,
     reportes,
     reportes_actividades,
     seguimientos,
-    actividades,
 )
 from app.errors import (
     AuthorizationError,
@@ -54,6 +55,7 @@ app.include_router(fibra.router, prefix="/api/v1")
 app.include_router(auditoria.router, prefix="/api/v1")
 app.include_router(seguimientos.router, prefix="/api/v1")
 app.include_router(actividades.router, prefix="/api/v1")
+app.include_router(referencia.router, prefix="/api/v1")
 app.include_router(reportes.router, prefix="/api/v1")
 app.include_router(reportes_actividades.router, prefix="/api/v1")
 

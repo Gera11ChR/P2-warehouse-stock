@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { mensajeErrorApi as errorMessage } from '../utils/errorMensaje'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { BookOpen, Plus, Pencil, Trash2 } from 'lucide-react'
 import {
   listEquipos,
   createEquipo,
@@ -21,6 +21,7 @@ import EquipoForm from '../components/EquipoForm'
 import ConfigLocalForm from '../components/ConfigLocalForm'
 import SeguimientoPanel from '../components/SeguimientoPanel'
 import ActividadesPanel from '../components/ActividadesPanel'
+import ReferenciaPanel from '../components/ReferenciaPanel'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../hooks/useToasts'
@@ -52,6 +53,9 @@ export default function InventarioPorEquipos() {
   const [tab, setTab] = useState<TabValue>('consulta')
   const [configMaterial, setConfigMaterial] =
     useState<InventarioEquipoRow | null>(null)
+  // Referencia de materiales (Etapa 3, REQ-REF-001): el botón alterna el panel
+  // en Consulta y Configuración; el panel se remonta por (Unidad, subsección).
+  const [referenciaAbierta, setReferenciaAbierta] = useState(false)
 
   // Vista de Consulta (REQ-UNI-010/011/014): la opción elegida pertenece a
   // la unidad con la que se eligió; al cambiar de unidad vuelve sola a
@@ -288,6 +292,33 @@ export default function InventarioPorEquipos() {
           </button>
         ))}
       </div>
+
+      {/* Referencia de materiales (REQ-REF-001): solo Consulta y Configuración */}
+      {(tab === 'consulta' || tab === 'configuracion') &&
+        effectiveEquipoId !== null && (
+          <>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setReferenciaAbierta((abierta) => !abierta)}
+                aria-expanded={referenciaAbierta}
+                aria-controls="referencia-panel"
+                className="flex items-center gap-1 rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
+              >
+                <BookOpen className="h-4 w-4" aria-hidden="true" /> Referencia
+              </button>
+            </div>
+            {referenciaAbierta && (
+              <ReferenciaPanel
+                key={`${effectiveEquipoId}-${tab}`}
+                id="referencia-panel"
+                equipoId={effectiveEquipoId}
+                equipoNombre={unidadSeleccionada?.nombre}
+                modo={tab}
+              />
+            )}
+          </>
+        )}
 
       {/* Consulta (solo lectura) / Configuración (acciones) */}
       {(tab === 'consulta' || tab === 'configuracion') && (

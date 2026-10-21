@@ -22,8 +22,8 @@ export default function Header({ breadcrumb, onSearch }: HeaderProps) {
   }, [])
 
   return (
-    <header className="flex h-16 items-center justify-between gap-4 border-b border-slate-200 bg-white px-6">
-      <nav className="text-sm text-slate-500">
+    <header className="flex h-16 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 md:gap-4 md:px-6">
+      <nav className="min-w-0 truncate text-sm text-slate-500">
         <span className="font-medium text-slate-800">{breadcrumb}</span>
       </nav>
       <div className="relative w-full max-w-md">
@@ -37,9 +37,9 @@ export default function Header({ breadcrumb, onSearch }: HeaderProps) {
             onSearch(event.target.value)
           }}
           placeholder="Buscar materiales, SKU o descripción..."
-          className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-16 text-sm focus:border-blue-500 focus:outline-none"
+          className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none md:pr-16"
         />
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
+        <span className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500 md:inline">
           Ctrl + K
         </span>
       </div>

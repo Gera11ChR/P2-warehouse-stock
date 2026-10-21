@@ -11,6 +11,7 @@ from app.models.inventario import (
 )
 from app.models.material import CatalogoMaterial, Categoria, Ums
 from app.models.movimiento import MovimientoCabecera, MovimientoDetalle
+from app.models.referencia import ReferenciaMaterial
 from app.models.scope import ActorAlmacenScope
 from app.models.seguimiento import (
     EquipoMaterialConfig,
@@ -34,6 +35,7 @@ __all__ = [
     "InventarioFibra",
     "MovimientoCabecera",
     "MovimientoDetalle",
+    "ReferenciaMaterial",
     "Seccion",
     "Seguimiento",
     "SeguimientoItem",
