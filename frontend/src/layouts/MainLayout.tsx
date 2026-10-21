@@ -25,6 +25,7 @@ const LABELS: Record<string, string> = {
 const SUB_LABELS: Record<string, string> = {
   entrega: 'Entrega',
   consumo: 'Consumo',
+  actividades: 'Actividades',
 }
 
 export default function MainLayout() {
@@ -64,9 +65,10 @@ export default function MainLayout() {
               {route.page === 'transferencias' && <Transferencias />}
               {route.page === 'reportes' && (
                 <Reportes
-                  key={`${route.sub ?? ''}-${route.equipoId ?? ''}`}
+                  key={`${route.sub ?? ''}-${route.equipoId ?? ''}-${route.actividadId ?? ''}`}
                   initialSub={route.sub}
                   initialEquipoId={route.equipoId}
+                  initialActividadId={route.actividadId}
                 />
               )}
               {route.page === 'auditoria' && <Auditoria />}

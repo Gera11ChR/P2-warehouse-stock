@@ -1,5 +1,9 @@
 import type { QueryClient } from '@tanstack/react-query'
-import type { ReporteParams, TipoMovimiento } from '../types'
+import type {
+  ReporteActividadesParams,
+  ReporteParams,
+  TipoMovimiento,
+} from '../types'
 import type { ReporteTipo } from '../utils/reporteExport'
 import type {
   MoverMaterialPayload,
@@ -48,6 +52,13 @@ export const queryKeys = {
     params === undefined
       ? (['reportes', 'actas', tipo] as const)
       : (['reportes', 'actas', tipo, params] as const),
+  /** Listado del reporte de actividades (GET /reportes/actividades): con
+   *  `params` es la clave del listado filtrado. No colisiona con
+   *  ['reportes','actas',…] ni con ['actividades', equipoId]. */
+  reporteActividades: (params?: ReporteActividadesParams) =>
+    params === undefined
+      ? (['reportes', 'actividades'] as const)
+      : (['reportes', 'actividades', params] as const),
 }
 
 /** Valor Total (RF-4/RF-5): recarga el estado persistido tras una mutación
@@ -82,8 +93,12 @@ export function invalidarActas(
 }
 
 /** Actividades de la Unidad: tras confirmar se recargan pendiente, historial
- *  y auditoría; React re-renderiza el estado PERSISTIDO (folio y fecha los
- *  asigna PostgreSQL). NUNCA se parchea el cache con datos del cliente. */
+ *  por Unidad, el listado de Reportes › Actividades y auditoría; React
+ *  re-renderiza el estado PERSISTIDO (folio y fecha los asigna PostgreSQL).
+ *  NUNCA se parchea el cache con datos del cliente.
+ *
+ *  Nota: `usePatchConfigLocal` invalida el prefijo literal ['reportes'] y
+ *  marca también este listado como obsoleto (inocuo: lectura idempotente). */
 export function invalidarActividadesEquipo(
   queryClient: QueryClient,
   equipoId: number,
@@ -93,6 +108,7 @@ export function invalidarActividadesEquipo(
       queryKey: queryKeys.actividadPendiente(equipoId),
     }),
     queryClient.invalidateQueries({ queryKey: queryKeys.actividades(equipoId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.reporteActividades() }),
     invalidarAuditoria(queryClient),
   ]).then(() => undefined)
 }

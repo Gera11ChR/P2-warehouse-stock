@@ -77,6 +77,7 @@
 - **REQ:** 002, 003, 004, 005, 009, 010, 011, 016
 - **Hacer:** `backend/tests/test_reportes_actividades.py` con una prueba por requisito (`test_req_rep_NNN_*`) que aserte HTTP **y** BD (regla 8): json y orden, filtros y combinación AND, día inclusivo y borde de zona (23:30 y 00:30 locales), `desde > hasta`, 403 / vacío / 404 por aislamiento, administrador transversal, Unidad inactiva incluida, XLSX descargable leído con openpyxl (hojas, folio, fecha, materiales), 404 sin resultados, 422 por 101 folios, `formato` inválido, 400 fuera de INT4, nombre de archivo, tablas sin cambios y cero eventos de auditoría nuevos, medición de tiempo y tamaño de un libro de 100 hojas (T1 midió 1,56 s y 2,6 MB sin datos); además: desborde vía API (11 materiales, 5 actividades y comentario de 2000 con saltos de línea) con la hoja leída con openpyxl y BD intacta; tope de filas (`LIMITE_FILAS_EXCEDIDO`, 422) sembrando snapshots por `INSERT` directo; `X-Actor` ausente ⇒ 422; parámetro no declarado ⇒ 422; `desde` sin `hasta` y `hasta` sin `desde`; `hasta=9999-12-31` y `desde=0001-01-01` ⇒ 200 (nunca 500); `equipo_id` y `actividad_id` fuera de INT4 (10¹², 10³⁰) ⇒ 400; `equipo_id` inexistente (admin: vacío/404; no admin: 403); precedencia 422 ⇒ 403 ⇒ 200/404.
 - **Hecho cuando:** pytest completo pasa al 100 % y cada REQ-REP de backend tiene al menos una prueba que pasa con aserción HTTP + BD.
+- **Estado:** COMPLETADA (2026-10-20): 19 pruebas HTTP+BD en verde; suite backend completa 602 passed; medición del libro de 100 hojas: 1.63 s / 2.54 MB.
 - **PARADA.**
 
 ### T7 — Compuerta de contrato (congelación Backend → Frontend)
@@ -84,6 +85,7 @@
 - **REQ:** 011 (y verificación transversal)
 - **Hacer:** validación independiente `spec.md` ⇄ plan §3.5 ⇄ `/openapi.json` ⇄ implementación: parámetros y códigos, tipo de contenido XLSX, campos faltantes/inventados, nomenclatura; comprobar que `ActividadListOut`/`ActividadOut`/`ActividadMaterialOut` son idénticos (normalizando la notación nullable) a `components.schemas` de `openspec/openspec.yaml` y al OpenAPI vivo de `/equipos/{equipo_id}/actividades` (no se consulta el paquete archivado, `.agents.md` §2); Zero-Drift Scan; ejecutar la suite backend completa; escribir `openapi.snapshot.json` del paquete y su sha256; actualizar `.openspec.yaml` (`contract.frozen: true`, `openapi_snapshot`, `openapi_snapshot_sha256`).
 - **Hecho cuando:** salida **PASS** con cumplimiento de contrato 100 %; en caso de **FAIL** se emite el informe estructurado (Finding → Severity → File/Line → Violated Rule → Evidence → Recommended Correction) y se vuelve a T4-T6. **El frontend sigue bloqueado hasta el PASS.**
+- **Estado:** COMPLETADA (2026-10-20): `@qa-agent` = **PASS**, cumplimiento de contrato 100 %; contrato congelado (`contract.frozen: true`, `openapi.snapshot.json`, sha256 `3cd7728558b4e5dd729f8f6ec62ca49419c2967f04136e01c5be38a9fa069bc0`); DTOs reutilizados idénticos (campo a campo) a `openspec.yaml` y al OpenAPI vivo de `/equipos/{equipo_id}/actividades`; suite backend 602 passed, `mypy app` limpio (56 archivos), `openspec validate --specs --strict` 3/3; hallazgo LOW: el 200 de OpenAPI solo declara `application/json` (el tipo XLSX consta en plan §3.5, igual que Entrega/Consumo; sin acción). **Frontend (T8-T10) desbloqueado.**
 - **PARADA.**
 
 ### T8 — Tipos, servicio, hooks y claves (frontend)
@@ -91,6 +93,7 @@
 - **REQ:** 012, 013, 014, 015
 - **Hacer:** plan §5.1: `ReporteActividadesParams` y `NavigationTarget.actividadId` en `types.ts`; `listarReporteActividades` y `descargarReporteActividadesXlsx` en `services/reportes.ts` (sin cambiar las funciones existentes); `useReporteActividades` y `useExportarReporteActividades` en `hooks/useReportes.ts`; `queryKeys.reporteActividades` e invalidación en `invalidarActividadesEquipo`. Sin transformar ni agregar datos del reporte; sin campos fuera del contrato congelado.
 - **Hecho cuando:** `tsc` sin errores; tipos idénticos al snapshot de OpenAPI; regla de invalidación implementada; pruebas de servicio/hooks (vitest) en verde.
+- **Estado:** COMPLETADA (2026-10-20): tipos, servicio, hooks y claves según contrato congelado; tsc/lint sin errores; vitest completo 591 passed.
 - **PARADA.**
 
 ### T9 — Subsección Actividades, selectores de operación y enlace
@@ -98,6 +101,7 @@
 - **REQ:** 001, 012, 013, 014, 015
 - **Hacer:** plan §5.2: subsección `'actividades'` en `Reportes.tsx` (tras Consumo) con desglose por folio, inspección individual, descarga individual y consolidada con estados y motivos visibles; selectores de operación (Acta, Seguimiento, Actividad); props opcionales retrocompatibles en `ReporteSubseccion`; `initialActividadId` en `MainLayout`/`Reportes`; botón «Ir a Reportes › Actividades» en el aviso de éxito de `ActividadesPanel`; nomenclatura «Unidad».
 - **Hecho cuando:** el flujo completo funciona contra el backend real (verificación manual guiada: confirmar una actividad → enlace → ver y descargar el folio; rango de fechas → libro consolidado; 101 folios → mensaje 422) y los estados de REQ-REP-013 son visibles; `@ux-agent` y `@ui-agent` emiten conformidad; `tsc`, `vite build` y `eslint` sin errores ni warnings; Entrega y Consumo se comportan igual; el barrido `utils/__tests__/nomenclaturaUnidad.test.ts` sigue en verde (ningún texto visible nuevo con «Equipo/Equipos»).
+- **Estado:** COMPLETADA (2026-10-20): subsección Actividades, selectores de operación y enlace implementados; tsc/lint/build sin errores; vitest 599 passed; flujo real contra backend verificado vía API (POST 201 folio R0001, json y xlsx 200).
 - **PARADA.**
 
 ### T10 — Pruebas de frontend
@@ -105,6 +109,7 @@
 - **REQ:** 001, 012, 013, 014, 015
 - **Hacer:** vitest (patrón `vi.mock('../../services/*')` + `QueryClientProvider` + `ToastProvider`) para: pestaña «Actividades» tras «Consumo»; listado por folio y detalle expandible; filtros y selector «Actividad»; descarga consolidada e individual con parámetros correctos y estados (en curso, éxito, 404, 422 de tope); motivo de deshabilitado; selectores de Acta y Seguimiento con `acta_id` sin romper los flujos existentes; enlace del aviso (visible solo con navegación) con preselección de Unidad y folio; invalidación del listado tras confirmar; hooks, servicio y claves.
 - **Hecho cuando:** vitest completo pasa al 100 % (incluida la suite previa).
+- **Estado:** COMPLETADA (2026-10-20): 12 pruebas nuevas (pestaña, selectores de operación, estados de descarga, enlace e invalidación); vitest completo 611 passed; tsc/lint sin errores.
 - **PARADA.**
 
 ### T11 — Validación y auditoría (Fase 8)

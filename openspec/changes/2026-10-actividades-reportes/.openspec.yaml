@@ -9,7 +9,7 @@ sdd_status:
   c1_zona_horaria: America/Mexico_City     # DECIDIDA por el humano; verificada en pg_timezone_names
   fase_5_planificacion: redactada
   fase_6_tareas: redactada
-  fase_7_implementacion: pendiente         # T2-T10; frontend (T8-T10) bloqueado hasta el PASS de T7
+  fase_7_implementacion: backend_completado_contrato_congelado  # T2-T7; frontend (T8-T10) pendiente
   fase_8_validacion_auditoria: pendiente   # T11
   fase_9_evolucion_archivado: pendiente    # T12
 migration: none                            # sin DDL: actividades_reportes (0029) ya contiene todo lo necesario
@@ -19,8 +19,8 @@ contract:
   endpoints:
     - { method: GET, path: "", query: [equipo_id, desde, hasta, actividad_id, formato], response: "ActividadListOut (formato=json) | XLSX (formato=xlsx)", status: [200, 400, 403, 404, 422] }
   reused_schemas: [ActividadListOut, ActividadOut, ActividadMaterialOut]   # definidos y congelados en la Etapa 1; sin DTOs nuevos
-  frozen: false            # se congela en T7 (@qa-agent); cambios posteriores exigen RFC (spec/plan primero)
-  openapi_snapshot: null   # openapi.snapshot.json, relativo al paquete; se escribe en T7
-  openapi_snapshot_sha256: null
+  frozen: true             # congelado en T7 (@qa-agent, 2026-10-20); cambios posteriores exigen RFC (spec/plan primero)
+  openapi_snapshot: openapi.snapshot.json   # relativo al paquete; escrito en T7
+  openapi_snapshot_sha256: 3cd7728558b4e5dd729f8f6ec62ca49419c2967f04136e01c5be38a9fa069bc0
 domain_rules_to_promote:   # Fase 9 -> openspec/openspec.yaml y openspec/specs/003_inventory_dashboard
   - reportes_actividades

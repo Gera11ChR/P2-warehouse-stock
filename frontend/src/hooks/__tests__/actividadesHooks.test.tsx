@@ -98,7 +98,7 @@ describe('useActividades', () => {
 })
 
 describe('useCrearActividad', () => {
-  it('postea el payload y tras success invalida pendiente, historial y auditoría', async () => {
+  it('postea el payload y tras success invalida pendiente, historial, el listado de Reportes › Actividades y auditoría', async () => {
     const { wrapper, claves } = setup()
     crearMock.mockResolvedValue(actividad)
     const { result } = renderHook(() => useCrearActividad(4), { wrapper })
@@ -119,6 +119,11 @@ describe('useCrearActividad', () => {
       JSON.stringify(['actividades', 4, 'pendiente']),
     )
     expect(clavesInvalidadas).toContain(JSON.stringify(['actividades', 4]))
+    // REQ-REP-015: el listado de Reportes › Actividades se recarga tras
+    // confirmar (clave del prefijo sin params: queryKeys.reporteActividades()).
+    expect(clavesInvalidadas).toContain(
+      JSON.stringify(['reportes', 'actividades']),
+    )
     expect(clavesInvalidadas).toContain(JSON.stringify(['auditoria']))
   })
 

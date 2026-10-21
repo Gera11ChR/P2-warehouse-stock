@@ -216,7 +216,7 @@ describe('Reportes — subsecciones Entrega y Consumo con datos reales (API mock
     renderReportes()
 
     await screen.findByRole('option', { name: 'Equipo Norte' })
-    await user.selectOptions(screen.getByRole('combobox'), '5')
+    await user.selectOptions(screen.getByLabelText('Unidad'), '5')
     fireEvent.change(screen.getByLabelText('Desde'), {
       target: { value: '2026-01-01' },
     })
@@ -229,7 +229,7 @@ describe('Reportes — subsecciones Entrega y Consumo con datos reales (API mock
 
     await user.click(screen.getByRole('tab', { name: 'Consumo' }))
 
-    expect(screen.getByRole('combobox')).toHaveValue('5')
+    expect(screen.getByLabelText('Unidad')).toHaveValue('5')
     expect(screen.getByLabelText('Desde')).toHaveValue('2026-01-01')
     await waitFor(() =>
       expect(mockedListarActas).toHaveBeenLastCalledWith('consumo', {
@@ -247,7 +247,7 @@ describe('Reportes — subsecciones Entrega y Consumo con datos reales (API mock
       'true',
     )
     await screen.findByRole('option', { name: 'Equipo Norte' })
-    expect(screen.getByRole('combobox')).toHaveValue('5')
+    expect(screen.getByLabelText('Unidad')).toHaveValue('5')
     await waitFor(() =>
       expect(mockedListarActas).toHaveBeenLastCalledWith('consumo', {
         equipo_id: 5,
@@ -284,7 +284,7 @@ describe('Reportes — exportación XLSX (descarga de blob)', () => {
     })
     renderReportes()
     await screen.findByRole('option', { name: 'Equipo Norte' })
-    await user.selectOptions(screen.getByRole('combobox'), '5')
+    await user.selectOptions(screen.getByLabelText('Unidad'), '5')
     await waitFor(() => expect(botonNormal()).toBeEnabled())
 
     await user.click(botonNormal())

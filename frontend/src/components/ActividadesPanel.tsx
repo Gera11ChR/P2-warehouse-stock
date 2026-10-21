@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CheckCircle2, Info, X } from 'lucide-react'
 import { mensajeErrorApi as errorMessage } from '../utils/errorMensaje'
 import { useActividadPendiente, useCrearActividad } from '../hooks/useActividades'
+import { useAppNavigation } from '../hooks/useAppNavigation'
 import { useToast } from '../hooks/useToasts'
 import ActividadesFormulario from './ActividadesFormulario'
 import ActividadesMaterialesConsumidos from './ActividadesMaterialesConsumidos'
@@ -36,6 +37,7 @@ export default function ActividadesPanel({
   equipoNombre?: string | null
 }) {
   const { pushToast, pushError } = useToast()
+  const navigate = useAppNavigation()
   const pendienteQuery = useActividadPendiente(equipoId)
   const crearMut = useCrearActividad(equipoId)
 
@@ -91,6 +93,22 @@ export default function ActividadesPanel({
               {fechaLocal(avisoConfirmada.fecha)}. El reporte se emite desde la
               sección Reportes.
             </p>
+            {navigate && (
+              <button
+                type="button"
+                onClick={() =>
+                  navigate({
+                    page: 'reportes',
+                    sub: 'actividades',
+                    equipoId,
+                    actividadId: avisoConfirmada.actividad_id,
+                  })
+                }
+                className="mt-2 rounded-md border border-green-300 px-3 py-1.5 text-sm font-medium text-green-800 hover:bg-green-100"
+              >
+                Ir a Reportes › Actividades
+              </button>
+            )}
           </div>
           <button
             type="button"

@@ -367,6 +367,15 @@ export interface ReporteParams {
   acta_id?: number
 }
 
+/** Filtros del reporte de actividades (GET /reportes/actividades). */
+export interface ReporteActividadesParams {
+  equipo_id?: number
+  desde?: string
+  hasta?: string
+  /** Exporta/consulta una operación individual (folio). */
+  actividad_id?: number
+}
+
 /** Formatos XLSX descargables (plantillas corporativas Normal / Extenso). */
 export type FormatoXlsx = 'normal' | 'extenso'
 
@@ -629,4 +638,6 @@ export interface NavigationTarget {
   /** Pre-filtro opcional por equipo al abrir Reportes (evita exportar actas
    *  de otro equipo por accidente tras una entrega/cierre). */
   equipoId?: number
+  /** Folio de Actividades a preseleccionar en Reportes > Actividades (REQ-REP-015). */
+  actividadId?: number
 }
