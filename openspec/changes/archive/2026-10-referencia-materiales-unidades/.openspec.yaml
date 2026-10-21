@@ -10,9 +10,9 @@ sdd:
   fase_4_clarificacion: completada         # T1: @arq-reviewer PASS CON CORRECCIONES; Q1-Q7 decididas por el humano; correcciones aplicadas
   fase_5_planificacion: completada         # visto bueno arquitectónico registrado tras T1
   fase_6_tareas: completada
-  fase_7_implementacion: backend_completado_contrato_congelado  # T2-T7; frontend (T8-T10) pendiente
-  fase_8_validacion_auditoria: pendiente   # T11
-  fase_9_evolucion_archivado: pendiente    # T12
+  fase_7_implementacion: completada        # T2-T10 (backend, contrato congelado y frontend)
+  fase_8_validacion_auditoria: completada  # T11/T12: @auditor APPROVED, @qa-agent PASS (trazabilidad 18/18 = 100%), @arq-reviewer VISTO BUENO CON OBSERVACIONES (no bloqueantes); F-1 resuelto; verificaciones al 100% en verde
+  fase_9_evolucion_archivado: completada   # T12: promovido a openspec/specs/003_inventory_dashboard/spec.md (REQ-REF-001..018), regla de dominio + 4 paths en openspec/openspec.yaml, README (migración 0030) y archivado en openspec/changes/archive/
 contract:
   frozen: true                             # congelado en T7 (decisión D-4)
   openapi_snapshot: openapi.snapshot.json  # contrato congelado (regenerado en T7)

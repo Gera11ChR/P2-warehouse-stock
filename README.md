@@ -98,14 +98,14 @@ Six operational screens (one React page each) over ten backend routers:
 | **SQLAlchemy 2** | `[asyncio] >= 2.0.41` (installed 2.0.52) | Async ORM for reads and models; **never** for stock arithmetic |
 | **psycopg 3** | `[binary] >= 3.2` | PostgreSQL async driver under SQLAlchemy |
 | **PostgreSQL** | 18, PL/pgSQL | System of record, locking, stored functions, triggers, audit ledger |
-| **Alembic** | `>= 1.16` | Schema migrations — 28 revisions, `0001_initial` → `0028_purga_legacy_fo` (head `0028`) |
+| **Alembic** | `>= 1.16` | Schema migrations — 30 revisions, `0001_initial` → `0030_referencia_materiales_unidad` (head `0030`) |
 | **pytest / pytest-asyncio** | `>= 8` / `>= 1.0` | 519-case integration suite against a real, isolated database (+ 25 raw-SQL tests in `backend/sql_tests/`) |
 | **HTTPX** | `>= 0.27` | Async ASGI test client (`ASGITransport`) for endpoint contracts |
 | **mypy** | `>= 1.11` (installed 2.3.1) | Static type verification over `app/` + `tests/` (see honest status in [§10.2](#10-known-limitations--technical-debt)) |
 | **pyotp + cryptography** | `>= 2.9` / `>= 44` | MFA primitives: Fernet key handling and TOTP attempt/lockout knobs in `app/config.py` — **not yet exposed by any endpoint** (see §10) |
 | **uvicorn** | ASGI server | Local/production serving (`--reload` in development) |
 
-The schema's source of truth is the Alembic migrations in `backend/alembic/versions/` (head `0028`); `backend/db/ddl.sql` is a **schema-only snapshot of head `0028`** — a non-executable reference regenerated and verified with `backend/scripts/generar_ddl.py` (never run it against a real database). Runtime wiring in `backend/app/{main,config,db,errors,security,telemetry}.py`.
+The schema's source of truth is the Alembic migrations in `backend/alembic/versions/` (head `0030`); `backend/db/ddl.sql` is a **schema-only snapshot of head `0029`** — a non-executable reference regenerated and verified with `backend/scripts/generar_ddl.py` (never run it against a real database). Runtime wiring in `backend/app/{main,config,db,errors,security,telemetry}.py`.
 
 ### 2.2 Frontend — `frontend/`
 
@@ -284,6 +284,7 @@ Details and repro instructions: [§8 Quality Assurance](#8-quality-assurance).
 ### 4.6 2026-10-16 — Unified Inventario FO, purge of the legacy and sanitation
 
 * **Unification (`0027`)**: one `inventario_fibra` row per material (PK `material_id`), the `modulo` concept removed from API and UI; `catalogo_materiales.valor_unitario` (MXN, `NUMERIC(12,3)`) and `GET /inventario/resumen-general` (Valor Total computed in PostgreSQL); every quantity is a decimal (`NUMERIC(12,3)`, up to 3 decimals).
+* **Referencia de materiales (`0030`)**: tabla propia `referencia_materiales` (PK compuesta `(equipo_id, material_id)`, FKs `RESTRICT`, `CHECK cantidad_semanal > 0`) para la Referencia visual de materiales por Unidad, con trigger de auditoría append-only (`REFERENCIA_LINEA_CREADA/MODIFICADA/ELIMINADA`) y `downgrade()` reversible que elimina solo los objetos del paquete; sin efecto sobre inventarios ni catálogo.
 * **Purge (`0028`)**: the `FO_PAQUETE` / `FO_EN_USO` sections and everything depending on them were physically deleted (test data only, scoped amendment E-1, one-time, both ledger-immutability triggers re-enabled and verified, traced by one `PURGA_LEGACY_FO` event); `secciones.tipo` is now `GENERAL` or `FO`.
 * **Sanitation 2**: out-of-range integer IDs (SQLSTATE `22003`) answer HTTP 400 through a global handler; `X-Actor` is shape-validated (1..100 chars, no control characters) but remains **unauthenticated**; dead code and deprecated catalog filters (`desde/hasta_id_lista`, `desde/hasta_sku`) were removed; `ddl.sql` regenerated.
 
@@ -314,7 +315,7 @@ A plaintext PostgreSQL connection credential that had entered the repository his
 ```text
 P2/
 ├── backend/
-│   ├── alembic/versions/      # 28 migrations: 0001_initial … 0028_purga_legacy_fo
+│   ├── alembic/versions/      # 30 migrations: 0001_initial … 0030_referencia_materiales_unidad
 │   ├── app/
 │   │   ├── api/v1/            # 10 routers (ajustes, auditoria, cancelaciones, catalog,
 │   │   │                      #   equipos, fibra, inventario, movimientos, reportes, seguimientos)
@@ -322,7 +323,7 @@ P2/
 │   │   ├── services/          # Domain services; transaccional.py = DB delegation
 │   │   ├── models/            # SQLAlchemy models (reads)
 │   │   └── {main,config,db,errors,security,telemetry}.py
-│   ├── db/ddl.sql             # Schema-only snapshot of head 0028 (reference) — source of truth: alembic/versions
+│   ├── db/ddl.sql             # Schema-only snapshot of head 0029 (reference) — source of truth: alembic/versions
 │   ├── scripts/               # seed_catalogo_oficial.py · generar_ddl.py · dev-db.sh
 │   ├── tests/                 # 34 files · 519 tests · isolated p2_test (+ sql_tests/: 25)
 │   ├── pyproject.toml         # Dependencies + pytest config
@@ -412,7 +413,7 @@ bash backend/scripts/dev-db.sh
 
 # Option B: your own PostgreSQL 18 instance, then:
 cd backend
-alembic upgrade head            # 0001 → 0028
+alembic upgrade head            # 0001 → 0030
 .venv/bin/python scripts/seed_catalogo_oficial.py   # optional: 53-item catalog
 ```
 
@@ -452,7 +453,7 @@ export P2_TEST_DATABASE_URL="postgresql+psycopg://USER:PASSWORD@127.0.0.1:5432/p
 
 > `tests/conftest.py` falls back to a **password-less** URL if `P2_ADMIN_DATABASE_URL` / `P2_TEST_DATABASE_URL` are not exported. If your cluster requires authentication, export both (as above) before running pytest.
 
-**Isolation model:** `p2_test` is created and migrated automatically at collection (`alembic upgrade head`, full chain 0001 → 0028); each test is preceded by `TRUNCATE … RESTART IDENTITY CASCADE` on the 18 domain tables plus a deterministic re-seed (section *Inventario General*, 10 master U.M., QA actor scopes). The development database `p2` is never written to.
+**Isolation model:** `p2_test` is created and migrated automatically at collection (`alembic upgrade head`, full chain 0001 → 0030); each test is preceded by `TRUNCATE … RESTART IDENTITY CASCADE` on the 18 domain tables plus a deterministic re-seed (section *Inventario General*, 10 master U.M., QA actor scopes). The development database `p2` is never written to.
 
 **Current state: 519 tests / 34 files (+ 25 in `sql_tests/`), all green; `mypy app/ tests/` reports 0 errors across 88 files.**
 

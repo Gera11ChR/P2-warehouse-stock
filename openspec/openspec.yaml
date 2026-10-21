@@ -113,6 +113,13 @@ domain_rules:
   reportes_actividades:
     required: true
     description: "2026-10 (Etapa 2/3, paquete 2026-10-actividades-reportes): el reporte oficial de actividades (GET /api/v1/reportes/actividades) consulta y exporta las actividades confirmadas en la Etapa 1. La zona de negocio es configurable (P2_REPORTES_TZ, por defecto America/Mexico_City, UTC-6 sin DST): desde/hasta se interpretan como días completos de esa zona y la FECHA del XLSX se imprime con ella; los extremos son inclusivos (>= inicio de desde y < inicio del día siguiente a hasta) y desde>hasta responde 422 RANGO_FECHAS_INVALIDO antes de autorizar. Filtros equipo_id/desde/hasta/actividad_id con semántica AND; el aislamiento replica el patrón de /reportes/entrega (403 Unidad ajena, actividad ajena tratada como inexistente, sin excluir Unidades dadas de baja, y sin la regla '404 antes de 403' de REQ-ACT-014). El XLSX se genera sobre la plantilla corporativa REPORTE DE ACTIVIDADES.xlsx (estilos, celdas combinadas y logo conservados; archivo en disco intacto), con el modelo 1 hoja = 1 folio (titulada con el folio, orden ascendente, logo en todas, sin Sheet1), tope de 100 hojas (422 LIMITE_HOJAS_EXCEDIDO) y de 10 000 filas inyectadas (422 LIMITE_FILAS_EXCEDIDO), ambos evaluados antes de generar el archivo con LIMIT 101; los textos se sanean a [A-Za-z0-9._-] y se neutralizan las fórmulas (primero los caracteres ilegales y después sanitizar_celda, para que un prefijo de control no oculte el '='). Es SOLO LECTURA: sin escrituras, sin DDL, sin eventos de auditoría (REQ-REP-016). El listado JSON (formato=json por defecto, ActividadListOut) no tiene tope (paginación registrada como deuda). Errores canónicos: 400 NUMERIC_OUT_OF_RANGE, 403, 404 sin resultados, 422 (validación, RANGO_FECHAS_INVALIDO, LIMITE_HOJAS_EXCEDIDO, LIMITE_FILAS_EXCEDIDO). Los selectores de operación de Entrega (Acta) y Consumo (Seguimiento) son solo frontend y envían el acta_id existente (REQ-REP-014); el aviso de confirmación enlaza a Reportes › Actividades preseleccionando Unidad y folio, y la confirmación invalida ['reportes','actividades'] (REQ-REP-015). Limitación conocida (C-8, deuda): Entrega/Consumo filtran en la zona de sesión de la BD (America/Ojinaga) mientras Actividades usa la zona de negocio; entre 23:00 y 24:00 de México en horario de verano estadounidense una misma jornada puede caer en días distintos según la subsección. El OpenAPI congelado (openapi.snapshot.json del paquete) declara solo application/json en el 200; el XLSX se descarga con responseType blob (deuda H-1)."
+  referencia_materiales:
+    required: true
+    description: "2026-10 (Etapa 3/3, paquete 2026-10-referencia-materiales-unidades): la Referencia de materiales por Unidad (tabla propia `referencia_materiales`, migración 0030; PK compuesta (equipo_id, material_id), FKs ON DELETE RESTRICT, CHECK cantidad_semanal > 0) es una configuración VISUAL por Unidad sin efecto alguno sobre inventarios, catálogo, movimientos, seguimientos, actividades ni actas: sus mutaciones escriben SOLO `referencia_materiales` y el ledger de auditoría, y jamás invocan Stored Functions de stock. La auditoría es por trigger `tg_auditar_referencia_materiales` (AFTER INSERT OR UPDATE OR DELETE; `app.actor` fijado por el backend en la MISMA transacción; actor vacío → CURRENT_USER; UPDATE sin cambio de cantidad no emite evento) con eventos REFERENCIA_LINEA_CREADA/MODIFICADA/ELIMINADA (modulo 'REFERENCIA', valores anteriores/nuevos). `cantidad_semanal` (NUMERIC(12,3) > 0, máximo 999999999.999, hasta 3 decimales) NO es un saldo: la invariante de saldo no negativo no aplica y no se valida contra stock. Lectura y escritura exigen Unidad existente y ACTIVA (404 antes de evaluar pertenencia); las lecturas solo exigen pertenencia y las escrituras además la regla de Configuración (administrador o actor con sección asignada → 403), con precedencia 422 → 400 NUMERIC_OUT_OF_RANGE → 403 → 404 → 403 → operación. Errores canónicos: 404 MATERIAL_NO_ENCONTRADO, 404 REFERENCIA_NO_ENCONTRADA (línea inexistente u oculta por material inactivo; la línea se conserva y reaparece al reactivar), 409 REFERENCIA_DUPLICADA (incluida la carrera de la PK compuesta y el 40P01 residual: respuesta controlada, nunca 500), 422 REFERENCIA_LINEA_DUPLICADA. Alta masiva todo-o-nada de 1..50 líneas con inserción en orden ascendente de material_id; PATCH solo de la Cantidad Semanal (misma cantidad = no-op sin escritura ni evento); DELETE físico con valores previos conservados en el ledger. El origen del selector de la interfaz (Inventario General / Inventario FO) NO forma parte del contrato. El downgrade 0030 elimina solo los objetos del paquete y conserva los eventos ya escritos. Fuera de alcance: conversiones/equivalencias de U.M. y etiquetado de los eventos REFERENCIA_LINEA_* en Auditoría (se muestran con su código crudo)."
+    events:
+      - "REFERENCIA_LINEA_CREADA"
+      - "REFERENCIA_LINEA_MODIFICADA"
+      - "REFERENCIA_LINEA_ELIMINADA"
   classification_schema:
     legacy_removed: "TIPO"
     fields:
@@ -837,6 +844,178 @@ paths:
           description: "Unidad no encontrada o inactiva (404 antes de 403)"
         "422":
           description: "Cabecera X-Actor o identificador inválidos"
+  /api/v1/equipos/{equipo_id}/referencia:
+    get:
+      summary: "Listar la Referencia de materiales de la Unidad (Descripción, U.M. efectiva y Cantidad Semanal)"
+      operationId: "listarReferencia"
+      parameters:
+        - name: X-Actor
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: equipo_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+      responses:
+        "200":
+          description: "ReferenciaListOut {items, total}; items ordenados por descripcion ASC y material_id ASC (collation de la BD) con codigo/descripcion leídos del catálogo EN VIVO y u_m = U.M. efectiva de la Unidad (COALESCE(ums_local, catálogo)); total cuenta solo los ítems listados; líneas con material inactivo conservadas pero no listadas"
+        "400":
+          description: "Identificador numérico de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+        "403":
+          description: "Actor sin acceso a la Unidad (no integrante ni administrador)"
+        "404":
+          description: "Unidad no encontrada o inactiva (404 antes de 403)"
+        "422":
+          description: "Cabecera X-Actor o identificador inválidos"
+    post:
+      summary: "Alta masiva todo-o-nada de 1..50 líneas de Referencia (una transacción; un evento REFERENCIA_LINEA_CREADA por línea)"
+      operationId: "crearReferencia"
+      parameters:
+        - name: X-Actor
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: equipo_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [lineas]
+              properties:
+                lineas:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [material_id, cantidad_semanal]
+                    properties:
+                      material_id:
+                        type: integer
+                        exclusiveMinimum: 0
+                        maximum: 2147483647
+                        description: "Material activo del catálogo (cuerpo fuera de INT4 = 422)"
+                      cantidad_semanal:
+                        anyOf:
+                          - type: number
+                            exclusiveMinimum: 0
+                          - type: string
+                        description: "> 0, hasta 12 dígitos en total (máximo 999999999.999) y 3 decimales; visual, no es stock"
+      responses:
+        "201":
+          description: "ReferenciaListOut con las líneas creadas, ordenadas como el GET; total = creadas"
+        "400":
+          description: "Identificador numérico de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+        "403":
+          description: "Actor no autenticado (escritura) o sin acceso a la Unidad"
+        "404":
+          description: "Unidad no encontrada o inactiva (404 antes de 403), o material inexistente o inactivo (MATERIAL_NO_ENCONTRADO, primera línea por índice)"
+        "409":
+          description: "Material ya en la Referencia (REFERENCIA_DUPLICADA, primera línea por índice; incluye carrera concurrente de la PK y 40P01 — nunca 500)"
+        "422":
+          description: "Validación estándar {detail:[…]}, REFERENCIA_LINEA_DUPLICADA (2.ª aparición del material) o campos no declarados"
+  /api/v1/equipos/{equipo_id}/referencia/{material_id}:
+    patch:
+      summary: "Modificar SOLO la Cantidad Semanal de una línea (misma cantidad = no-op 200 sin escritura ni evento)"
+      operationId: "modificarReferencia"
+      parameters:
+        - name: X-Actor
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: equipo_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+        - name: material_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [cantidad_semanal]
+              properties:
+                cantidad_semanal:
+                  anyOf:
+                    - type: number
+                      exclusiveMinimum: 0
+                    - type: string
+                  description: "> 0, hasta 12 dígitos en total (máximo 999999999.999) y 3 decimales"
+      responses:
+        "200":
+          description: "ReferenciaLineaOut con la nueva cantidad (no permite cambiar el material)"
+        "400":
+          description: "Identificador numérico de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+        "403":
+          description: "Actor no autenticado (escritura) o sin acceso a la Unidad"
+        "404":
+          description: "Unidad no encontrada o inactiva (404 antes de 403), o línea inexistente u oculta por material inactivo (REFERENCIA_NO_ENCONTRADA; la línea se conserva)"
+        "422":
+          description: "Cabecera X-Actor, identificadores o cantidad inválidos"
+    delete:
+      summary: "Eliminar físicamente una línea de la Referencia (el trigger conserva los valores previos en el ledger)"
+      operationId: "eliminarReferencia"
+      parameters:
+        - name: X-Actor
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: equipo_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+        - name: material_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+      responses:
+        "204":
+          description: "Línea eliminada; el material y todos los inventarios quedan intactos"
+        "400":
+          description: "Identificador numérico de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+        "403":
+          description: "Actor no autenticado (escritura) o sin acceso a la Unidad"
+        "404":
+          description: "Unidad no encontrada o inactiva (404 antes de 403), o línea inexistente u oculta por material inactivo (REFERENCIA_NO_ENCONTRADA; la línea se conserva)"
+        "422":
+          description: "Cabecera X-Actor o identificadores inválidos"
   /api/v1/reportes/entrega:
     get:
       summary: "Acta(s) de Entrega (hito A: generadas al confirmar TEAMS) en JSON o XLSX sobre la plantilla corporativa"
