@@ -7,8 +7,8 @@ sdd:
   paquete: 2026-10-referencia-materiales-unidades
   etapa: "3/3"
   fase_3_especificacion: completada
-  fase_4_clarificacion: pendiente          # T1
-  fase_5_planificacion: completada
+  fase_4_clarificacion: completada         # T1: @arq-reviewer PASS CON CORRECCIONES; Q1-Q7 decididas por el humano; correcciones aplicadas
+  fase_5_planificacion: completada         # visto bueno arquitectónico registrado tras T1
   fase_6_tareas: completada
   fase_7_implementacion: pendiente         # T2-T10 (Backend-First)
   fase_8_validacion_auditoria: pendiente   # T11

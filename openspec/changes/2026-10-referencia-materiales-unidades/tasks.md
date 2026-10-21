@@ -1,6 +1,6 @@
 # Tareas — ETAPA 3/3: REFERENCIA DE MATERIALES POR UNIDAD
 
-**Paquete:** `2026-10-referencia-materiales-unidades` · **Fase SDD:** 6 (Tareas) · **Estado:** redactadas, pendientes de aprobación del humano.
+**Paquete:** `2026-10-referencia-materiales-unidades` · **Fase SDD:** 6 (Tareas) · **Estado:** redactadas y ajustadas tras T1; pendientes de aprobación del humano.
 Derivadas de `spec.md` (`REQ-REF-001..018`) y `plan.md`. Zero-Drift (`.agents.md` §4): cada tarea cita los REQ que implementa o verifica.
 
 ## Reglas inquebrantables
@@ -10,7 +10,7 @@ Derivadas de `spec.md` (`REQ-REF-001..018`) y `plan.md`. Zero-Drift (`.agents.md
 3. **Contrato congelado desde T7** (`frozen: true`, sha256 registrado en `.openspec.yaml`): solo un RFC aprobado puede cambiarlo. Antes de T7 el `openapi.snapshot.json` es un borrador.
 4. **Sin refactor ajeno:** no se limpia ni reformatea código fuera del alcance de cada tarea; los hallazgos ajenos se registran como deuda.
 5. **DDL solo en T2** (migración `0030`, tabla `referencia_materiales` y su trigger). Ninguna otra tarea altera el esquema.
-6. **Aislamiento (REQ-REF-011):** no se modifican `app/api/v1/{equipos,catalog,inventario,fibra,actividades,reportes,reportes_actividades,seguimientos,movimientos}.py`, sus servicios ni modelos. Cambios permitidos fuera de archivos nuevos: registrar el router en `app/main.py`, las listas `TRUNCATE` de `backend/tests/conftest.py` y `backend/sql_tests/conftest.py`, los asserts de cabeza de migración estrictamente necesarios, `frontend/src/{types.ts,hooks/queryKeys.ts}` y `frontend/src/pages/InventarioPorEquipos.tsx` (cambio mínimo y localizado).
+6. **Aislamiento (REQ-REF-011):** no se modifican `app/api/v1/{equipos,catalog,inventario,fibra,actividades,reportes,reportes_actividades,seguimientos,movimientos}.py`, sus servicios ni modelos. Cambios permitidos fuera de archivos nuevos: registrar el router en `app/main.py`, exportar el modelo en `app/models/__init__.py`, las listas `TRUNCATE` de `backend/tests/conftest.py` y `backend/sql_tests/conftest.py`, los asserts de cabeza de migración estrictamente necesarios, `frontend/src/{types.ts,hooks/queryKeys.ts}` y `frontend/src/pages/InventarioPorEquipos.tsx` (cambio mínimo y localizado).
 7. **No se consultan paquetes archivados** (`.agents.md` §2); las specs maestras se leen solo como punto de integración.
 8. **Nomenclatura:** «Unidad» e «Inventario FO» en UI; `equipo`/`equipo_id` solo como identificadores técnicos (REQ-UNI-005).
 9. **Hechos verificables:** ninguna tarea se marca completada sin ejecutar sus pruebas; los resultados se citan literalmente.
@@ -27,8 +27,9 @@ Derivadas de `spec.md` (`REQ-REF-001..018`) y `plan.md`. Zero-Drift (`.agents.md
 ### T1 — Clarificación de la especificación
 - **Agente:** `@arq-reviewer`
 - **REQ:** todos
-- **Hacer:** revisar `proposal.md`, `spec.md` y `plan.md` contra la Constitución y `.agents.md`; detectar ambigüedades, conflictos de nomenclatura e invariantes en riesgo; dictaminar sobre C-1..C-13 (en particular C-2, C-3, C-4, C-12) y proponer correcciones; registrar `fase_4_clarificacion: completada` en `.openspec.yaml`.
+- **Hacer:** revisar `proposal.md`, `spec.md` y `plan.md` contra la Constitución y `.agents.md`; detectar ambigüedades, conflictos de nomenclatura e invariantes en riesgo; dictaminar sobre C-1..C-13 (en particular C-2, C-3, C-4, C-12) y proponer correcciones; registrar `fase_4_clarificacion: completada` en `.openspec.yaml` y, tras aplicar las correcciones, registrar el visto bueno arquitectónico de la Fase 5 (plan).
 - **Hecho cuando:** `spec.md` y `plan.md` sin ambigüedades abiertas; el humano ratifica o corrige cada clarificación y aprueba el paquete.
+- **Estado:** COMPLETADA (2026-10-21): `@arq-reviewer` = PASS CON CORRECCIONES (sin hallazgos bloqueantes; C-1..C-13 dictaminadas, 28 hallazgos H-01..H-28). Decisiones del humano: Q1 Unidad inactiva = 404 en lectura y escritura; Q2 U.M. efectiva de la Unidad; Q3 origen por línea; Q4 «Modificar» solo la cantidad; Q5 una opción por sección; Q6 escrituras como Configuración; Q7 BD desechable `p2_visual`. Correcciones aplicadas a `proposal.md`, `spec.md`, `plan.md`, `tasks.md` y `openapi.snapshot.json` (borrador); `.openspec.yaml`: `fase_4_clarificacion: completada`. `openspec validate --specs --strict` en verde.
 - **PARADA.**
 
 ---
@@ -45,7 +46,7 @@ Derivadas de `spec.md` (`REQ-REF-001..018`) y `plan.md`. Zero-Drift (`.agents.md
 ### T3 — Pruebas de migración y `sql_tests`
 - **Agente:** `@tester`
 - **REQ:** 011, 012, 018
-- **Hacer:** `backend/tests/test_migracion_0030.py` (upgrade → downgrade → upgrade, constraints, trigger, eventos preservados, tablas preexistentes intactas); `backend/sql_tests/test_fase_referencia.py` (PK/FK/CHECK, `RESTRICT`, 3 eventos de auditoría con `app.actor`, sin evento por UPDATE sin cambio, sin efecto sobre tablas de negocio); añadir `referencia_materiales` a las listas `TRUNCATE` de las dos `conftest.py`; ajustar solo los asserts de cabeza de migración que lo requieran y registrarlo.
+- **Hacer:** `backend/tests/test_migracion_0030.py` (upgrade → downgrade → upgrade, constraints, trigger, eventos preservados, tablas preexistentes intactas); `backend/sql_tests/test_fase_referencia.py` (PK/FK/CHECK, `RESTRICT`, 3 eventos de auditoría con `app.actor`, actor vacío cae a `CURRENT_USER`, sin evento por UPDATE sin cambio, sin efecto sobre tablas de negocio); añadir `referencia_materiales` a las listas `TRUNCATE` de las dos `conftest.py`; ajustar solo los asserts de cabeza de migración que lo requieran y registrarlo.
 - **Hecho cuando:** `pytest backend/tests/test_migracion_0030.py` y `pytest backend/sql_tests` al 100 %; suite completa sin regresión de las migraciones previas.
 - **PARADA.**
 
@@ -66,7 +67,7 @@ Derivadas de `spec.md` (`REQ-REF-001..018`) y `plan.md`. Zero-Drift (`.agents.md
 ### T6 — Pruebas de API (HTTP + BD)
 - **Agente:** `@tester`
 - **REQ:** 005-012, 015
-- **Hacer:** `backend/tests/test_referencia.py` con pruebas que aserten HTTP y BD por SQL directo: listado ordenado y con datos vivos, material inactivo oculto y reaparición, alta todo-o-nada, todas las validaciones (422/404/409/400), carrera de altas, modificar, eliminar, aislamiento (403, 404 antes de 403, Unidad inactiva, `X-Actor`), snapshot de tablas de negocio intacto, listado sin eventos y 3 eventos de auditoría con valores previos y nuevos, rollback sin evento. Una prueba `test_req_ref_NNN_*` por requisito.
+- **Hacer:** `backend/tests/test_referencia.py` con pruebas que aserten HTTP y BD por SQL directo: listado ordenado y con datos vivos, material inactivo oculto y reaparición, alta todo-o-nada con precedencia de errores y `coordinates`, todas las validaciones (422/404/409; `material_id` de cuerpo fuera de INT4 = 422 y de ruta = 400), carrera de altas y altas cruzadas en orden distinto (sin 500), modificar (incluido el no-op con la misma cantidad: 200 sin escritura ni evento), eliminar, línea oculta por material inactivo (PATCH/DELETE 404; reactivación por SQL), U.M. efectiva (local frente a catálogo), orden esperado derivado por SQL (`ORDER BY descripcion, material_id`), aislamiento (403, 404 antes de 403, Unidad inactiva en lectura y escritura = 404, integrante sin sección: escribe 403 y lee 200, `X-Actor`), snapshot de tablas de negocio intacto, listado sin eventos y 3 eventos de auditoría con valores previos y nuevos, rollback sin evento. Una prueba `test_req_ref_NNN_*` por requisito.
 - **Hecho cuando:** `pytest` completo del backend y `sql_tests` al 100 %; `mypy` limpio; sin regresión de Etapas 1 y 2.
 - **PARADA.**
 
@@ -85,25 +86,25 @@ Derivadas de `spec.md` (`REQ-REF-001..018`) y `plan.md`. Zero-Drift (`.agents.md
 - **Agente:** `@state-agent`
 - **REQ:** 004, 005, 013, 014, 017
 - **Hacer:** tipos en `types.ts` espejo del contrato congelado; `services/referencia.ts`; `queryKeys.referencia(equipoId)` con invalidación acotada; `hooks/useReferencia.ts` (consulta y mutaciones con toasts); hooks de solo lectura del origen del selector («Inventario General» desde secciones GENERAL activas sin duplicar `material_id`; «Inventario FO» desde `listFibraStock`); sin recalcular datos en el cliente.
-- **Hecho cuando:** `tsc -b` y lint limpios; pruebas de servicio y hooks pasan; ninguna invalidación toca inventario, catálogo, reportes ni actividades.
+- **Hecho cuando:** `tsc -b` y lint limpios; ninguna invalidación toca inventario, catálogo, reportes ni actividades; las pruebas de servicio y hooks las escribe T10 (T8 solo exige la compilación y las pruebas ya existentes en verde).
 - **PARADA.**
 
 ### T9 — Interfaz y verificación visual con Playwright Chromium
 - **Agentes:** `@ui-agent`, `@ux-agent`, `@form-agent`
 - **REQ:** 001, 002, 003, 004, 013, 014, 016
-- **Hacer:** botón «Referencia» en el extremo derecho de la barra de subsecciones (Consulta y Configuración) con `aria-expanded`; `ReferenciaPanel`, `ReferenciaAgregarForm` y `MaterialSelect` según `plan.md` §6.2; estados de carga, error y vacío; modo lectura en Consulta y acciones en Configuración; textos «Unidad» e «Inventario FO»; aviso «La cantidad no afecta el inventario». **Verificación visual obligatoria** según `plan.md` §6.3, con Playwright Chromium de `frontend/` contra `http://localhost:5173` y el backend real en `:8000`:
+- **Hacer:** botón «Referencia» alineado a la derecha encima del área de inventario y bajo las pestañas (todas las vistas de Consulta y Configuración; oculto en CONSUMO y ACTIVIDADES) con `aria-expanded`; `ReferenciaPanel`, `ReferenciaAgregarForm` (origen por línea) y `MaterialSelect` (una opción por sección) según `plan.md` §6.2; estados de carga, error y vacío; modo lectura en Consulta y acciones en Configuración; textos «Unidad» e «Inventario FO»; aviso «La cantidad no afecta el inventario». **Verificación visual obligatoria** según `plan.md` §6.3, con Playwright Chromium de `frontend/` (gestor `pnpm`) contra `http://localhost:5173` y el backend real en `:8000`, ambos sobre la BD desechable `p2_visual` con el administrador `demo-operador` sembrado (`plan.md` §6.3):
   1. flujo completo en Consulta (solo lectura) y Configuración (agregar, modificar, eliminar con confirmación);
-  2. snapshot del árbol semántico del DOM de cada estado;
+  2. snapshot del árbol semántico con `ariaSnapshot()` de cada estado;
   3. medición de overflow horizontal a **390 px** y **1280 px** (`scrollWidth <= innerWidth`);
   4. consola del navegador sin errores ni warnings y sin respuestas HTTP inesperadas;
-  5. capturas e informe en `/tmp/opencode/visual/`; datos de prueba eliminados y procesos detenidos al terminar.
-- **Hecho cuando:** `tsc -b`, lint y `npm run build` sin errores ni warnings; vitest completo en verde; **la verificación visual pasa en ambos viewports con evidencia citada**; `@ux-agent` y `@form-agent` sin objeciones.
+  5. capturas e informe en `/tmp/opencode/visual/`; la PARADA cita el resumen y el sha256 de las capturas; `p2_visual` descartada (`DROP DATABASE`) y procesos detenidos al terminar.
+- **Hecho cuando:** `tsc -b`, lint y `pnpm build` sin errores ni warnings; vitest completo en verde; **la verificación visual pasa en ambos viewports con evidencia citada**; `@ux-agent` y `@form-agent` sin objeciones.
 - **PARADA.**
 
 ### T10 — Pruebas de frontend
 - **Agente:** `@tester`
 - **REQ:** 001-004, 013, 014, 016, 017
-- **Hacer:** pruebas vitest de botón (presencia en Consulta/Configuración, ausencia en CONSUMO/ACTIVIDADES, `aria-expanded`), panel (columnas, vacío, carga, error con reintento, solo lectura en Consulta), cambio de Unidad, formulario (origen → material dependiente, exclusión de materiales ya presentes, validación, varias líneas, conservar datos ante rechazo), modificar, eliminar con confirmación, invalidación acotada, servicio y hooks; repetir la verificación visual de T9 como regresión final sobre el árbol completo.
+- **Hacer:** pruebas vitest de botón (presencia en Consulta/Configuración, ausencia en CONSUMO/ACTIVIDADES, `aria-expanded`), panel (columnas, vacío, carga, error con reintento, solo lectura en Consulta), cambio de Unidad, formulario (origen → material dependiente, exclusión de materiales ya presentes, validación, varias líneas, conservar datos ante rechazo, refresco ante 409 `REFERENCIA_DUPLICADA` y 404 `REFERENCIA_NO_ENCONTRADA`, error de carga del origen con reintento), cambio de Unidad (el formulario se descarta), modificar, eliminar con confirmación, invalidación acotada, servicio y hooks; repetir la verificación visual de T9 como regresión final sobre el árbol completo.
 - **Hecho cuando:** vitest completo y `tsc -b`/lint/build al 100 % sin warnings; verificación visual repetida sin hallazgos.
 - **PARADA.**
 

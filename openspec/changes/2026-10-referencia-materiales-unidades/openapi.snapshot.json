@@ -3,13 +3,13 @@
   "info": {
     "title": "DMS - TELECOM Inventory API — Referencia de materiales por Unidad (BORRADOR)",
     "version": "0.1.0-draft",
-    "description": "Borrador de contrato del paquete 2026-10-referencia-materiales-unidades. NO congelado: T7 lo regenera desde app.openapi() y marca frozen: true."
+    "description": "Borrador de contrato del paquete 2026-10-referencia-materiales-unidades, ajustado en T1. NO congelado: T7 lo regenera desde app.openapi() y marca frozen: true."
   },
   "paths": {
     "/api/v1/equipos/{equipo_id}/referencia": {
       "get": {
         "summary": "Listar la Referencia de materiales de la Unidad",
-        "description": "Líneas de la Unidad ordenadas por descripción ascendente y material_id ascendente; descripción, código y U.M. se leen del catálogo en cada consulta; los materiales inactivos del catálogo no se listan. Solo lectura, sin eventos de auditoría.",
+        "description": "Líneas de la Unidad ordenadas por descripción ascendente (collation de la BD) y material_id ascendente; descripción y código se leen del catálogo y u_m es la U.M. efectiva de la Unidad (local o, si no hay, del catálogo); los materiales inactivos del catálogo no se listan; total cuenta solo los ítems listados. Solo lectura, sin eventos de auditoría.",
         "operationId": "listarReferencia",
         "parameters": [
           {
@@ -48,16 +48,16 @@
             }
           },
           "400": {
-            "description": "Identificador numérico fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+            "description": "Identificador de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
           },
           "403": {
-            "description": "Actor sin acceso a la Unidad (no integrante ni administrador)"
+            "description": "Actor sin acceso a la Unidad (no integrante ni administrador) o, en escrituras, sin alcance de sección asignado (cuerpo de autorización vigente)"
           },
           "404": {
-            "description": "Unidad no encontrada (404 antes de 403); en escrituras, Unidad inactiva"
+            "description": "Unidad no encontrada o inactiva (lectura y escritura; 404 antes de 403)"
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Validation Error ({detail:[…]}) o error de negocio ({error:{code,message,coordinates}}): campos no declarados, cantidad inválida, material_id de cuerpo fuera de INT4, X-Actor ausente o inválido, REFERENCIA_LINEA_DUPLICADA",
             "content": {
               "application/json": {
                 "schema": {
@@ -70,7 +70,7 @@
       },
       "post": {
         "summary": "Agregar líneas a la Referencia de la Unidad (todo o nada)",
-        "description": "1 a 50 líneas en una sola transacción. Errores de negocio con cuerpo {\"error\":{\"code\",\"message\",\"coordinates\"}}: 404 MATERIAL_NO_ENCONTRADO, 409 REFERENCIA_DUPLICADA, 422 REFERENCIA_LINEA_DUPLICADA. La escritura exige Unidad activa.",
+        "description": "1 a 50 líneas en una sola transacción, todo o nada. Precedencia de errores: duplicados del payload (422 REFERENCIA_LINEA_DUPLICADA), materiales inexistentes o inactivos (404 MATERIAL_NO_ENCONTRADO), ya presentes (409 REFERENCIA_DUPLICADA). Inserción en orden ascendente de material_id. Respuesta con las líneas creadas ordenadas como el listado (total = creadas). La escritura exige Unidad activa y la regla de autenticación de Configuración.",
         "operationId": "crearReferencia",
         "parameters": [
           {
@@ -119,19 +119,19 @@
             }
           },
           "400": {
-            "description": "Identificador numérico fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+            "description": "Identificador de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
           },
           "403": {
-            "description": "Actor sin acceso a la Unidad (no integrante ni administrador)"
+            "description": "Actor sin acceso a la Unidad (no integrante ni administrador) o, en escrituras, sin alcance de sección asignado (cuerpo de autorización vigente)"
           },
           "404": {
-            "description": "Unidad no encontrada (404 antes de 403); en escrituras, Unidad inactiva"
+            "description": "Unidad no encontrada o inactiva (lectura y escritura; 404 antes de 403); material inexistente o inactivo (MATERIAL_NO_ENCONTRADO, coordinates con la línea)"
           },
           "409": {
-            "description": "Material ya presente en la Referencia de la Unidad (REFERENCIA_DUPLICADA), incluye la carrera concurrente"
+            "description": "Material ya presente en la Referencia de la Unidad (REFERENCIA_DUPLICADA, coordinates con la línea; incluye la carrera concurrente)"
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Validation Error ({detail:[…]}) o error de negocio ({error:{code,message,coordinates}}): campos no declarados, cantidad inválida, material_id de cuerpo fuera de INT4, X-Actor ausente o inválido, REFERENCIA_LINEA_DUPLICADA",
             "content": {
               "application/json": {
                 "schema": {
@@ -146,7 +146,7 @@
     "/api/v1/equipos/{equipo_id}/referencia/{material_id}": {
       "patch": {
         "summary": "Modificar la cantidad semanal de una línea de la Referencia",
-        "description": "Solo cambia cantidad_semanal. 404 REFERENCIA_NO_ENCONTRADA si la línea no existe. La escritura exige Unidad activa.",
+        "description": "Solo cambia cantidad_semanal. Con la misma cantidad responde 200 sin escribir, sin tocar updated_at y sin auditar. 404 REFERENCIA_NO_ENCONTRADA si la línea no existe o su material está inactivo. La escritura exige Unidad activa y la regla de autenticación de Configuración.",
         "operationId": "modificarReferencia",
         "parameters": [
           {
@@ -205,16 +205,16 @@
             }
           },
           "400": {
-            "description": "Identificador numérico fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+            "description": "Identificador de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
           },
           "403": {
-            "description": "Actor sin acceso a la Unidad (no integrante ni administrador)"
+            "description": "Actor sin acceso a la Unidad (no integrante ni administrador) o, en escrituras, sin alcance de sección asignado (cuerpo de autorización vigente)"
           },
           "404": {
-            "description": "Unidad no encontrada (404 antes de 403); en escrituras, Unidad inactiva"
+            "description": "Unidad no encontrada o inactiva (lectura y escritura; 404 antes de 403); línea inexistente o con material inactivo (REFERENCIA_NO_ENCONTRADA)"
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Validation Error ({detail:[…]}) o error de negocio ({error:{code,message,coordinates}}): campos no declarados, cantidad inválida, material_id de cuerpo fuera de INT4, X-Actor ausente o inválido, REFERENCIA_LINEA_DUPLICADA",
             "content": {
               "application/json": {
                 "schema": {
@@ -227,7 +227,7 @@
       },
       "delete": {
         "summary": "Eliminar una línea de la Referencia",
-        "description": "Borra la línea; el trigger de auditoría conserva los valores previos. 404 REFERENCIA_NO_ENCONTRADA si no existe. La escritura exige Unidad activa.",
+        "description": "Borra la línea; el trigger de auditoría conserva los valores previos. 404 REFERENCIA_NO_ENCONTRADA si no existe o su material está inactivo. La escritura exige Unidad activa y la regla de autenticación de Configuración.",
         "operationId": "eliminarReferencia",
         "parameters": [
           {
@@ -269,16 +269,16 @@
             "description": "Successful Response"
           },
           "400": {
-            "description": "Identificador numérico fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
+            "description": "Identificador de ruta fuera de rango INT4 (NUMERIC_OUT_OF_RANGE)"
           },
           "403": {
-            "description": "Actor sin acceso a la Unidad (no integrante ni administrador)"
+            "description": "Actor sin acceso a la Unidad (no integrante ni administrador) o, en escrituras, sin alcance de sección asignado (cuerpo de autorización vigente)"
           },
           "404": {
-            "description": "Unidad no encontrada (404 antes de 403); en escrituras, Unidad inactiva"
+            "description": "Unidad no encontrada o inactiva (lectura y escritura; 404 antes de 403); línea inexistente o con material inactivo (REFERENCIA_NO_ENCONTRADA)"
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Validation Error ({detail:[…]}) o error de negocio ({error:{code,message,coordinates}}): campos no declarados, cantidad inválida, material_id de cuerpo fuera de INT4, X-Actor ausente o inválido, REFERENCIA_LINEA_DUPLICADA",
             "content": {
               "application/json": {
                 "schema": {
@@ -305,13 +305,14 @@
           "material_id": {
             "type": "integer",
             "exclusiveMinimum": 0,
-            "title": "Material Id"
+            "title": "Material Id",
+            "maximum": 2147483647
           },
           "cantidad_semanal": {
             "type": "number",
             "exclusiveMinimum": 0,
             "title": "Cantidad Semanal",
-            "description": "> 0, hasta 12 dígitos y 3 decimales"
+            "description": "> 0, hasta 12 dígitos en total (máximo 999999999.999) y 3 decimales"
           }
         }
       },
@@ -346,7 +347,7 @@
             "type": "number",
             "exclusiveMinimum": 0,
             "title": "Cantidad Semanal",
-            "description": "> 0, hasta 12 dígitos y 3 decimales"
+            "description": "> 0, hasta 12 dígitos en total (máximo 999999999.999) y 3 decimales"
           }
         }
       },
@@ -389,7 +390,8 @@
                 "type": "null"
               }
             ],
-            "title": "U M"
+            "title": "U M",
+            "description": "U.M. efectiva de la Unidad: la local configurada para el material o, si no hay, la del catálogo"
           },
           "cantidad_semanal": {
             "type": "number",

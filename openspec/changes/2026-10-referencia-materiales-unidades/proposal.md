@@ -1,6 +1,6 @@
 # Propuesta — ETAPA 3/3: REFERENCIA DE MATERIALES POR UNIDAD
 
-**Paquete:** `2026-10-referencia-materiales-unidades` · **Fase SDD:** 3 (Especificación) · **Estado:** redactada, pendiente de aprobación del humano.
+**Paquete:** `2026-10-referencia-materiales-unidades` · **Fase SDD:** 3 (Especificación) · **Estado:** redactada y clarificada en T1 (Fase 4); pendiente de aprobación del humano.
 **Fuente de requisitos:** `docs/2 Unities Functions.docx`, sección «Referencia» (texto y las 4 capturas `Refer_Interfaz_Consl`, `Refer_Conslt`, `Refer_Conf` y `Refer_Interfaz_Conf`). Gobernanza: `docs/constitution.md` (L1), `.agents.md` (L2). Etapas previas ya promovidas a `openspec/specs/003_inventory_dashboard` (`REQ-ACT-*`, `REQ-REP-*`); se consultan solo como puntos de integración.
 
 ## 1. Motivación
@@ -53,7 +53,7 @@ Inventario por Unidad (InventarioPorEquipos.tsx)
 ```
 
 - **Aislamiento total:** la Referencia no usa Stored Functions de stock ni toca `inventario_*`, `catalogo_materiales`, `equipo_material_config`, `movimientos_*`, `seguimientos`, `actividades_reportes` ni `actas_reportes`.
-- **Descripción y U.M. en vivo:** se obtienen del catálogo por JOIN en cada consulta; la Referencia solo guarda `(equipo_id, material_id, cantidad_semanal)`.
+- **Descripción y U.M. en vivo:** la Descripción y el código se obtienen del catálogo por JOIN en cada consulta y la U.M. es la efectiva de la Unidad (U.M. local de `equipo_material_config` o, si no hay, la del catálogo; solo lectura, decisión Q2); la Referencia solo guarda `(equipo_id, material_id, cantidad_semanal)`.
 - **Datos para el selector dependiente:** el frontend reutiliza los endpoints de lectura existentes (Inventario General e Inventario FO); no se modifican sus contratos.
 - **Backend-First:** DB → servicio → router → pruebas → congelación del contrato (T7) → frontend (T8-T10).
 
@@ -66,8 +66,9 @@ Inventario por Unidad (InventarioPorEquipos.tsx)
 | Material repetido en la misma petición | no permitido | 422 `REFERENCIA_LINEA_DUPLICADA` |
 | Material ya presente en la Referencia de la Unidad | no permitido (usar Modificar) | 409 `REFERENCIA_DUPLICADA` |
 | Campos no declarados / `extra` | prohibidos (`extra="forbid"`) | 422 |
-| Identificadores fuera de INT4 | rechazados | 400 `NUMERIC_OUT_OF_RANGE` |
-| Escritura sobre Unidad inactiva | no permitida | 404 |
+| Identificadores de ruta fuera de INT4 | rechazados | 400 `NUMERIC_OUT_OF_RANGE` |
+| Lectura o escritura sobre Unidad inactiva | no permitida | 404 |
+| `material_id` del cuerpo fuera de INT4 | rechazado en validación | 422 (en la ruta: 400 `NUMERIC_OUT_OF_RANGE`) |
 
 ## 6. Decisiones de diseño acordadas con el humano
 
@@ -77,6 +78,12 @@ Inventario por Unidad (InventarioPorEquipos.tsx)
 | D-2 | Persistencia en **tabla propia de PostgreSQL** (no `localStorage`), compartida entre usuarios y auditada | Respuesta del humano |
 | D-3 | Edición permitida al **administrador y a los integrantes de la Unidad** (`assert_equipo_access`, igual que Configuración); lectura con el mismo criterio | Respuesta del humano |
 | D-4 | `openapi.snapshot.json` nace como **borrador** (`frozen: false`) y se congela con `frozen: true` en T7 generado del OpenAPI vivo | Respuesta del humano |
+| D-15 | La U.M. mostrada es la **U.M. efectiva de la Unidad** (local si existe, catálogo si no) | T1, Q2 |
+| D-16 | El origen (General/FO) se elige **por línea** | T1, Q3 |
+| D-17 | Un material en varias secciones GENERAL aparece **una vez por sección**, sin sumar stock en el cliente | T1, Q5 |
+| D-18 | Las escrituras aplican además la regla de autenticación de Configuración (administrador o con sección asignada) | T1, Q6 |
+| D-19 | La verificación visual se ejecuta contra una **BD desechable** (`p2_visual`) | T1, Q7 |
+| D-20 | Lectura y escritura exigen Unidad activa (404 en ambas) | T1, Q1 |
 
 ## 7. Decisiones de diseño propuestas (a ratificar en T1, `@arq-reviewer`)
 
@@ -86,12 +93,12 @@ Inventario por Unidad (InventarioPorEquipos.tsx)
 | D-6 | Mutaciones por ORM tipado + trigger de auditoría (sin Stored Function de stock) | No es una mutación de stock; mismo patrón que la configuración local por Unidad |
 | D-7 | Origen «Inventario General / Inventario FO» es solo ayuda de interfaz: el backend valida que el material exista y esté activo en el catálogo | El origen no se persiste ni aporta un invariante propio |
 | D-8 | «Modificar» cambia solo `cantidad_semanal`; cambiar de material = eliminar y agregar | El documento no define otra edición |
-| D-9 | «Eliminar» borra físicamente la línea; el trigger conserva `valores_anteriores` en el ledger de auditoría | La Referencia es configuración, no ledger ni catálogo (Constitución §2.4 aplica a transacciones) |
-| D-10 | Los materiales inactivos del catálogo no se listan; la línea se conserva y reaparece si se reactivan | Cero fantasmas, sin perder la configuración |
+| D-9 | «Eliminar» borra físicamente la línea; el trigger conserva `valores_anteriores` en el ledger de auditoría | La Referencia es configuración, no un registro histórico; el ledger de auditoría permanece append-only y conserva los valores previos (§2.4, §6.2) |
+| D-10 | Los materiales inactivos del catálogo no se listan; la línea se conserva y reaparece si se reactivan; mientras tanto PATCH/DELETE responden 404 | Cero fantasmas, sin perder la configuración |
 | D-11 | Orden del listado: Descripción ascendente y `material_id` ascendente | Determinista y ergonómico; el documento no fija el orden |
-| D-12 | El botón «Referencia» va en el extremo derecho de la barra de subsecciones de Inventario por Unidad y alterna (muestra/oculta) el panel en Consulta y Configuración | Posición de las capturas |
+| D-12 | El botón «Referencia» va alineado a la derecha inmediatamente encima del área de inventario, bajo las pestañas, y alterna (muestra/oculta) el panel en todas las vistas de Consulta y en Configuración | Posición de las capturas |
 | D-13 | Etiqueta de interfaz «Inventario FO» (nomenclatura oficial `.agents.md` §3) donde el documento dice «Inventario Fibra Óptica» | Cláusula de override de nomenclatura |
-| D-14 | Lectura permitida con la Unidad dada de baja; escritura solo con Unidad activa | Conserva el historial visible, como las actividades |
+| D-14 | (Reemplazada por D-20 en T1: la premisa «como las actividades» era falsa; lectura y escritura exigen Unidad activa) | — |
 
 ## 8. Riesgos
 
@@ -109,4 +116,4 @@ Migración `0030` con `downgrade()` que elimina trigger, función y tabla sin to
 
 ## 10. Impacto constitucional
 
-Sin enmiendas. Se respetan §1 (SDD), §2 (la Referencia no altera saldos ni identidad de materiales), §3 (default-deny y alcance por Unidad, `extra="forbid"`), §4 (cada petición en una transacción atómica; el alta masiva es todo o nada), §5.1 y §5.3 (contratos explícitos y validación todo-o-nada), §6.2 (auditoría inmutable de cada mutación) y §7 (trazabilidad `REQ-REF-*` y cuadro de calidad).
+Sin enmiendas. Se respetan §1 (SDD), §2 (la Referencia no altera saldos ni identidad de materiales; `cantidad_semanal` no es un saldo), §3 (default-deny y alcance por Unidad, `extra="forbid"`; dentro del modelo `X-Actor` vigente, sin agravar la desviación heredada de §3.1/§3.3), §4 (cada petición en una transacción atómica; el alta masiva es todo o nada), §5.1 y §5.3 (contratos explícitos y validación todo-o-nada), §6.2 (auditoría inmutable de cada mutación) y §7 (trazabilidad `REQ-REF-*` y cuadro de calidad).
