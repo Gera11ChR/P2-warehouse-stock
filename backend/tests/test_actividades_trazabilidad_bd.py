@@ -149,7 +149,7 @@ async def test_req_act_005_006_013_entrada_invalida_422_no_crea_registro_en_bd(
     seg = await _seguimiento_cerrado(
         client, equipo["equipo_id"], material["id_lista"], consumida=1
     )
-    invalidos = [
+    invalidos: list[dict[str, object]] = [
         {"vehiculo": "   "},
         {"vehiculo": "x" * 101},
         {"clientes": ""},

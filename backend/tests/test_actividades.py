@@ -14,7 +14,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
@@ -81,7 +81,7 @@ async def _seguimiento_cerrado(
 
 async def _post_actividad(
     client: AsyncClient, equipo_id: int, seguimiento_id: int, **overrides
-) -> object:
+) -> Response:
     payload = {**PAYLOAD_BASE, "seguimiento_id": seguimiento_id}
     payload.update(overrides)
     return await client.post(
