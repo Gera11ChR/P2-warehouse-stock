@@ -26,11 +26,11 @@ dependencies = [
     # (company_logobrand.png) al guardar el workbook: sin Pillow, openpyxl
     # descarta silenciosamente las imágenes (drawing1.xml no se reescribe) y
     # las plantillas pierden el logo. Un test del servicio de reportes FALLA
-    # si Pillow no está instalado. Versión FIJADA a 12.3.0 (M-2, dictamen
-    # sec-ops): 11.3.0 acumulaba decenas de CVEs corregidos en 12.2/12.3;
-    # la aplicabilidad aquí es baja (solo PNGs de plantillas locales de
-    # confianza), pero la deuda CVE era evitable.
-    "Pillow==12.3.0",
+    # si Pillow no está instalado. Versión FIJADA a 13.0.0 (remediación
+    # 2026-10-22, uv audit): 12.3.0 acumulaba 28 CVEs, todos corregidos en
+    # 13.0.0; la aplicabilidad aquí sigue siendo baja (solo PNGs de
+    # plantillas locales de confianza), pero la deuda CVE era evitable.
+    "Pillow==13.0.0",
     # tzdata fijado (F-13): ZoneInfo debe funcionar sin depender de la tzdata
     # del sistema; la versión coincide con la entrada ya presente en uv.lock.
     "tzdata==2026.5",
